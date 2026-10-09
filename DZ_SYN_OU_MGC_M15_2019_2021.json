@@ -1,0 +1,9 @@
+{
+  "source": "MGC_M15.npz",
+  "phi": 0.962561,
+  "sigma": 1.795139,
+  "bar_minutes": 15.0,
+  "half_life_min": 272.48,
+  "vol_mult": 0.7,
+  "method": "AFML 13.5, МНК по дням"
+}

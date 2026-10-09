@@ -1,0 +1,290 @@
+{
+  "chosen": {
+    "240": {
+      "tf": 240,
+      "period": 256,
+      "bw": [
+        16,
+        80
+      ],
+      "band": [
+        0.37,
+        0.57
+      ],
+      "thr": 0.25
+    },
+    "60": {
+      "tf": 60,
+      "period": 128,
+      "bw": [
+        16,
+        80
+      ],
+      "band": [
+        0.42,
+        0.52
+      ],
+      "thr": 0.25
+    }
+  },
+  "experiments": {
+    "240m база": {
+      "pass_n": 479,
+      "pass_wr": 0.555,
+      "pass_exp": 3.58,
+      "pass_pf": 1.188,
+      "rej_n": 286,
+      "rej_wr": 0.528,
+      "kept_winners": 0.638,
+      "cut_losers": 0.388,
+      "capture_total": 0.082,
+      "time_dir_share": 0.931
+    },
+    "240m H11 шлюз 0.02": {
+      "pass_n": 572,
+      "pass_wr": 0.559,
+      "pass_exp": 4.06,
+      "pass_pf": 1.221,
+      "rej_n": 193,
+      "rej_wr": 0.503,
+      "kept_winners": 0.767,
+      "cut_losers": 0.276,
+      "capture_total": 0.093,
+      "time_dir_share": 0.675
+    },
+    "240m H11 шлюз 0.03": {
+      "pass_n": 599,
+      "pass_wr": 0.558,
+      "pass_exp": 3.79,
+      "pass_pf": 1.206,
+      "rej_n": 166,
+      "rej_wr": 0.5,
+      "kept_winners": 0.801,
+      "cut_losers": 0.239,
+      "capture_total": 0.087,
+      "time_dir_share": 0.573
+    },
+    "240m H11 шлюз 0.05": {
+      "pass_n": 646,
+      "pass_wr": 0.56,
+      "pass_exp": 3.88,
+      "pass_pf": 1.214,
+      "rej_n": 119,
+      "rej_wr": 0.462,
+      "kept_winners": 0.868,
+      "cut_losers": 0.184,
+      "capture_total": 0.09,
+      "time_dir_share": 0.397
+    },
+    "240m H13 обратное": {
+      "pass_n": 471,
+      "pass_wr": 0.539,
+      "pass_exp": 2.41,
+      "pass_pf": 1.121,
+      "rej_n": 294,
+      "rej_wr": 0.554,
+      "kept_winners": 0.609,
+      "cut_losers": 0.376,
+      "capture_total": 0.056,
+      "time_dir_share": 0.923
+    },
+    "240m Э46 приор 64": {
+      "pass_n": 483,
+      "pass_wr": 0.549,
+      "pass_exp": 3.14,
+      "pass_pf": 1.163,
+      "rej_n": 282,
+      "rej_wr": 0.539,
+      "kept_winners": 0.635,
+      "cut_losers": 0.374,
+      "capture_total": 0.072,
+      "time_dir_share": 0.932
+    },
+    "240m Э46 приор 128": {
+      "pass_n": 483,
+      "pass_wr": 0.549,
+      "pass_exp": 3.19,
+      "pass_pf": 1.165,
+      "rej_n": 282,
+      "rej_wr": 0.539,
+      "kept_winners": 0.635,
+      "cut_losers": 0.374,
+      "capture_total": 0.074,
+      "time_dir_share": 0.933
+    },
+    "240m Э46 приор 256": {
+      "pass_n": 483,
+      "pass_wr": 0.553,
+      "pass_exp": 3.37,
+      "pass_pf": 1.176,
+      "rej_n": 282,
+      "rej_wr": 0.532,
+      "kept_winners": 0.64,
+      "cut_losers": 0.379,
+      "capture_total": 0.077,
+      "time_dir_share": 0.933
+    },
+    "240m Э46 приор 512": {
+      "pass_n": 479,
+      "pass_wr": 0.555,
+      "pass_exp": 3.49,
+      "pass_pf": 1.182,
+      "rej_n": 286,
+      "rej_wr": 0.528,
+      "kept_winners": 0.638,
+      "cut_losers": 0.388,
+      "capture_total": 0.08,
+      "time_dir_share": 0.93
+    },
+    "240m покрытие": {
+      "вверх": 0.47,
+      "вниз": 0.461,
+      "плоско": 0.027,
+      "прогрев": 0.042,
+      "H медиана": 0.479,
+      "H 10–90%": [
+        0.409,
+        0.559
+      ],
+      "окно медиана": 51.0
+    },
+    "60m база": {
+      "pass_n": 581,
+      "pass_wr": 0.561,
+      "pass_exp": 3.72,
+      "pass_pf": 1.201,
+      "rej_n": 184,
+      "rej_wr": 0.495,
+      "kept_winners": 0.782,
+      "cut_losers": 0.267,
+      "capture_total": 0.086,
+      "time_dir_share": 0.938
+    },
+    "60m H11 шлюз 0.02": {
+      "pass_n": 637,
+      "pass_wr": 0.556,
+      "pass_exp": 3.12,
+      "pass_pf": 1.167,
+      "rej_n": 128,
+      "rej_wr": 0.492,
+      "kept_winners": 0.849,
+      "cut_losers": 0.187,
+      "capture_total": 0.073,
+      "time_dir_share": 0.718
+    },
+    "60m H11 шлюз 0.03": {
+      "pass_n": 660,
+      "pass_wr": 0.545,
+      "pass_exp": 2.44,
+      "pass_pf": 1.129,
+      "rej_n": 105,
+      "rej_wr": 0.543,
+      "kept_winners": 0.863,
+      "cut_losers": 0.138,
+      "capture_total": 0.058,
+      "time_dir_share": 0.617
+    },
+    "60m H11 шлюз 0.05": {
+      "pass_n": 690,
+      "pass_wr": 0.552,
+      "pass_exp": 2.94,
+      "pass_pf": 1.158,
+      "rej_n": 75,
+      "rej_wr": 0.48,
+      "kept_winners": 0.914,
+      "cut_losers": 0.112,
+      "capture_total": 0.07,
+      "time_dir_share": 0.43
+    },
+    "60m H13 обратное": {
+      "pass_n": 593,
+      "pass_wr": 0.55,
+      "pass_exp": 2.92,
+      "pass_pf": 1.154,
+      "rej_n": 172,
+      "rej_wr": 0.529,
+      "kept_winners": 0.782,
+      "cut_losers": 0.233,
+      "capture_total": 0.067,
+      "time_dir_share": 0.925
+    },
+    "60m Э46 приор 64": {
+      "pass_n": 567,
+      "pass_wr": 0.557,
+      "pass_exp": 3.61,
+      "pass_pf": 1.191,
+      "rej_n": 198,
+      "rej_wr": 0.51,
+      "kept_winners": 0.758,
+      "cut_losers": 0.279,
+      "capture_total": 0.082,
+      "time_dir_share": 0.933
+    },
+    "60m Э46 приор 128": {
+      "pass_n": 563,
+      "pass_wr": 0.554,
+      "pass_exp": 3.34,
+      "pass_pf": 1.175,
+      "rej_n": 202,
+      "rej_wr": 0.52,
+      "kept_winners": 0.748,
+      "cut_losers": 0.279,
+      "capture_total": 0.076,
+      "time_dir_share": 0.93
+    },
+    "60m Э46 приор 256": {
+      "pass_n": 549,
+      "pass_wr": 0.557,
+      "pass_exp": 3.68,
+      "pass_pf": 1.193,
+      "rej_n": 216,
+      "rej_wr": 0.514,
+      "kept_winners": 0.734,
+      "cut_losers": 0.302,
+      "capture_total": 0.083,
+      "time_dir_share": 0.928
+    },
+    "60m Э46 приор 512": {
+      "pass_n": 548,
+      "pass_wr": 0.557,
+      "pass_exp": 3.57,
+      "pass_pf": 1.187,
+      "rej_n": 217,
+      "rej_wr": 0.516,
+      "kept_winners": 0.731,
+      "cut_losers": 0.302,
+      "capture_total": 0.08,
+      "time_dir_share": 0.926
+    },
+    "60m покрытие": {
+      "вверх": 0.472,
+      "вниз": 0.466,
+      "плоско": 0.057,
+      "прогрев": 0.005,
+      "H медиана": 0.467,
+      "H 10–90%": [
+        0.376,
+        0.549
+      ],
+      "окно медиана": 46.0
+    }
+  },
+  "interaction": {
+    "MOD10×MOD13": {
+      "оба определены": 0.162,
+      "согласие при обоих": 0.806
+    },
+    "MOD10×MOD9": 0.63,
+    "MOD9×MOD13": {
+      "оба определены": 0.169,
+      "согласие при обоих": 0.628
+    },
+    "пропуск: MOD10, MOD9, MOD13, все три": [
+      0.626,
+      0.986,
+      0.932,
+      0.601
+    ],
+    "совпадение решений пропуск/вето MOD10×MOD13": 0.655
+  }
+}

@@ -1,0 +1,300 @@
+﻿        [Display(Name = "[W46] Пробой: ширина базы, минимум ATR", Order = 27, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Нижняя граница ширины базы в ATR 15M при [W45].")]
+        public double DboExpAtrMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 50)]
+        [Display(Name = "[W47] Пробой: ширина базы, максимум ATR", Order = 28, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Верхняя граница ширины базы в ATR 15M при [W45].")]
+        public double DboExpAtrMax { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "[L23] Эмбарго, баров (эксперимент)", Order = 23, GroupName = "10 · Классификатор Лоренца",
+            Description = "Соседи, чья метка закончилась ближе этого числа баров к текущему, не голосуют (AFML 7.4.2). 0 — выключено.")]
+        public int LorExpEmbargo { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100000)]
+        [Display(Name = "[L24] Полураспад веса соседа, баров (эксперимент)", Order = 24, GroupName = "10 · Классификатор Лоренца",
+            Description = "Голос соседа весит 0,5^(давность / полураспад) — в голосе K ближайших и в Надарая–Ватсоне (AFML 4.7). 0 — выключено.")]
+        public int LorExpHalfLife { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L25] Мета-метки тройным барьером (эксперимент)", Order = 25, GroupName = "10 · Классификатор Лоренца",
+            Description = "L17. Метка соседа — исход сделки тройным барьером (цель и стоп [L26]·ATR, вертикаль — горизонт [L05], худший путь) отдельно для длинной и короткой; направление — сторона с долей успешных исходов не ниже [L06] и выше другой (AFML 3.4, 3.6: мета-разметка).")]
+        public bool LorExpMetaLabels { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 10)]
+        [Display(Name = "[L26] Мета-метки: цель и стоп, ATR (эксперимент)", Order = 26, GroupName = "10 · Классификатор Лоренца",
+            Description = "L17. Расстояние цели и стопа в ATR14 своей серии для исхода соседа. Действует при [L25].")]
+        public double LorExpMetaAtr { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[G12] Подтверждение трендовым сканированием (эксперимент)", Order = 12, GroupName = "17 · Иерархическая масса",
+            Description = "Направление массы принимается, только если t-статистика наклона по лучшему окну назад не меньше [G14] и того же знака (MLAM 5.4).")]
+        public bool HmExpTrendScan { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(3, 100)]
+        [Display(Name = "[G13] Сканирование: минимальное окно, минут", Order = 13, GroupName = "17 · Иерархическая масса",
+            Description = "Самое короткое окно трендового сканирования; самое длинное — окно массы, но не больше 120.")]
+        public int HmExpScanMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.5, 10)]
+        [Display(Name = "[G14] Сканирование: порог t", Order = 14, GroupName = "17 · Иерархическая масса",
+            Description = "Минимальный модуль t-статистики наклона для подтверждения.")]
+        public double HmExpScanT { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[Q06] Уверенность как размер ставки AFML (эксперимент)", Order = 6, GroupName = "12 · Сигнал с ПК",
+            Description = "Уверенность ПК p переводится в размер ставки m = 2Φ((p − ½)/√(p(1 − p))) − 1 (AFML 10.3): слабая уверенность почти обнуляется.")]
+        public bool FsExpBetSize { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 50)]
+        [Display(Name = "[C33] Порог несогласованности фильтра (эксперимент)", Order = 33, GroupName = "15 · Канал Калмана",
+            Description = "Скользящее среднее ν²/f выше порога — модель не описывает данные, мнение канала снимается. При верной модели среднее около 1; на 15M MGC 2022–2024 порог 3 снимает мнение примерно на 6% баров, на случайном блуждании — на 2%. 0 — выключено.")]
+        public double KalExpNisGate { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[B21] Мера POC (эксперимент)", Order = 21, GroupName = "16 · Рычаг свечи",
+            Description = "Баланс свечи — смещение точки контроля (цены с наибольшим объёмом) от опоры вместо [B09] (Volume Profile, Trader Dale).")]
+        public bool LevExpPoc { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1)]
+        [Display(Name = "[B22] Минимум тела к диапазону свечи, CLR (эксперимент)", Order = 22, GroupName = "16 · Рычаг свечи",
+            Description = "Э69. В роли Filter согласие выдаётся, только если |закрытие − открытие| / (High − Low) свечи анализа не ниже порога; иначе нейтраль. 0 — выключено.")]
+        public double LevExpClrMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[B23] Минимум z массы свечи (эксперимент)", Order = 23, GroupName = "16 · Рычаг свечи",
+            Description = "Э69. Согласие только при массе свечи не ниже среднего за 20 свечей плюс это число стандартных отклонений (Volume Profile: тяжёлый объём = агрессивная инициация). 0 — выключено.")]
+        public double LevExpVolZMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[U06] Журнал команд пульта (эксперимент)", Order = 6, GroupName = "14 · Пульт реального времени",
+            Description = "Каждый вход, отказ и команда пульта с временем UTC и адресом клиента — в dz_export\\ws_commands.csv.")]
+        public bool WsCommandLog { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[M08] Структура: глубина пробоя, долей ATR (эксперимент)", Order = 901, GroupName = "04 · Настройки модулей",
+            Description = "Пробой засчитывается, только если цена ушла за уровень не меньше чем на эту долю ATR серии (AFML 3.3). 0 — выключено.")]
+        public double PacExpBreakAtr { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 20)]
+        [Display(Name = "[M09] Структура: объём пробоя, кратно среднему (эксперимент)", Order = 902, GroupName = "04 · Настройки модулей",
+            Description = "Пробой засчитывается, только если объём бара пробоя не меньше этого кратного среднего (Volume Profile, Trader Dale). Нужен настоящий объём. 0 — выключено.")]
+        public double PacExpBreakVol { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 500)]
+        [Display(Name = "[M10] Структура: окно ATR и объёма, баров", Order = 903, GroupName = "04 · Настройки модулей",
+            Description = "Сколько баров серии усреднять для [M08] и [M09].")]
+        public int PacExpBreakWindow { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M24] Время: окно 1 включено", Order = 904, GroupName = "04 · Настройки модулей",
+            Description = "Первое окно новых входов по Берлину.")]
+        public bool TimeWin1On { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M25] Время: окно 1 начало, ЧЧММСС", Order = 905, GroupName = "04 · Настройки модулей",
+            Description = "Например 10000 — 01:00:00 по Берлину.")]
+        public int TimeWin1Start { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M26] Время: окно 1 конец, ЧЧММСС", Order = 906, GroupName = "04 · Настройки модулей",
+            Description = "Например 80000 — 08:00:00 по Берлину. Конец меньше начала — окно через полночь.")]
+        public int TimeWin1End { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M27] Время: окно 2 включено", Order = 907, GroupName = "04 · Настройки модулей",
+            Description = "Второе окно новых входов по Берлину.")]
+        public bool TimeWin2On { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M28] Время: окно 2 начало, ЧЧММСС", Order = 908, GroupName = "04 · Настройки модулей",
+            Description = "Например 93000 — 09:30:00 по Берлину.")]
+        public int TimeWin2Start { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M29] Время: окно 2 конец, ЧЧММСС", Order = 909, GroupName = "04 · Настройки модулей",
+            Description = "Например 183000 — 18:30:00 по Берлину.")]
+        public int TimeWin2End { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M30] Время: новые входы до, ЧЧММСС", Order = 910, GroupName = "04 · Настройки модулей",
+            Description = "После этого времени по Берлину — только сопровождение открытой позиции.")]
+        public int TimeEntriesUntil { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M35] Время: принудительное закрытие", Order = 911, GroupName = "04 · Настройки модулей",
+            Description = "Требовать закрытия позиции в [M36] по Берлину; как требовать — [M07].")]
+        public bool TimeForceCloseOn { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M36] Время: время закрытия, ЧЧММСС", Order = 912, GroupName = "04 · Настройки модулей",
+            Description = "Например 223000 — 22:30:00 по Берлину.")]
+        public int TimeForceCloseAt { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M37] Время: понедельник", Order = 913, GroupName = "04 · Настройки модулей",
+            Description = "Разрешать новые входы в понедельник.")]
+        public bool TimeMon { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M38] Время: вторник", Order = 914, GroupName = "04 · Настройки модулей",
+            Description = "Разрешать новые входы во вторник.")]
+        public bool TimeTue { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M39] Время: среда", Order = 915, GroupName = "04 · Настройки модулей",
+            Description = "Разрешать новые входы в среду.")]
+        public bool TimeWed { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M40] Время: четверг", Order = 916, GroupName = "04 · Настройки модулей",
+            Description = "Разрешать новые входы в четверг.")]
+        public bool TimeThu { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M45] Время: пятница", Order = 917, GroupName = "04 · Настройки модулей",
+            Description = "Разрешать новые входы в пятницу. Суббота и воскресенье закрыты всегда.")]
+        public bool TimeFri { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 5)]
+        [Display(Name = "[M46] Время: только активные часы, доля средней активности (эксперимент)", Order = 918, GroupName = "04 · Настройки модулей",
+            Description = "Вход разрешён, только если средний объём минутки текущего часа по Берлину не ниже этой доли среднего по часам (AFML гл. 2). 0 — выключено.")]
+        public double TimeExpActiveShare { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 500)]
+        [Display(Name = "[M17] Линии: баров после переворота до права голоса (эксперимент)", Order = 919, GroupName = "04 · Настройки модулей",
+            Description = "Линия, сменившая направление меньше этого числа баров своей серии назад, голосует как нейтральная — выдержка по времени. Это не фильтр CUSUM (AFML 2.5.2.1, с. 39: там накопленный сдвиг с порогом); CUSUM по сдвигу — кандидат Э50. 0 — выключено.")]
+        public int TrfpExpMinBarsAfterFlip { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 0.999)]
+        [Display(Name = "[M47] Режим: порог вероятности режима, фильтр Гамильтона (эксперимент)", Order = 920, GroupName = "04 · Настройки модулей",
+            Description = "Режим принимается, только если его апостериорная вероятность по фильтру Гамильтона не ниже порога (банковская книга, гл. 4). 0 — выключено; разумно 0,8–0,9.")]
+        public double RegimeExpHamiltonProb { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.5, 0.999)]
+        [Display(Name = "[M48] Режим: вероятность сохранить режим за бар", Order = 921, GroupName = "04 · Настройки модулей",
+            Description = "Диагональ матрицы переходов фильтра Гамильтона [M47]: чем ближе к 1, тем устойчивее режимы и тем больше свидетельств нужно для смены.")]
+        public double RegimeExpHamiltonStay { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 5000)]
+        [Display(Name = "[M60] Режим: шаг обновления фильтра Гамильтона, баров (эксперимент)", Order = 931, GroupName = "04 · Настройки модулей",
+            Description = "Э52. 0 — фильтр [M47] обновляется на каждом баре своей серии, а плотность наблюдения темперирована: показатель делится на длину окна режима, потому что соседние z считаются на перекрывающихся окнах и не независимы. Больше нуля — обновление только раз в это число баров без темперирования: наблюдения не перекрываются (банковская книга, гл. 4, с. 102–103).")]
+        public int RegimeExpHamiltonStep { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "[M18] Структура: минимум баров между сигналами (эксперимент)", Order = 922, GroupName = "04 · Настройки модулей",
+            Description = "Сигнал структуры ближе этого числа баров серии исполнения к прошлому не отправляется: одновременные события делят исходы (AFML гл. 4). 0 — выключено.")]
+        public int PacExpMinBarsBetween { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M19] Структура: правила CHoCH+ и BOS по PACV025 (эксперимент)", Order = 932, GroupName = "04 · Настройки модулей",
+            Description = "Э76. CHoCH+ только если перед пробоем последний пивот той же стороны не обновил экстремум (несостоявшийся HH перед пробоем вниз, несостоявшийся LL перед пробоем вверх) — определение индикатора PACV025; BOS засчитывается лишь после первого CHoCH контура. Выключено — CHoCH+ как пробой за предыдущий уровень.")]
+        public bool PacExpChochPlusFailed { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M20] Структура: сильные и слабые экстремумы (эксперимент)", Order = 933, GroupName = "04 · Настройки модулей",
+            Description = "Э77. VolumeRatio — объём ноги между пивотами одного типа сопоставим с предыдущей (min/max ≥ 50 %) → сильный, иначе слабый; TrendSide — в медвежьем тренде High сильные, Low слабые, в бычьем наоборот (PACV025). Сила пробитого уровня меняет уверенность события на ±[M61]. Измерено: ход после якоря от метки не зависит. Off — выключено.")]
+        public SwPacStrongWeak PacExpStrongWeak { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 0.5)]
+        [Display(Name = "[M61] Структура: прибавка уверенности за силу уровня (эксперимент)", Order = 934, GroupName = "04 · Настройки модулей",
+            Description = "Э77. Уверенность события структуры +это число при сильном пробитом уровне и −при слабом; действует при [M20] ≠ Off.")]
+        public double PacExpStrongBonus { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M49] Адапт.стоп: ширина по волатильности доходностей (эксперимент)", Order = 923, GroupName = "04 · Настройки модулей",
+            Description = "Ширина линии — цена × √EWMA квадратов доходностей с периодом [M50] вместо ATR (AFML 3.3). Множители тогда в σ: на минутках MGC медиана ATR/σ — 1,29, полосы уже примерно на четверть.")]
+        public bool AStopExpEwma { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 5000)]
+        [Display(Name = "[M50] Адапт.стоп: период EWMA, баров", Order = 924, GroupName = "04 · Настройки модулей",
+            Description = "Период экспоненциального сглаживания квадратов доходностей для [M49]; в AFML — 100.")]
+        public int AStopExpEwmaSpan { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100000)]
+        [Display(Name = "[M54] Выход по линии: вертикальный барьер, баров (эксперимент)", Order = 925, GroupName = "04 · Настройки модулей",
+            Description = "Позиция, прожившая это число баров серии исполнения, закрывается целиком (AFML 3.4). 0 — выключено.")]
+        public int EscortExpVerticalBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "[K69] Сжатие наклона к нулю, τ тиков на бар (эксперимент)", Order = 20, GroupName = "09 · Адаптивное ядро",
+            Description = "Наклон × τ²/(τ² + se²): шумный наклон тянется к нулю, уверенный почти не меняется (банковская книга, гл. 1). Только для локально-линейной регрессии. 0 — выключено.")]
+        public double KerExpShrinkTau { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[K70] Порог наклона в σ приращений (эксперимент)", Order = 21, GroupName = "09 · Адаптивное ядро",
+            Description = "Э65. Порог наклона = это число × σ приращений закрытий своей серии (EWM за 100 баров), в тиках на бар — вместо [K59]: порог в тиках не переносится между ТФ и режимами (AFML 3.3, с. 44). 0 — выключено.")]
+        public double KerExpThrSigma { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K71] Окно по наибольшему |t| наклона (эксперимент)", Order = 22, GroupName = "09 · Адаптивное ядро",
+            Description = "Э66. Ширина окна выбирается среди 8…nMax по наибольшей значимости наклона (MLAM 5.4, с. 73–77) вместо адаптации по ATR20/ATR5 [K54]. Только локальная прямая.")]
+        public bool KerExpTrendScan { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "[H16] Хёрст: априорных наблюдений блуждания (эксперимент)", Order = 16, GroupName = "11 · Ядро по Хёрсту",
+            Description = "H сжимается к уровню блуждания: H* = H0 + (H − H0) × N/(N + это число) (банковская книга, гл. 1–2: априорное как добавочные наблюдения). 0 — выключено.")]
+        public int HkExpPriorObs { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[H17] Хёрст: порог наклона в σ доходностей (эксперимент)", Order = 17, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Э65. Порог наклона = это число × выборочное σ лог-доходностей окна Хёрста × цена, в тиках на бар — вместо [H09] (AFML 3.3). 0 — выключено.")]
+        public double HkExpThrSigma { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[H18] Хёрст: шлюз по z отношения дисперсий (эксперимент)", Order = 18, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Э73. Направление выдаётся, только если z-статистика отношения дисперсий Ло–Маккинлея (q = 4) на окне Хёрста не ниже этого порога: проверка гипотезы H = 0,5 тестом, а не точечной оценкой (Чан гл. 2, с. 45); 1,96 — уровень 5 %. 0 — выключено.")]
+        public double HkExpVrGateZ { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M55] Охрана: запретное окно 1, начало, ЧЧММСС", Order = 926, GroupName = "04 · Настройки модулей",
+            Description = "Ежедневная пауза новых входов по Берлину, например 143000 — 14:30. Начало равно концу — окна нет.")]
+        public int GuardBlack1Start { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M56] Охрана: запретное окно 1, конец, ЧЧММСС", Order = 927, GroupName = "04 · Настройки модулей",
+            Description = "Конец паузы, например 144500 — 14:45. Конец меньше начала — окно через полночь.")]
+        public int GuardBlack1End { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[M57] Охрана: запретное окно 2, начало, ЧЧММСС", Order = 928, GroupName = "04 · Настройки модулей",
+            Description = "Вторая ежедневная пауза по Берлину.")]
+        public int GuardBlack2Start { get; set; }
+
+        [NinjaScriptProperty]

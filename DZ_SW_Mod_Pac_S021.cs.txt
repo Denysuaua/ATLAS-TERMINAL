@@ -1,0 +1,1040 @@
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_Pac_S021 — МОДУЛЬ СТРУКТУРЫ РЫНКА, роль Signal, v1.5 (2026-10-05)
+//
+//  v1.5 — ЛОГИКА ИЗ ИНДИКАТОРА PACV025MarketStructureCoreFix v0.2.7 (извлечена по его исходнику, перенос
+//    DZ_PACV025_Port_S021.py, проверка на реестрах движений 2015–2018). Расчёт умолчаний не изменён. Два
+//    эксперимента, выключены:
+//    Э76 ExpChochPlusFailedExtreme — правила структуры PACV025: CHoCH+ только если перед пробоем последний пивот
+//        той же стороны НЕ обновил экстремум (несостоявшийся HH перед пробоем вниз, несостоявшийся LL перед
+//        пробоем вверх) — каноническое определение; у умолчаний CHoCH+ = пробой за предыдущий уровень. Также BOS
+//        засчитывается лишь после первого CHoCH в истории контура (priorEventConfirmed).
+//    Э77 ExpStrongWeak — сильные/слабые экстремумы: VolumeRatio — объём ноги между подтверждениями пивотов одного
+//        типа сопоставим с предыдущей (min/max ≥ 50 %) → Strong, иначе Weak; TrendSide — в медвежьем тренде
+//        High сильные и Low слабые, в бычьем наоборот. Сила пробитого уровня меняет уверенность события на
+//        ±ExpStrongBonus и пишется в описание. Измерено на реестрах: ход после якоря не зависит от метки ни в одном
+//        режиме (медианы 181/188, 232/238, 361/410 тиков) — функция остаётся экспериментом для связок.
+//
+//  v1.4 — ДОГМА ПРОЕКТА: ЕДИНСТВЕННЫЕ ИСТОЧНИКИ СИГНАЛОВ — ШЕСТЬ СОБЫТИЙ СТРУКТУРЫ:
+//    внутренние BOS, CHoCH, CHoCH+ и свинговые BOS, CHoCH, CHoCH+. Прочие модули сигналов
+//    не порождают (ядро, [D00]). Внутренний BOS младшего ТФ прежде был выключен по
+//    умолчанию ([M87]) — теперь включён: на младшем ТФ по умолчанию работают все шесть.
+//    На старшем ТФ по умолчанию — три свинговых: внутренняя структура старшего ТФ по
+//    масштабу близка к свинговой младшего, и один слом засчитывался бы дважды; включается
+//    флагами [M93]–[M95].
+//    Эксперимент Э42 [M18], выключен нулём: УНИКАЛЬНОСТЬ СОБЫТИЙ. Сигнал, пришедший ближе
+//    [M18] баров серии исполнения к прошлому, не отправляется. AFML гл. 4 (4.3–4.4):
+//    одновременные события делят одни и те же исходы и несут меньше независимой
+//    информации; пачка сломов на одном движении — одно событие, а не несколько.
+//
+//  v1.3 — ПРОХОД 2 ПОЛНОЙ ПРОВЕРКИ. По догме проекта этот модуль — единственный
+//    источник входов.
+//    1. ОБА ЭКСТРЕМУМА ПРОБИТЫ ОДНИМ БАРОМ (только при [M06] = BarExtreme). Прежде первым
+//       проверялся верхний, и порядок событий внутри бара выбирался произвольно — путь,
+//       отклонённый Книгой проекта (раздел 10). Теперь оба уровня помечаются пробитыми,
+//       событие не порождается, тренд не меняется: трасса PAC_AMBIGUOUS_BAR. При закрытии
+//       бара ([M06] = BarClose, умолчание) такое невозможно: закрытие одно.
+//    2. Ссылки шапки на прежнее меню исправлены: флаги допуска — [M87]–[M98], наблюдение —
+//       [V01] и отладочное наблюдение [V02].
+//    Эксперименты, выключены нулём:
+//    Э37 [M08] пробой засчитывается, только если цена ушла за уровень не меньше чем на
+//       [M08] × ATR серии за [M10] баров. AFML 3.3 (с. 44): порог в долях волатильности, а
+//       не «хоть на тик» — пробой на один тик внутри шума сигналом не считается.
+//    Э38 [M09] пробой засчитывается, только если объём бара пробоя не меньше [M09] × среднего
+//       за [M10] баров. Volume Profile (Trader Dale, с. 35): пробой сильного уровня — признак
+//       «сильной силы», крупных покупателей или продавцов; без объёма — без подтверждения.
+//       Нужен настоящий объём: на данных без объёма событий не будет.
+//    Неподтверждённый пробой уровень не тратит: следующий бар может его подтвердить.
+//
+//  v1.2.1 — РАСЧЁТ НЕ ИЗМЕНЁН. Правка только комментариев шапки: модуль —
+//  один из источников направления, а не единственный; к замечанию о
+//  DetectEvents добавлен разбор предложенного исправления.
+//
+//  v1.2 — РАСЧЁТ НЕ ИЗМЕНЁН. Изменено только наблюдение:
+//    - метки и уровни событий такта рисуются после отправки сигнала, когда
+//      известно, какое событие отобрано. Отобранное — рабочий объект, ранг 0;
+//      уступившие и отсеянные — отладочные (отладочное наблюдение [V02]),
+//      ранг подписи по уверенности относительно [D02] — для плотности наблюдения [V01];
+//    - причина отсева [M6x выкл] передаётся уточнением подписи, ядро
+//      показывает её по [V07b];
+//    - незавершённые опорные точки ([V02]): бар среди последних strength баров,
+//      который станет опорным, если следующие бары его не превысят.
+//
+//  v1.1 — РАСЧЁТ НЕ ИЗМЕНЁН. Добавлено только наблюдение:
+//    - у сигнала идентификатор события SignalId и описание ShortDescription;
+//      идентификатор строится по времени бара пробоя и совпадает между
+//      прогонами с разной глубиной загруженной истории;
+//    - визуальные события: подтверждённые опорные точки на баре экстремума,
+//      метки BOS/CHoCH/CHoCH+ на баре пробоя, пробитые уровни, стрелка
+//      отправленного сигнала. Рисует ядро; модуль только просит (EmitVisual)
+//      и только если роль включена (Host.VisualOn);
+//    - события, выключенные флагами [M87]-[M98], и события, уступившие по
+//      рангу, записываются в журнал сигналов ядра с причиной.
+//  Весь код наблюдения обёрнут и стоит после изменения состояния: его сбой не
+//  переводит модуль в отказ и не меняет ни состояния структуры, ни сигнала.
+//
+//  ЗАМЕЧАНИЕ, НЕ ИСПРАВЛЕННОЕ НАМЕРЕННО (это торговая логика): в DetectEvents
+//  ветка «первый пробой устанавливает тренд» выходит из метода через return,
+//  и проверка пробоя нижнего экстремума на этом баре не выполняется. При
+//  BreakBy = BarClose одно закрытие не может пробить оба экстремума, при
+//  BarExtreme на широком баре — может. Решение — за отдельным ТЗ.
+//  Разбор ТЗ v1.4.1 (2026-09-24): просто удалить return нельзя. После
+//  st.Trend = 1 выполнение доходит до ветки «тренд вверх → BOS», и первый
+//  пробой каждого из четырёх состояний структуры регистрирует BOS — при
+//  BarClose тоже. Это вернуло бы сигналы сразу после прогрева, устранённые
+//  ранее. Перестановка «без регистрации на первом пробое, но с проверкой
+//  второго экстремума» на широком баре даёт смену характера в обратную
+//  сторону по порядку строк кода, а не по порядку цен внутри бара — ранг
+//  CHoCH выше BOS, и она станет сигналом. Нужны правило базы порта для
+//  пробоя обоих экстремумов одним баром и подсчёт таких баров на истории.
+//
+//  ОДИН ИЗ ИСТОЧНИКОВ НАПРАВЛЕНИЯ. Направление порождают модули роли Signal:
+//  этот модуль, пробой диапазона двух сессий [MOD8], а в роли Signal — канал
+//  Калмана [MOD9], рычаг свечи [MOD10] и адаптер внешнего индикатора. Прочие
+//  модули фильтруют, сопровождают или требуют закрытия. Вход решает ядро по
+//  голосам всех сигнальных модулей.
+//
+//  ЧТО СЧИТАЕТ. Опорные экстремумы и три типа структурных событий на двух
+//  таймфреймах в двух масштабах.
+//
+//    BOS    — пробой структуры в сторону действующего тренда, продолжение;
+//    CHoCH  — смена характера: пробой противоположного экстремума, разворот;
+//    CHoCH+ — усиленная смена: пробит не только ближний экстремум, но и
+//             предыдущий за ним. Более глубокий структурный слом.
+//
+//  ДВА МАСШТАБА. Внутренний использует малую силу опорной точки и ловит
+//  мелкую структуру; свинговый использует большую силу и ловит крупную.
+//  Итого двенадцать типов событий: 2 ТФ × 2 масштаба × 3 типа.
+//
+//  ПОЧЕМУ СЧИТАЕТСЯ НАТИВНО, А НЕ ЧЕРЕЗ ХОСТИНГ ИНДИКАТОРА.
+//  Хостируемый индикатор, объявляющий собственные серии данных, требует
+//  зеркалирования вызовов AddDataSeries в State.Configure хозяина. Состав
+//  таких вызовов во внешнем индикаторе мне неизвестен и проверке по
+//  официальному руководству не поддаётся. Нативный расчёт самодостаточен
+//  и полностью прослеживается.
+//
+//  ГЛАВНАЯ ЛОВУШКА, КОТОРАЯ ЗДЕСЬ ЗАКРЫТА.
+//  Опорная точка на баре N становится известна только на баре N + right.
+//  До этого момента она НЕ СУЩЕСТВУЕТ. Использование её раньше — заглядывание
+//  в будущее, не дающее ни ошибки, ни предупреждения: результат прогона
+//  просто оказывается лучше достижимого. Модуль обращается к экстремуму
+//  исключительно после подтверждения и хранит номер бара подтверждения.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Масштаб структуры.</summary>
+    public enum SwPacScope
+    {
+        Internal,   // малая сила опорной точки, мелкая структура
+        Swing       // большая сила, крупная структура
+    }
+
+    /// <summary>Тип структурного события.</summary>
+    public enum SwPacEvent
+    {
+        None,
+        Bos,        // продолжение
+        Choch,      // смена характера
+        ChochPlus   // усиленная смена характера
+    }
+
+    /// <summary>Чем подтверждается пробой уровня.</summary>
+    public enum SwPacStrongWeak { Off, VolumeRatio, TrendSide }
+
+    public enum SwPacBreakBy
+    {
+        BarClose,   // закрытие за уровнем; строже и надёжнее
+        BarExtreme  // касание экстремумом; раньше, но чаще ложно
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    /// <summary>Настройки модуля структуры. Значения по умолчанию рабочие.</summary>
+    public class SwPacConfig
+    {
+        // --- серии ---
+        public int LowerSlot = 1;          // слот пула для младшего ТФ
+        public int HigherSlot = 2;         // слот пула для старшего ТФ
+        public bool UseHigherTimeframe = true;
+
+        // --- сила опорных точек ---
+        public int InternalStrength = 3;   // баров слева и справа для внутренней структуры
+        public int SwingStrength = 10;     // то же для свинговой
+
+        // --- подтверждение пробоя ---
+        public SwPacBreakBy BreakBy = SwPacBreakBy.BarClose;
+
+        // --- какие события допускаются во вход ---
+        public bool LowInternalBos = true;     // v1.4: догма — все шесть событий на младшем ТФ
+        public bool LowInternalChoch = true;
+        public bool LowInternalChochPlus = true;
+        public bool LowSwingBos = true;
+        public bool LowSwingChoch = true;
+        public bool LowSwingChochPlus = true;
+
+        public bool HighInternalBos = false;
+        public bool HighInternalChoch = false;
+        public bool HighInternalChochPlus = false;
+        public bool HighSwingBos = true;
+        public bool HighSwingChoch = true;
+        public bool HighSwingChochPlus = true;
+
+        // --- уверенность по типу события ---
+        // Значения субъективны и служат лишь для сравнения событий между
+        // собой. Порог отсечения задаётся в ядре настройкой [D02].
+        public double ConfidenceBos = 0.40;
+        public double ConfidenceChoch = 0.65;
+        public double ConfidenceChochPlus = 0.85;
+        public double HigherTimeframeBonus = 0.10;
+        // --- эксперименты v1.3, выключены нулём ---
+        public double ExpBreakAtr = 0;       // Э37: глубина пробоя, долей ATR
+        public double ExpBreakVolMult = 0;   // Э38: объём бара пробоя, кратно среднему
+        public int ExpBreakWindow = 14;      // окно ATR и среднего объёма, баров
+        public int ExpMinBarsBetweenSignals = 0;   // Э42: минимум баров между сигналами
+        public bool ExpChochPlusFailedExtreme = false;             // Э76: правила PACV025
+        public SwPacStrongWeak ExpStrongWeak = SwPacStrongWeak.Off; // Э77: сильные/слабые экстремумы
+        public double ExpStrongBonus = 0.10;                        // Э77: ±к уверенности по силе пробитого уровня
+    }
+
+    /// <summary>
+    /// Состояние структуры одного масштаба на одной серии.
+    /// Хранит подтверждённые экстремумы и действующее направление.
+    /// </summary>
+    public class SwPacState
+    {
+        public int Strength;
+
+        // Подтверждённые экстремумы. Номер бара подтверждения хранится рядом:
+        // без него невозможно доказать, что уровень существовал на момент
+        // использования.
+        public double LastHigh = double.NaN;
+        public int LastHighBar = -1;
+        public double PrevHigh = double.NaN;
+
+        public double LastLow = double.NaN;
+        public int LastLowBar = -1;
+        public double PrevLow = double.NaN;
+
+        public int Trend;                 // +1 бычий, -1 медвежий, 0 не определён
+
+        // Пробитые уровни помечаются, чтобы одно и то же событие не
+        // порождалось на каждом последующем баре.
+        public bool HighBroken;
+        public bool LowBroken;
+
+        public int BosCount, ChochCount, ChochPlusCount;
+
+        // v1.5 — Э76/Э77: несостоявшиеся экстремумы, ожидание первого CHoCH, объём ног и сила уровней
+        public bool HadFailedHigh, HadFailedLow, PriorEventConfirmed;
+        public double VolSinceHigh, VolSinceLow, PrevLegVolHigh = double.NaN, PrevLegVolLow = double.NaN;
+        public int LastHighStrong = -1, LastLowStrong = -1;   // 1 сильный, 0 слабый, −1 нет метки
+
+        public void Reset(int strength)
+        {
+            Strength = Math.Max(1, strength);
+            LastHigh = LastLow = PrevHigh = PrevLow = double.NaN;
+            LastHighBar = LastLowBar = -1;
+            Trend = 0;
+            HighBroken = LowBroken = false;
+            BosCount = ChochCount = ChochPlusCount = 0;
+            HadFailedHigh = HadFailedLow = PriorEventConfirmed = false;
+            VolSinceHigh = VolSinceLow = 0; PrevLegVolHigh = PrevLegVolLow = double.NaN; LastHighStrong = LastLowStrong = -1;
+        }
+
+        /// <summary>v1.5. Объём бара в ноги обоих типов (PACV025: накопление каждый бар, сброс на пивоте).</summary>
+        public void AccumulateVolume(double v) { if (!double.IsNaN(v) && v > 0) { VolSinceHigh += v; VolSinceLow += v; } }
+
+        /// <summary>v1.5. Сила подтверждённого пивота по PACV025; обновляет ноги объёма. −1 — метки нет.</summary>
+        public int Classify(bool isHigh, SwPacStrongWeak mode)
+        {
+            int res = -1;
+            if (mode == SwPacStrongWeak.VolumeRatio)
+            {
+                double leg = isHigh ? VolSinceHigh : VolSinceLow, prev = isHigh ? PrevLegVolHigh : PrevLegVolLow;
+                if (!double.IsNaN(prev) && prev > 0 && leg > 0) res = Math.Min(prev, leg) / Math.Max(prev, leg) >= 0.5 ? 1 : 0;
+                if (isHigh) { PrevLegVolHigh = leg; VolSinceHigh = 0; } else { PrevLegVolLow = leg; VolSinceLow = 0; }
+            }
+            else if (mode == SwPacStrongWeak.TrendSide)
+            {
+                if (Trend != 0) res = ((Trend < 0 && isHigh) || (Trend > 0 && !isHigh)) ? 1 : 0;
+            }
+            return res;
+        }
+
+        public void PushHigh(double px, int bar)
+        {
+            if (!double.IsNaN(LastHigh)) { if (px < LastHigh) HadFailedHigh = true; else if (px > LastHigh) HadFailedHigh = false; }   // Э76
+            PrevHigh = LastHigh;
+            LastHigh = px;
+            LastHighBar = bar;
+            HighBroken = false;
+        }
+
+        public void PushLow(double px, int bar)
+        {
+            if (!double.IsNaN(LastLow)) { if (px > LastLow) HadFailedLow = true; else if (px < LastLow) HadFailedLow = false; }       // Э76
+            PrevLow = LastLow;
+            LastLow = px;
+            LastLowBar = bar;
+            LowBroken = false;
+        }
+    }
+
+    public class SwPacStructureModule : SwModule
+    {
+        private readonly SwPacConfig cfg;
+
+        private readonly SwPacState lowInternal = new SwPacState();
+        private readonly SwPacState lowSwing = new SwPacState();
+        private readonly SwPacState highInternal = new SwPacState();
+        private readonly SwPacState highSwing = new SwPacState();
+
+        // Событие, отобранное на текущем такте решения.
+        private SwPacEvent pendingEvent = SwPacEvent.None;
+        private int pendingDir;
+        private double pendingConfidence;
+        private string pendingText = string.Empty;
+        private int pendingRank;           // приоритет отбора
+
+        // --- v1.1: наблюдение, на отбор не влияет ---
+        private string pendingSignalId = string.Empty;
+        private string pendingShort = string.Empty;
+        private int labelsThisTick;
+
+        private sealed class PacCandidate
+        {
+            public string Id;
+            public string Desc;
+            public int Dir;
+            public double Conf;
+        }
+
+        // Допущенные события такта, уступившие отобранному: для журнала сигналов.
+        private readonly List<PacCandidate> tickCandidates = new List<PacCandidate>();
+
+        // --- v1.2: события такта для отрисовки после отбора ---
+        private sealed class PacEventVis
+        {
+            public string Id;
+            public bool Filtered;
+            public int Flag;
+            public double Conf;
+            public int Dir;
+            public string Text;
+            public DateTime TBreak, TPivot;
+            public double Level, Hi, Lo;
+        }
+        private readonly List<PacEventVis> tickEventVis = new List<PacEventVis>();
+
+        // Показанные незавершённые опорные точки: ключ → номер бара кандидата.
+        private readonly Dictionary<string, int> candShown = new Dictionary<string, int>();
+
+        public SwPacStructureModule(string id, SwPacConfig config)
+        {
+            Id = id;
+            Role = SwRole.Signal;
+            cfg = config ?? new SwPacConfig();
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+
+            lowInternal.Reset(cfg.InternalStrength);
+            lowSwing.Reset(cfg.SwingStrength);
+            highInternal.Reset(cfg.InternalStrength);
+            highSwing.Reset(cfg.SwingStrength);
+
+            Host.Trace(Id, "PAC_ATTACHED",
+                "младший слот " + cfg.LowerSlot + ", старший слот " + cfg.HigherSlot
+                + ", сила " + cfg.InternalStrength + "/" + cfg.SwingStrength);
+        }
+
+        public override void Compute(int bip)
+        {
+            // --- 1. Обработка закрытия бара младшей серии ---
+            if (Host.IsBarCloseOf(cfg.LowerSlot, bip))
+                ProcessSeries(cfg.LowerSlot, lowInternal, lowSwing, false);
+
+            // --- 2. Обработка закрытия бара старшей серии ---
+            if (cfg.UseHigherTimeframe && Host.IsBarCloseOf(cfg.HigherSlot, bip))
+                ProcessSeries(cfg.HigherSlot, highInternal, highSwing, true);
+
+            // --- 3. Отправка только в такте серии исполнения ---
+            if (bip != Host.ExecBip) return;
+
+            int bar = Host.CurrentBar;
+
+            if (!Ready())
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                ClearPending();
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+
+            if (pendingEvent == SwPacEvent.None)
+            {
+                s.Direction = 0;
+                s.Confidence = 0;
+                s.Text = "структура: событий нет";
+            }
+            else if (cfg.ExpMinBarsBetweenSignals > 0 && lastSignalBar >= 0 && bar - lastSignalBar < cfg.ExpMinBarsBetweenSignals)
+            {
+                // Э42: событие слишком близко к прошлому сигналу — не независимое.
+                s.Direction = 0;
+                s.Confidence = 0;
+                s.Text = "структура: " + pendingShort + " пропущено — до прошлого сигнала " + (bar - lastSignalBar) + " баров";
+                Host.Trace(Id, "PAC_UNIQUENESS_SKIP", s.Text);
+            }
+            else
+            {
+                s.Direction = pendingDir;
+                s.Confidence = Math.Min(1.0, pendingConfidence);
+                s.Text = pendingText;
+                s.SignalId = pendingSignalId;
+                s.ShortDescription = pendingShort;
+                lastSignalBar = bar;
+            }
+
+            Health = SwHealth.Ok;
+            Emit(s);
+
+            // Наблюдение — после отправки: его сбой не может помешать сигналу.
+            AfterEmit(s);
+
+            // Событие живёт один такт решения. Без сброса один пробой
+            // порождал бы вход на каждом последующем баре.
+            ClearPending();
+        }
+
+        private bool Ready()
+        {
+            int needLow = cfg.SwingStrength * 2 + 2;
+            if (!Host.SlotReady(cfg.LowerSlot, needLow)) return false;
+
+            if (cfg.UseHigherTimeframe)
+            {
+                int needHigh = cfg.SwingStrength * 2 + 2;
+                if (!Host.SlotReady(cfg.HigherSlot, needHigh)) return false;
+            }
+            return true;
+        }
+
+        private void ClearPending()
+        {
+            pendingEvent = SwPacEvent.None;
+            pendingDir = 0;
+            pendingConfidence = 0;
+            pendingText = string.Empty;
+            pendingRank = 0;
+            pendingSignalId = string.Empty;
+            pendingShort = string.Empty;
+            labelsThisTick = 0;
+            tickCandidates.Clear();
+            tickEventVis.Clear();
+        }
+
+        #region Обработка серии
+
+        private void ProcessSeries(int slot, SwPacState internalState, SwPacState swingState, bool isHigher)
+        {
+            DetectPivots(slot, internalState, isHigher, SwPacScope.Internal);
+            DetectPivots(slot, swingState, isHigher, SwPacScope.Swing);
+
+            DetectEvents(slot, internalState, isHigher, SwPacScope.Internal);
+            DetectEvents(slot, swingState, isHigher, SwPacScope.Swing);
+
+            // v1.2: наблюдение, на состояние не влияет.
+            VisualCandidates(slot, internalState, isHigher, SwPacScope.Internal);
+            VisualCandidates(slot, swingState, isHigher, SwPacScope.Swing);
+        }
+
+        /// <summary>
+        /// Обнаружение опорной точки.
+        ///
+        /// Кандидат находится на баре, отстоящем на strength баров назад:
+        /// именно столько баров должно закрыться СПРАВА от него, чтобы
+        /// экстремум подтвердился. Раньше этого момента точка не существует.
+        /// Отсюда неустранимое запаздывание в strength баров — плата за то,
+        /// что уровень реален, а не подогнан задним числом.
+        /// </summary>
+        private void DetectPivots(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            int k = st.Strength;
+            int need = k * 2 + 1;
+            if (!Host.SlotReady(slot, need)) return;
+
+            int centre = k;   // barsAgo центрального бара
+
+            double hC = Host.HighOf(slot, centre);
+            double lC = Host.LowOf(slot, centre);
+            if (double.IsNaN(hC) || double.IsNaN(lC)) return;
+
+            bool isHigh = true, isLow = true;
+
+            for (int i = 1; i <= k; i++)
+            {
+                double hL = Host.HighOf(slot, centre + i);
+                double hR = Host.HighOf(slot, centre - i);
+                double lL = Host.LowOf(slot, centre + i);
+                double lR = Host.LowOf(slot, centre - i);
+
+                if (double.IsNaN(hL) || double.IsNaN(hR) || double.IsNaN(lL) || double.IsNaN(lR))
+                    return;
+
+                // Строгое сравнение слева и нестрогое справа: при равенстве
+                // экстремум относится к более раннему бару. Иначе плато
+                // порождало бы несколько опорных точек подряд.
+                if (hC <= hL || hC < hR) isHigh = false;
+                if (lC >= lL || lC > lR) isLow = false;
+            }
+
+            int barOfCentre = Host.BarOf(slot) - centre;
+            if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.AccumulateVolume(Host.VolumeOf(slot, 0));   // Э77
+
+            if (isHigh && barOfCentre != st.LastHighBar)
+            {
+                st.PushHigh(hC, barOfCentre);
+                if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.LastHighStrong = st.Classify(true, cfg.ExpStrongWeak);   // Э77
+                VisualPivot(slot, centre, hC, true, isHigher, scope);
+            }
+            if (isLow && barOfCentre != st.LastLowBar)
+            {
+                st.PushLow(lC, barOfCentre);
+                if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.LastLowStrong = st.Classify(false, cfg.ExpStrongWeak);   // Э77
+                VisualPivot(slot, centre, lC, false, isHigher, scope);
+            }
+        }
+
+        /// <summary>
+        /// Обнаружение структурных событий по подтверждённым экстремумам.
+        /// </summary>
+        /// <summary>
+        /// v1.3, Э37 и Э38: подтверждение пробоя глубиной в долях ATR и объёмом бара пробоя.
+        /// Без экспериментов — всегда «да», как прежде.
+        /// </summary>
+        private int lastSignalBar = -1;   // Э42
+
+        private bool BreakConfirmed(int slot, double depth)
+        {
+            int n = Math.Max(2, cfg.ExpBreakWindow);
+            if (cfg.ExpBreakAtr > 0)
+            {
+                double sum = 0; int k = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    double h = Host.HighOf(slot, i), l = Host.LowOf(slot, i), pc = Host.CloseOf(slot, i + 1);
+                    if (double.IsNaN(h) || double.IsNaN(l)) break;
+                    double tr = h - l;
+                    if (!double.IsNaN(pc)) tr = Math.Max(tr, Math.Max(Math.Abs(h - pc), Math.Abs(l - pc)));
+                    sum += tr; k++;
+                }
+                if (k < n || !(depth >= cfg.ExpBreakAtr * sum / k)) return false;
+            }
+            if (cfg.ExpBreakVolMult > 0)
+            {
+                double v0 = Host.VolumeOf(slot, 0), sum = 0; int k = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    double v = Host.VolumeOf(slot, i);
+                    if (double.IsNaN(v)) break;
+                    sum += v; k++;
+                }
+                if (k < n || !(sum > 0) || !(v0 >= cfg.ExpBreakVolMult * sum / k)) return false;
+            }
+            return true;
+        }
+
+        private void DetectEvents(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            double probeUp = cfg.BreakBy == SwPacBreakBy.BarExtreme
+                ? Host.HighOf(slot, 0) : Host.CloseOf(slot, 0);
+            double probeDn = cfg.BreakBy == SwPacBreakBy.BarExtreme
+                ? Host.LowOf(slot, 0) : Host.CloseOf(slot, 0);
+
+            if (double.IsNaN(probeUp) || double.IsNaN(probeDn)) return;
+
+            bool upHit = !double.IsNaN(st.LastHigh) && !st.HighBroken && probeUp > st.LastHigh
+                         && BreakConfirmed(slot, probeUp - st.LastHigh);
+            bool dnHit = !double.IsNaN(st.LastLow) && !st.LowBroken && probeDn < st.LastLow
+                         && BreakConfirmed(slot, st.LastLow - probeDn);
+
+            // v1.3: оба экстремума одним баром — порядок внутри бара неизвестен (Книга, раздел 10).
+            if (upHit && dnHit)
+            {
+                st.HighBroken = true; st.LowBroken = true;
+                Host.Trace(Id, "PAC_AMBIGUOUS_BAR", (isHigher ? "СТ " : "МЛ ") + scope
+                    + ": пробиты оба экстремума одним баром — порядок неизвестен, события нет");
+                return;
+            }
+
+            // ----- пробой верхнего экстремума -----
+            if (upHit)
+            {
+                st.HighBroken = true;
+
+                // ПЕРВЫЙ ПРОБОЙ УСТАНАВЛИВАЕТ ТРЕНД, А НЕ МЕНЯЕТ ЕГО. Пока тренд
+                // не определён, разворачивать нечего. Прежде первый пробой
+                // уходил в ветку смены характера и порождал ложный сигнал
+                // разворота с уверенностью 0.65 или 0.85 — по одному на каждое
+                // из четырёх состояний структуры сразу после прогрева.
+                if (st.Trend == 0)
+                {
+                    st.Trend = 1;
+                    Host.Trace(Id, "PAC_TREND_INIT",
+                        (isHigher ? "СТ " : "МЛ ") + scope + ": тренд установлен вверх, сигнала нет");
+                    return;
+                }
+
+                SwPacEvent ev;
+                if (st.Trend > 0)
+                {
+                    ev = SwPacEvent.Bos;            // продолжение бычьего
+                    if (cfg.ExpChochPlusFailedExtreme && !st.PriorEventConfirmed) return;   // Э76: BOS лишь после первого CHoCH
+                }
+                else if (cfg.ExpChochPlusFailedExtreme)
+                {
+                    ev = st.HadFailedLow ? SwPacEvent.ChochPlus : SwPacEvent.Choch;   // Э76: несостоявшийся LL перед пробоем вверх
+                    st.HadFailedLow = false; st.PriorEventConfirmed = true;
+                }
+                else
+                {
+                    // Смена характера вверх. Усиленной считается, когда
+                    // пробит и предыдущий верхний экстремум: слом глубже.
+                    ev = (!double.IsNaN(st.PrevHigh) && probeUp > st.PrevHigh)
+                        ? SwPacEvent.ChochPlus : SwPacEvent.Choch;
+                }
+
+                st.Trend = 1;
+                Register(ev, 1, isHigher, scope, st, st.LastHigh, slot, st.LastHighStrong);
+            }
+
+            // ----- пробой нижнего экстремума -----
+            if (dnHit)
+            {
+                st.LowBroken = true;
+
+                if (st.Trend == 0)
+                {
+                    st.Trend = -1;
+                    Host.Trace(Id, "PAC_TREND_INIT",
+                        (isHigher ? "СТ " : "МЛ ") + scope + ": тренд установлен вниз, сигнала нет");
+                    return;
+                }
+
+                SwPacEvent ev;
+                if (st.Trend < 0)
+                {
+                    ev = SwPacEvent.Bos;            // продолжение медвежьего
+                    if (cfg.ExpChochPlusFailedExtreme && !st.PriorEventConfirmed) return;   // Э76
+                }
+                else if (cfg.ExpChochPlusFailedExtreme)
+                {
+                    ev = st.HadFailedHigh ? SwPacEvent.ChochPlus : SwPacEvent.Choch;   // Э76: несостоявшийся HH перед пробоем вниз
+                    st.HadFailedHigh = false; st.PriorEventConfirmed = true;
+                }
+                else
+                {
+                    ev = (!double.IsNaN(st.PrevLow) && probeDn < st.PrevLow)
+                        ? SwPacEvent.ChochPlus : SwPacEvent.Choch;
+                }
+
+                st.Trend = -1;
+                Register(ev, -1, isHigher, scope, st, st.LastLow, slot, st.LastLowStrong);
+            }
+        }
+
+        /// <summary>
+        /// Регистрация события и отбор сильнейшего за такт.
+        ///
+        /// За один такт может сработать несколько событий: на двух сериях и
+        /// в двух масштабах. Отправляется ОДНО — с наибольшим приоритетом.
+        /// Порядок приоритета: тип события, затем старший таймфрейм,
+        /// затем свинговый масштаб.
+        /// </summary>
+        private void Register(SwPacEvent ev, int dir, bool isHigher, SwPacScope scope,
+                              SwPacState st, double level, int slot, int levelStrength)
+        {
+            if (ev == SwPacEvent.Bos) st.BosCount++;
+            else if (ev == SwPacEvent.Choch) st.ChochCount++;
+            else if (ev == SwPacEvent.ChochPlus) st.ChochPlusCount++;
+
+            // Чистые вычисления: описание, уверенность, идентификатор. Прежде
+            // уверенность считалась после проверки ранга — значение то же.
+            string desc = Describe(ev, dir, isHigher, scope);
+            double conf = ev == SwPacEvent.ChochPlus ? cfg.ConfidenceChochPlus
+                        : ev == SwPacEvent.Choch ? cfg.ConfidenceChoch
+                        : cfg.ConfidenceBos;
+            if (isHigher) conf += cfg.HigherTimeframeBonus;
+            if (cfg.ExpStrongWeak != SwPacStrongWeak.Off && levelStrength >= 0)                      // Э77
+            {
+                conf = Math.Max(0.05, Math.Min(1.0, conf + (levelStrength == 1 ? cfg.ExpStrongBonus : -cfg.ExpStrongBonus)));
+                desc += levelStrength == 1 ? " (уровень сильный)" : " (уровень слабый)";
+            }
+            DateTime evTime = Host.TimeOf(slot, 0);
+            string sid = MakeSignalId(evTime, ev, dir, isHigher, scope);
+
+            if (!IsPermitted(ev, isHigher, scope))
+            {
+                Host.Trace(Id, "PAC_EVENT_SKIPPED", desc + " — тип выключен настройкой");
+                int flag = FlagIndex(ev, isHigher, scope);
+                PrepareEventVisual(slot, st, ev, dir, isHigher, scope, level, true, flag, sid, conf);
+                JournalNotSent(evTime, sid, dir, conf, desc, "флаг [M" + flag + "] выключен");
+                return;
+            }
+
+            PrepareEventVisual(slot, st, ev, dir, isHigher, scope, level, false, 0, sid, conf);
+
+            int rank = (ev == SwPacEvent.ChochPlus ? 300 : ev == SwPacEvent.Choch ? 200 : 100)
+                     + (isHigher ? 40 : 0)
+                     + (scope == SwPacScope.Swing ? 20 : 0);
+
+            if (rank <= pendingRank)
+            {
+                // Допущено, но уступает событию, уже отобранному за этот такт.
+                AddCandidate(sid, dir, conf, desc);
+                return;
+            }
+
+            // Прежде отобранное событие, если было, уступает новому.
+            if (pendingEvent != SwPacEvent.None)
+                AddCandidate(pendingSignalId, pendingDir, pendingConfidence, pendingShort);
+
+            pendingRank = rank;
+            pendingEvent = ev;
+            pendingDir = dir;
+            pendingConfidence = conf;
+            pendingText = desc + " @ " + level.ToString("F2");
+            pendingSignalId = sid;
+            pendingShort = desc;
+
+            Host.Trace(Id, "PAC_EVENT", pendingText + ", уверенность " + conf.ToString("F2"));
+        }
+
+        private bool IsPermitted(SwPacEvent ev, bool isHigher, SwPacScope scope)
+        {
+            if (!isHigher)
+            {
+                if (scope == SwPacScope.Internal)
+                    return ev == SwPacEvent.Bos ? cfg.LowInternalBos
+                         : ev == SwPacEvent.Choch ? cfg.LowInternalChoch
+                         : cfg.LowInternalChochPlus;
+
+                return ev == SwPacEvent.Bos ? cfg.LowSwingBos
+                     : ev == SwPacEvent.Choch ? cfg.LowSwingChoch
+                     : cfg.LowSwingChochPlus;
+            }
+
+            if (scope == SwPacScope.Internal)
+                return ev == SwPacEvent.Bos ? cfg.HighInternalBos
+                     : ev == SwPacEvent.Choch ? cfg.HighInternalChoch
+                     : cfg.HighInternalChochPlus;
+
+            return ev == SwPacEvent.Bos ? cfg.HighSwingBos
+                 : ev == SwPacEvent.Choch ? cfg.HighSwingChoch
+                 : cfg.HighSwingChochPlus;
+        }
+
+        private static string Describe(SwPacEvent ev, int dir, bool isHigher, SwPacScope scope)
+        {
+            return (isHigher ? "СТ" : "МЛ") + " "
+                 + (scope == SwPacScope.Swing ? "swg" : "int") + " "
+                 + (ev == SwPacEvent.ChochPlus ? "CHoCH+" : ev == SwPacEvent.Choch ? "CHoCH" : "BOS")
+                 + " " + (dir > 0 ? "long" : "short");
+        }
+
+        #endregion
+
+        #region Наблюдение: идентификаторы, визуализация, журнал (v1.1)
+
+        /// <summary>
+        /// Идентификатор события по времени бара пробоя на его серии:
+        /// PAC_ГГГГММДД_ЧЧММСС_{L|H}{I|S}_{BOS|CH|CHP}_{U|D}.
+        /// </summary>
+        private static string MakeSignalId(DateTime t, SwPacEvent ev, int dir, bool isHigher, SwPacScope scope)
+        {
+            return "PAC_" + t.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                 + "_" + (isHigher ? "H" : "L") + (scope == SwPacScope.Swing ? "S" : "I")
+                 + "_" + (ev == SwPacEvent.Bos ? "BOS" : ev == SwPacEvent.Choch ? "CH" : "CHP")
+                 + "_" + (dir > 0 ? "U" : "D");
+        }
+
+        /// <summary>Номер флага допуска в окне параметров ядра: [M87]-[M98].</summary>
+        private static int FlagIndex(SwPacEvent ev, bool isHigher, SwPacScope scope)
+        {
+            return (isHigher ? 67 : 61) + (scope == SwPacScope.Swing ? 3 : 0)
+                 + (ev == SwPacEvent.Bos ? 0 : ev == SwPacEvent.Choch ? 1 : 2);
+        }
+
+        private static string EventName(SwPacEvent ev)
+        {
+            return ev == SwPacEvent.ChochPlus ? "CHoCH+" : ev == SwPacEvent.Choch ? "CHoCH" : "BOS";
+        }
+
+        /// <summary>
+        /// Подтверждённая опорная точка — на баре экстремума, с его ценой. На
+        /// графике она появляется на баре подтверждения: так, как её видит модуль.
+        /// </summary>
+        private void VisualPivot(int slot, int centre, double price, bool isHighPivot, bool isHigher, SwPacScope scope)
+        {
+            try
+            {
+                SwVisualRole role = isHigher
+                    ? (scope == SwPacScope.Swing ? SwVisualRole.PivotSwingHigh : SwVisualRole.PivotInternalHigh)
+                    : (scope == SwPacScope.Swing ? SwVisualRole.PivotSwing : SwVisualRole.PivotInternal);
+                if (!Host.VisualOn(role)) return;
+
+                DateTime t = Host.TimeOf(slot, centre);
+                if (t == DateTime.MinValue) return;
+
+                double pad = Host.TickSize;
+                SwVisualKind kind = (isHigher || scope == SwPacScope.Swing) ? SwVisualKind.Diamond : SwVisualKind.Dot;
+                EmitVisual(SwVisualEvent.Marker(kind, role, t, isHighPivot ? price + pad : price - pad));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Событие такта запоминается для отрисовки после отбора: до отправки
+        /// сигнала неизвестно, какое из событий станет отобранным. Отсеянные
+        /// флагом не запоминаются вовсе, если отладочные объекты не видны.
+        /// </summary>
+        private void PrepareEventVisual(int slot, SwPacState st, SwPacEvent ev, int dir, bool isHigher,
+                                        SwPacScope scope, double level, bool filtered, int flag,
+                                        string sid, double conf)
+        {
+            try
+            {
+                if (filtered && !Host.VisualDebugOn) return;
+                bool wantLabel = Host.VisualOn(filtered ? SwVisualRole.StructureFiltered : SwVisualRole.StructureEvent);
+                bool wantLine = Host.VisualOn(filtered ? SwVisualRole.BreakLevelFiltered : SwVisualRole.BreakLevel);
+                if (!wantLabel && !wantLine) return;
+
+                DateTime tBreak = Host.TimeOf(slot, 0);
+                if (tBreak == DateTime.MinValue) return;
+
+                PacEventVis v = new PacEventVis();
+                v.Id = sid;
+                v.Filtered = filtered;
+                v.Flag = flag;
+                v.Conf = conf;
+                v.Dir = dir;
+                v.Text = EventName(ev) + " " + (isHigher ? "СТ" : "МЛ") + "·" + (scope == SwPacScope.Swing ? "swg" : "int");
+                v.TBreak = tBreak;
+                v.Level = level;
+                v.Hi = Host.HighOf(slot, 0);
+                v.Lo = Host.LowOf(slot, 0);
+                if (double.IsNaN(v.Hi) || double.IsNaN(v.Lo)) { v.Hi = level; v.Lo = level; }
+
+                int pivotBar = dir > 0 ? st.LastHighBar : st.LastLowBar;
+                int ago = Host.BarOf(slot) - pivotBar;
+                v.TPivot = pivotBar >= 0 && ago >= 0 ? Host.TimeOf(slot, ago) : DateTime.MinValue;
+
+                tickEventVis.Add(v);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Метки и уровни событий такта. Отобранное событие — рабочий объект
+        /// с главной подписью. Уступившие и отсеянные — отладочные: ранг
+        /// подписи 1, если уверенность выше [D02], иначе 2.
+        /// </summary>
+        private void EmitEventVisuals(SwSignal s)
+        {
+            if (tickEventVis.Count == 0) return;
+
+            double minConf = Host.MinConfidence;
+            double step = 3 * Host.TickSize;
+
+            foreach (PacEventVis v in tickEventVis)
+            {
+                bool selected = !v.Filtered && s.Direction != 0 && v.Id == pendingSignalId;
+                SwVisualRole labelRole = v.Filtered ? SwVisualRole.StructureFiltered : SwVisualRole.StructureEvent;
+                SwVisualRole lineRole = v.Filtered ? SwVisualRole.BreakLevelFiltered : SwVisualRole.BreakLevel;
+                int rank = selected ? 0 : (!v.Filtered && v.Conf > minConf ? 1 : 2);
+
+                if (Host.VisualOn(labelRole))
+                {
+                    double y = v.Dir > 0 ? v.Hi + step * (1 + labelsThisTick) : v.Lo - step * (1 + labelsThisTick);
+                    labelsThisTick++;
+                    SwVisualEvent e = SwVisualEvent.Label(labelRole, v.TBreak, y, v.Text).WithRank(rank);
+                    if (!selected) e = e.AsDebug();
+                    if (v.Filtered) e = e.WithDetail("[M" + v.Flag + " выкл]");
+                    EmitVisual(e);
+                }
+
+                if (Host.VisualOn(lineRole) && v.TPivot != DateTime.MinValue)
+                {
+                    SwVisualEvent e = SwVisualEvent.Segment(lineRole, v.TPivot, v.Level, v.TBreak, v.Level);
+                    if (!selected) e = e.AsDebug();
+                    EmitVisual(e);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Незавершённая опорная точка ([V02]): бар среди последних k, который
+        /// станет опорным, если следующие бары его не превысят. Правило то же,
+        /// что при подтверждении: строго слева, нестрого справа. Кандидат
+        /// может быть только один — бар с экстремумом среди последних k,
+        /// самый ранний при равенстве; для него проверяется левая сторона.
+        /// </summary>
+        private int FindCandidate(int slot, int k, bool high)
+        {
+            int best = -1;
+            double bv = 0;
+            for (int j = 0; j < k; j++)
+            {
+                double v = high ? Host.HighOf(slot, j) : Host.LowOf(slot, j);
+                if (double.IsNaN(v)) return -1;
+                if (best < 0 || (high ? v >= bv : v <= bv)) { best = j; bv = v; }
+            }
+            if (best < 0 || !Host.SlotReady(slot, best + k + 1)) return -1;
+
+            for (int i = k; i <= best + k; i++)
+            {
+                double v = high ? Host.HighOf(slot, i) : Host.LowOf(slot, i);
+                if (double.IsNaN(v) || (high ? v >= bv : v <= bv)) return -1;
+            }
+            return best;
+        }
+
+        private void VisualCandidates(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            try
+            {
+                SwVisualRole role = scope == SwPacScope.Swing
+                    ? SwVisualRole.PivotCandidateSwing : SwVisualRole.PivotCandidateInternal;
+                SwVisualRole tfRole = isHigher
+                    ? (scope == SwPacScope.Swing ? SwVisualRole.PivotSwingHigh : SwVisualRole.PivotInternalHigh)
+                    : (scope == SwPacScope.Swing ? SwVisualRole.PivotSwing : SwVisualRole.PivotInternal);
+                if (!Host.VisualOn(role) || !Host.VisualOn(tfRole)) return;
+
+                string kb = "CAND_" + (isHigher ? "H" : "L") + (scope == SwPacScope.Swing ? "S" : "I");
+                bool diamond = isHigher || scope == SwPacScope.Swing;
+                ShowCandidate(slot, st.Strength, true, kb + "_HI", role, diamond);
+                ShowCandidate(slot, st.Strength, false, kb + "_LO", role, diamond);
+            }
+            catch { }
+        }
+
+        /// <summary>Объект состояния по ключу: перерисовывается только при смене бара кандидата.</summary>
+        private void ShowCandidate(int slot, int k, bool high, string key, SwVisualRole role, bool diamond)
+        {
+            int j = FindCandidate(slot, k, high);
+            int shown;
+            bool had = candShown.TryGetValue(key, out shown);
+
+            if (j < 0)
+            {
+                if (had)
+                {
+                    EmitVisual(SwVisualEvent.RemoveState(key));
+                    candShown.Remove(key);
+                }
+                return;
+            }
+
+            int barNo = Host.BarOf(slot) - j;
+            if (had && shown == barNo) return;
+
+            DateTime t = Host.TimeOf(slot, j);
+            if (t == DateTime.MinValue) return;
+            double pad = Host.TickSize;
+            double px = high ? Host.HighOf(slot, j) + pad : Host.LowOf(slot, j) - pad;
+            EmitVisual(SwVisualEvent.Marker(diamond ? SwVisualKind.Diamond : SwVisualKind.Dot, role, t, px).AsState(key));
+            candShown[key] = barNo;
+        }
+
+        private void AddCandidate(string sid, int dir, double conf, string desc)
+        {
+            try
+            {
+                PacCandidate c = new PacCandidate();
+                c.Id = sid;
+                c.Dir = dir;
+                c.Conf = conf;
+                c.Desc = desc;
+                tickCandidates.Add(c);
+            }
+            catch { }
+        }
+
+        private void JournalNotSent(DateTime t, string sid, int dir, double conf, string desc, string reason)
+        {
+            try { Host.RequestSignalJournalEntry(Id, t, sid, dir, conf, desc, reason); }
+            catch { }
+        }
+
+        /// <summary>
+        /// После отправки: стрелка отправленного сигнала, метки и уровни событий
+        /// такта, записи журнала о событиях, уступивших отобранному.
+        /// </summary>
+        private void AfterEmit(SwSignal s)
+        {
+            try
+            {
+                if (s.Direction != 0)
+                {
+                    SwVisualRole role = s.Direction > 0 ? SwVisualRole.SignalLong : SwVisualRole.SignalShort;
+                    if (Host.VisualOn(role))
+                    {
+                        double pad = 2 * Host.TickSize;
+                        double y = s.Direction > 0 ? Host.Low(0) - pad : Host.High(0) + pad;
+                        EmitVisual(SwVisualEvent.Marker(s.Direction > 0 ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown,
+                            role, Host.Time, y));
+                    }
+                }
+
+                // Отрисовка событий отдельно обёрнута: её сбой не лишает журнал записей.
+                try { EmitEventVisuals(s); }
+                catch { }
+
+                foreach (PacCandidate c in tickCandidates)
+                    if (c.Id != pendingSignalId)
+                        JournalNotSent(Host.Time, c.Id, c.Dir, c.Conf, c.Desc,
+                            "уступило событию выше рангом: " + (pendingShort.Length > 0 ? pendingShort : "—"));
+            }
+            catch { }
+        }
+
+        #endregion
+
+        #region Диагностика
+
+        /// <summary>Сводка состояния для панели и разбора.</summary>
+        public string StateLine
+        {
+            get
+            {
+                return string.Format(
+                    "МЛ int тренд {0} B{1} C{2} C+{3} | МЛ swg тренд {4} B{5} C{6} C+{7} | " +
+                    "СТ swg тренд {8} B{9} C{10} C+{11}",
+                    lowInternal.Trend, lowInternal.BosCount, lowInternal.ChochCount, lowInternal.ChochPlusCount,
+                    lowSwing.Trend, lowSwing.BosCount, lowSwing.ChochCount, lowSwing.ChochPlusCount,
+                    highSwing.Trend, highSwing.BosCount, highSwing.ChochCount, highSwing.ChochPlusCount);
+            }
+        }
+
+        /// <summary>Действующее направление структуры старшего свинга.</summary>
+        public int HigherSwingTrend { get { return highSwing.Trend; } }
+
+        /// <summary>Действующее направление структуры младшего свинга.</summary>
+        public int LowerSwingTrend { get { return lowSwing.Trend; } }
+
+        #endregion
+    }
+}

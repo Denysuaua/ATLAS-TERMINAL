@@ -1,0 +1,9 @@
+{
+  "name": "atlas-dashboard",
+  "version": "1.0.0",
+  "description": "Пульт реального времени терминала «Атлас» — обёртка Electron вокруг atlas_dashboard.html",
+  "main": "main.js",
+  "scripts": { "start": "electron ." },
+  "devDependencies": { "electron": "^31.0.0" },
+  "dependencies": { "lightweight-charts": "4.2.0" }
+}

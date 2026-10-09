@@ -1,0 +1,100 @@
+{
+  "script": "DZ_MS_Market_S021-v1.0 (2026-10-04)",
+  "npz": "/home/claude/atlas/terminal/Atlas_terminal/certification/data_certified/MGC/MGC_M1.npz",
+  "raw": null,
+  "start": "2015-01-01",
+  "end": "2019-01-01",
+  "minutes": 1418036,
+  "filled_minutes": 14691,
+  "volume_source": "файлы импорта NinjaTrader (цены совпали с сертификатом)",
+  "n": 5,
+  "n_scale": 1.0,
+  "confirm": "bars",
+  "cusum_h": 3.0,
+  "state_window": 64,
+  "trend_scan": false,
+  "tfs": [
+    1,
+    5,
+    15,
+    30,
+    45,
+    60,
+    120,
+    240
+  ],
+  "tick": 0.1,
+  "tick_usd": 1.0,
+  "costs": {
+    "round_turn_usd": 0.44,
+    "slippage_ticks_per_fill": 1.0
+  },
+  "columns": [
+    "o",
+    "h",
+    "l",
+    "c",
+    "v",
+    "filled",
+    "1m_swing",
+    "1m_trend",
+    "1m_phase",
+    "1m_state",
+    "5m_swing",
+    "5m_trend",
+    "5m_phase",
+    "5m_state",
+    "15m_swing",
+    "15m_trend",
+    "15m_phase",
+    "15m_state",
+    "30m_swing",
+    "30m_trend",
+    "30m_phase",
+    "30m_state",
+    "45m_swing",
+    "45m_trend",
+    "45m_phase",
+    "45m_state",
+    "60m_swing",
+    "60m_trend",
+    "60m_phase",
+    "60m_state",
+    "120m_swing",
+    "120m_trend",
+    "120m_phase",
+    "120m_state",
+    "240m_swing",
+    "240m_trend",
+    "240m_phase",
+    "240m_state"
+  ],
+  "codes": {
+    "swing": {
+      "0": "",
+      "1": "HH",
+      "2": "HL",
+      "3": "LL",
+      "4": "LH",
+      "5": "H",
+      "6": "L"
+    },
+    "trend": {
+      "0": "",
+      "1": "LONG",
+      "-1": "SHORT"
+    },
+    "phase": {
+      "0": "",
+      "1": "IMPULSE",
+      "2": "PULLBACK"
+    },
+    "state": {
+      "0": "",
+      "1": "S",
+      "2": "T+",
+      "3": "T-",
+      "4": "W"
+    }
+  }
+}

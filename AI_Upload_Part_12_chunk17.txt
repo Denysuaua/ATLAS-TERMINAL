@@ -1,0 +1,300 @@
+﻿                // Допущено, но уступает событию, уже отобранному за этот такт.
+                AddCandidate(sid, dir, conf, desc);
+                return;
+            }
+
+            // Прежде отобранное событие, если было, уступает новому.
+            if (pendingEvent != SwPacEvent.None)
+                AddCandidate(pendingSignalId, pendingDir, pendingConfidence, pendingShort);
+
+            pendingRank = rank;
+            pendingEvent = ev;
+            pendingDir = dir;
+            pendingConfidence = conf;
+            pendingText = desc + " @ " + level.ToString("F2");
+            pendingSignalId = sid;
+            pendingShort = desc;
+
+            Host.Trace(Id, "PAC_EVENT", pendingText + ", уверенность " + conf.ToString("F2"));
+        }
+
+        private bool IsPermitted(SwPacEvent ev, bool isHigher, SwPacScope scope)
+        {
+            if (!isHigher)
+            {
+                if (scope == SwPacScope.Internal)
+                    return ev == SwPacEvent.Bos ? cfg.LowInternalBos
+                         : ev == SwPacEvent.Choch ? cfg.LowInternalChoch
+                         : cfg.LowInternalChochPlus;
+
+                return ev == SwPacEvent.Bos ? cfg.LowSwingBos
+                     : ev == SwPacEvent.Choch ? cfg.LowSwingChoch
+                     : cfg.LowSwingChochPlus;
+            }
+
+            if (scope == SwPacScope.Internal)
+                return ev == SwPacEvent.Bos ? cfg.HighInternalBos
+                     : ev == SwPacEvent.Choch ? cfg.HighInternalChoch
+                     : cfg.HighInternalChochPlus;
+
+            return ev == SwPacEvent.Bos ? cfg.HighSwingBos
+                 : ev == SwPacEvent.Choch ? cfg.HighSwingChoch
+                 : cfg.HighSwingChochPlus;
+        }
+
+        private static string Describe(SwPacEvent ev, int dir, bool isHigher, SwPacScope scope)
+        {
+            return (isHigher ? "СТ" : "МЛ") + " "
+                 + (scope == SwPacScope.Swing ? "swg" : "int") + " "
+                 + (ev == SwPacEvent.ChochPlus ? "CHoCH+" : ev == SwPacEvent.Choch ? "CHoCH" : "BOS")
+                 + " " + (dir > 0 ? "long" : "short");
+        }
+
+        #endregion
+
+        #region Наблюдение: идентификаторы, визуализация, журнал (v1.1)
+
+        /// <summary>
+        /// Идентификатор события по времени бара пробоя на его серии:
+        /// PAC_ГГГГММДД_ЧЧММСС_{L|H}{I|S}_{BOS|CH|CHP}_{U|D}.
+        /// </summary>
+        private static string MakeSignalId(DateTime t, SwPacEvent ev, int dir, bool isHigher, SwPacScope scope)
+        {
+            return "PAC_" + t.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                 + "_" + (isHigher ? "H" : "L") + (scope == SwPacScope.Swing ? "S" : "I")
+                 + "_" + (ev == SwPacEvent.Bos ? "BOS" : ev == SwPacEvent.Choch ? "CH" : "CHP")
+                 + "_" + (dir > 0 ? "U" : "D");
+        }
+
+        /// <summary>Номер флага допуска в окне параметров ядра: [M87]-[M98].</summary>
+        private static int FlagIndex(SwPacEvent ev, bool isHigher, SwPacScope scope)
+        {
+            return (isHigher ? 67 : 61) + (scope == SwPacScope.Swing ? 3 : 0)
+                 + (ev == SwPacEvent.Bos ? 0 : ev == SwPacEvent.Choch ? 1 : 2);
+        }
+
+        private static string EventName(SwPacEvent ev)
+        {
+            return ev == SwPacEvent.ChochPlus ? "CHoCH+" : ev == SwPacEvent.Choch ? "CHoCH" : "BOS";
+        }
+
+        /// <summary>
+        /// Подтверждённая опорная точка — на баре экстремума, с его ценой. На
+        /// графике она появляется на баре подтверждения: так, как её видит модуль.
+        /// </summary>
+        private void VisualPivot(int slot, int centre, double price, bool isHighPivot, bool isHigher, SwPacScope scope)
+        {
+            try
+            {
+                SwVisualRole role = isHigher
+                    ? (scope == SwPacScope.Swing ? SwVisualRole.PivotSwingHigh : SwVisualRole.PivotInternalHigh)
+                    : (scope == SwPacScope.Swing ? SwVisualRole.PivotSwing : SwVisualRole.PivotInternal);
+                if (!Host.VisualOn(role)) return;
+
+                DateTime t = Host.TimeOf(slot, centre);
+                if (t == DateTime.MinValue) return;
+
+                double pad = Host.TickSize;
+                SwVisualKind kind = (isHigher || scope == SwPacScope.Swing) ? SwVisualKind.Diamond : SwVisualKind.Dot;
+                EmitVisual(SwVisualEvent.Marker(kind, role, t, isHighPivot ? price + pad : price - pad));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Событие такта запоминается для отрисовки после отбора: до отправки
+        /// сигнала неизвестно, какое из событий станет отобранным. Отсеянные
+        /// флагом не запоминаются вовсе, если отладочные объекты не видны.
+        /// </summary>
+        private void PrepareEventVisual(int slot, SwPacState st, SwPacEvent ev, int dir, bool isHigher,
+                                        SwPacScope scope, double level, bool filtered, int flag,
+                                        string sid, double conf)
+        {
+            try
+            {
+                if (filtered && !Host.VisualDebugOn) return;
+                bool wantLabel = Host.VisualOn(filtered ? SwVisualRole.StructureFiltered : SwVisualRole.StructureEvent);
+                bool wantLine = Host.VisualOn(filtered ? SwVisualRole.BreakLevelFiltered : SwVisualRole.BreakLevel);
+                if (!wantLabel && !wantLine) return;
+
+                DateTime tBreak = Host.TimeOf(slot, 0);
+                if (tBreak == DateTime.MinValue) return;
+
+                PacEventVis v = new PacEventVis();
+                v.Id = sid;
+                v.Filtered = filtered;
+                v.Flag = flag;
+                v.Conf = conf;
+                v.Dir = dir;
+                v.Text = EventName(ev) + " " + (isHigher ? "СТ" : "МЛ") + "·" + (scope == SwPacScope.Swing ? "swg" : "int");
+                v.TBreak = tBreak;
+                v.Level = level;
+                v.Hi = Host.HighOf(slot, 0);
+                v.Lo = Host.LowOf(slot, 0);
+                if (double.IsNaN(v.Hi) || double.IsNaN(v.Lo)) { v.Hi = level; v.Lo = level; }
+
+                int pivotBar = dir > 0 ? st.LastHighBar : st.LastLowBar;
+                int ago = Host.BarOf(slot) - pivotBar;
+                v.TPivot = pivotBar >= 0 && ago >= 0 ? Host.TimeOf(slot, ago) : DateTime.MinValue;
+
+                tickEventVis.Add(v);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Метки и уровни событий такта. Отобранное событие — рабочий объект
+        /// с главной подписью. Уступившие и отсеянные — отладочные: ранг
+        /// подписи 1, если уверенность выше [D02], иначе 2.
+        /// </summary>
+        private void EmitEventVisuals(SwSignal s)
+        {
+            if (tickEventVis.Count == 0) return;
+
+            double minConf = Host.MinConfidence;
+            double step = 3 * Host.TickSize;
+
+            foreach (PacEventVis v in tickEventVis)
+            {
+                bool selected = !v.Filtered && s.Direction != 0 && v.Id == pendingSignalId;
+                SwVisualRole labelRole = v.Filtered ? SwVisualRole.StructureFiltered : SwVisualRole.StructureEvent;
+                SwVisualRole lineRole = v.Filtered ? SwVisualRole.BreakLevelFiltered : SwVisualRole.BreakLevel;
+                int rank = selected ? 0 : (!v.Filtered && v.Conf > minConf ? 1 : 2);
+
+                if (Host.VisualOn(labelRole))
+                {
+                    double y = v.Dir > 0 ? v.Hi + step * (1 + labelsThisTick) : v.Lo - step * (1 + labelsThisTick);
+                    labelsThisTick++;
+                    SwVisualEvent e = SwVisualEvent.Label(labelRole, v.TBreak, y, v.Text).WithRank(rank);
+                    if (!selected) e = e.AsDebug();
+                    if (v.Filtered) e = e.WithDetail("[M" + v.Flag + " выкл]");
+                    EmitVisual(e);
+                }
+
+                if (Host.VisualOn(lineRole) && v.TPivot != DateTime.MinValue)
+                {
+                    SwVisualEvent e = SwVisualEvent.Segment(lineRole, v.TPivot, v.Level, v.TBreak, v.Level);
+                    if (!selected) e = e.AsDebug();
+                    EmitVisual(e);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Незавершённая опорная точка ([V02]): бар среди последних k, который
+        /// станет опорным, если следующие бары его не превысят. Правило то же,
+        /// что при подтверждении: строго слева, нестрого справа. Кандидат
+        /// может быть только один — бар с экстремумом среди последних k,
+        /// самый ранний при равенстве; для него проверяется левая сторона.
+        /// </summary>
+        private int FindCandidate(int slot, int k, bool high)
+        {
+            int best = -1;
+            double bv = 0;
+            for (int j = 0; j < k; j++)
+            {
+                double v = high ? Host.HighOf(slot, j) : Host.LowOf(slot, j);
+                if (double.IsNaN(v)) return -1;
+                if (best < 0 || (high ? v >= bv : v <= bv)) { best = j; bv = v; }
+            }
+            if (best < 0 || !Host.SlotReady(slot, best + k + 1)) return -1;
+
+            for (int i = k; i <= best + k; i++)
+            {
+                double v = high ? Host.HighOf(slot, i) : Host.LowOf(slot, i);
+                if (double.IsNaN(v) || (high ? v >= bv : v <= bv)) return -1;
+            }
+            return best;
+        }
+
+        private void VisualCandidates(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            try
+            {
+                SwVisualRole role = scope == SwPacScope.Swing
+                    ? SwVisualRole.PivotCandidateSwing : SwVisualRole.PivotCandidateInternal;
+                SwVisualRole tfRole = isHigher
+                    ? (scope == SwPacScope.Swing ? SwVisualRole.PivotSwingHigh : SwVisualRole.PivotInternalHigh)
+                    : (scope == SwPacScope.Swing ? SwVisualRole.PivotSwing : SwVisualRole.PivotInternal);
+                if (!Host.VisualOn(role) || !Host.VisualOn(tfRole)) return;
+
+                string kb = "CAND_" + (isHigher ? "H" : "L") + (scope == SwPacScope.Swing ? "S" : "I");
+                bool diamond = isHigher || scope == SwPacScope.Swing;
+                ShowCandidate(slot, st.Strength, true, kb + "_HI", role, diamond);
+                ShowCandidate(slot, st.Strength, false, kb + "_LO", role, diamond);
+            }
+            catch { }
+        }
+
+        /// <summary>Объект состояния по ключу: перерисовывается только при смене бара кандидата.</summary>
+        private void ShowCandidate(int slot, int k, bool high, string key, SwVisualRole role, bool diamond)
+        {
+            int j = FindCandidate(slot, k, high);
+            int shown;
+            bool had = candShown.TryGetValue(key, out shown);
+
+            if (j < 0)
+            {
+                if (had)
+                {
+                    EmitVisual(SwVisualEvent.RemoveState(key));
+                    candShown.Remove(key);
+                }
+                return;
+            }
+
+            int barNo = Host.BarOf(slot) - j;
+            if (had && shown == barNo) return;
+
+            DateTime t = Host.TimeOf(slot, j);
+            if (t == DateTime.MinValue) return;
+            double pad = Host.TickSize;
+            double px = high ? Host.HighOf(slot, j) + pad : Host.LowOf(slot, j) - pad;
+            EmitVisual(SwVisualEvent.Marker(diamond ? SwVisualKind.Diamond : SwVisualKind.Dot, role, t, px).AsState(key));
+            candShown[key] = barNo;
+        }
+
+        private void AddCandidate(string sid, int dir, double conf, string desc)
+        {
+            try
+            {
+                PacCandidate c = new PacCandidate();
+                c.Id = sid;
+                c.Dir = dir;
+                c.Conf = conf;
+                c.Desc = desc;
+                tickCandidates.Add(c);
+            }
+            catch { }
+        }
+
+        private void JournalNotSent(DateTime t, string sid, int dir, double conf, string desc, string reason)
+        {
+            try { Host.RequestSignalJournalEntry(Id, t, sid, dir, conf, desc, reason); }
+            catch { }
+        }
+
+        /// <summary>
+        /// После отправки: стрелка отправленного сигнала, метки и уровни событий
+        /// такта, записи журнала о событиях, уступивших отобранному.
+        /// </summary>
+        private void AfterEmit(SwSignal s)
+        {
+            try
+            {
+                if (s.Direction != 0)
+                {
+                    SwVisualRole role = s.Direction > 0 ? SwVisualRole.SignalLong : SwVisualRole.SignalShort;
+                    if (Host.VisualOn(role))
+                    {
+                        double pad = 2 * Host.TickSize;
+                        double y = s.Direction > 0 ? Host.Low(0) - pad : Host.High(0) + pad;
+                        EmitVisual(SwVisualEvent.Marker(s.Direction > 0 ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown,
+                            role, Host.Time, y));
+                    }
+                }
+
+                // Отрисовка событий отдельно обёрнута: её сбой не лишает журнал записей.
+                try { EmitEventVisuals(s); }
+                catch { }
+

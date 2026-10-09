@@ -1,0 +1,300 @@
+﻿            return SwMath.Phi(sr * Math.Sqrt(n - 1.0) / Math.Sqrt(den));
+        }
+
+        /// <summary>
+        /// Э25. Концентрация (AFML 14, с. 200): h = (n·Σr²/(Σr)² − 1)/(n − 1); 0 — ставки равны,
+        /// 1 — весь результат одной ставкой. Отдельно по выигрышам и по проигрышам.
+        /// </summary>
+        private static double Concentration(int n, double s1, double s2)
+        {
+            if (n < 2 || s1 == 0) return double.NaN;
+            return (n * s2 / (s1 * s1) - 1.0) / (n - 1.0);
+        }
+
+        private string BetStatsLine()
+        {
+            double psr = BetPsr(), hp = Concentration(betWins, betPosS1, betPosS2), hn = Concentration(betLosses, betNegS1, betNegS2);
+            return "PSR[0] " + (double.IsNaN(psr) ? "—" : psr.ToString("F3"))
+                 + ", концентрация выигрышей " + (double.IsNaN(hp) ? "—" : hp.ToString("F3"))
+                 + ", проигрышей " + (double.IsNaN(hn) ? "—" : hn.ToString("F3"));
+        }
+
+        /// <summary>Э14 [T25]. Риск-строка ставок для панели, сводки и пульта.</summary>
+        private string RiskLine()
+        {
+            int n = betWins + betLosses;
+            if (n == 0) return "ставок нет";
+            return "ставок " + n + ", точность " + cranePhat.ToString("F3")
+                 + ", p* " + (double.IsNaN(craneP) ? "—" : craneP.ToString("F3"))
+                 + ", P[p<p*] " + (double.IsNaN(craneProb) ? "—" : craneProb.ToString("F3"))
+                 + ", просадка " + betMaxDd.ToString("F0") + ", ставок без нового максимума " + betsSinceHwm
+                 + (craneBlocked ? "  [СТОП-КРАН]" : string.Empty);
+        }
+
+        /// <summary>
+        /// v1.6. Команды пульта. «Закрыть» — сразу заявкой исполнителя, без очереди требований
+        /// бара: прежде команда ждала закрытия бара серии исполнения — до 30 минут на M30.
+        /// </summary>
+        private void ProcessRemoteCommands(int bar)
+        {
+            if (ws == null) return;
+            string s;
+            while (ws.TryTakeLog(out s)) HubTrace("HUB", "WS", s);
+            while (ws.TryTakeCommand(out s))
+            {
+                if (s == "pause") { remotePauseEntries = true; HubTrace("HUB", "REMOTE_PAUSE", "пульт: новые входы приостановлены"); }
+                else if (s == "resume") { remotePauseEntries = false; HubTrace("HUB", "REMOTE_RESUME", "пульт: входы возобновлены"); }
+                else if (s == "flatten")
+                {
+                    HubTrace("HUB", "REMOTE_FLATTEN", "пульт: закрыть позицию");
+                    if (exec != null) exec.EmergencyFlatten("ПУЛЬТ: закрыть позицию", bar);
+                }
+            }
+        }
+
+        /// <summary>v1.6. Тик таймера — только вызов TriggerCustomEvent, как требует руководство (с. 1992).</summary>
+        private void OnRemoteTimerTick(object sender, EventArgs e)
+        {
+            if (State != State.Realtime || ws == null) return;
+            try { TriggerCustomEvent(RemoteCustomEvent, execBip, null); } catch { }
+        }
+
+        private void RemoteCustomEvent(object state)
+        {
+            ProcessRemoteCommands(CurrentBars[execBip]);
+        }
+
+        private static string WsEsc(string v)
+        {
+        	return string.IsNullOrEmpty(v) ? "" : v.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", " ").Replace("\r", " ");
+        }
+
+        private static string WsNum(double v) { return double.IsNaN(v) || double.IsInfinity(v) ? "null" : v.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+
+        /// <summary>Снимок бара для пульта. Время — UTC, секунды; центр масс = (H + L + C) / 3.</summary>
+        private void PublishSnapshot(int bar)
+        {
+        	if (ws == null || ws.ClientCount == 0) return;
+        	DateTime tUtc;
+        	try { tUtc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(Times[execBip][0], DateTimeKind.Unspecified), NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo); }
+        	catch { tUtc = DateTime.SpecifyKind(Times[execBip][0], DateTimeKind.Utc); }
+        	long ts = (long)(tUtc - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalSeconds;
+        	double o = Opens[execBip][0], h = Highs[execBip][0], l = Lows[execBip][0], c = Closes[execBip][0];
+        	wsSb.Clear();
+        	wsSb.Append("{\"t\":\"bar\",\"ts\":").Append(ts).Append(",\"o\":").Append(WsNum(o)).Append(",\"h\":").Append(WsNum(h))
+        		.Append(",\"l\":").Append(WsNum(l)).Append(",\"c\":").Append(WsNum(c)).Append(",\"com\":").Append(WsNum((h + l + c) / 3.0))
+        		.Append(",\"pos\":").Append(HubPositionSide).Append(",\"qty\":").Append(Position != null ? Position.Quantity : 0)
+        		.Append(",\"avg\":").Append(WsNum(Position != null ? Position.AveragePrice : 0)).Append(",\"pnl\":").Append(WsNum(HubRealizedPnl))
+        		.Append(",\"paused\":").Append(remotePauseEntries ? "true" : "false").Append(",\"dry\":").Append(DryRunMode ? "true" : "false")
+        		.Append(",\"desync\":").Append(desyncBlocked ? "true" : "false").Append(",\"crane\":").Append(craneBlocked ? "true" : "false")
+        		.Append(",\"bets\":").Append(betWins + betLosses).Append(",\"p_hat\":").Append(WsNum(cranePhat))
+        		.Append(",\"p_star\":").Append(WsNum(craneP)).Append(",\"p_fail\":").Append(WsNum(craneProb))
+        		.Append(",\"bet_dd\":").Append(WsNum(betMaxDd)).Append(",\"bets_since_hwm\":").Append(betsSinceHwm)
+        		.Append(",\"vis\":").Append(visualTotal)
+        		.Append(",\"ch\":[").Append(WsNum(channelPlot[0, 0])).Append(',').Append(WsNum(channelPlot[0, 1])).Append(',').Append(WsNum(channelPlot[0, 2])).Append(']')
+        		.Append(",\"mods\":[");
+        	bool first = true;
+        	foreach (SwModule m in modules)
+        	{
+        		if (!first) wsSb.Append(','); first = false;
+        		SwSignal sg = m.LastSignal;
+        		wsSb.Append("{\"id\":\"").Append(WsEsc(m.Id)).Append("\",\"role\":\"").Append(m.Role).Append("\",\"health\":\"").Append(m.Health)
+        			.Append("\",\"dir\":").Append(sg.Direction).Append(",\"conf\":").Append(WsNum(sg.Confidence))
+        			.Append(",\"txt\":\"").Append(WsEsc(sg.Text)).Append('"');
+			string tj = m.TelemetryJson(System.Globalization.CultureInfo.InvariantCulture);
+			if (tj != null) wsSb.Append(",\"x\":").Append(tj);
+			wsSb.Append('}');
+        	}
+        	wsSb.Append("]}");
+        	ws.Publish(wsSb.ToString());
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[U01] Сервер пульта", Order = 1, GroupName = "14 · Пульт реального времени",
+        	Description = "WebSocket на 127.0.0.1 для пульта «Атласа». Поднимается только в реальном времени, не в Strategy Analyzer.")]
+        public bool WsEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1024, 65535)]
+        [Display(Name = "[U02] Порт", Order = 2, GroupName = "14 · Пульт реального времени",
+        	Description = "Порт на 127.0.0.1. Две стратегии на одном ПК — разные порты.")]
+        public int WsPort { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[U03] Разрешить команды пульта", Order = 3, GroupName = "14 · Пульт реального времени",
+        	Description = "Пауза входов, возобновление, закрыть позицию. Выключено — пульт только наблюдает. Ключ — в dz_export\\atlas_ws_token.txt.")]
+        public bool WsAllowCommands { get; set; }
+        #endregion
+
+        #region Визуальный слой — приём и отрисовка событий модулей
+        // v1.19: хранилище состояний, колец и списка; отрисовка в OnRender. Прежнее кольцо оставлено для счётчика.
+        private readonly SwVisualEvent[] visualRing = new SwVisualEvent[512];
+        private int visualHead, visualTotal;
+        private readonly double[,] channelPlot = new double[8, 3];
+        private readonly object visLock = new object();
+        private readonly Dictionary<string, SwVisualEvent> visStates = new Dictionary<string, SwVisualEvent>(256);
+        private readonly Dictionary<string, List<SwVisualEvent>> visRings = new Dictionary<string, List<SwVisualEvent>>(32);
+        private readonly List<SwVisualEvent> visPlain = new List<SwVisualEvent>(1024);
+        private readonly List<string> visScratchKeys = new List<string>(64);
+        private const int VisRingCap = 256, VisPlainCap = 4096;
+
+        internal void HubVisual(string moduleId, SwVisualEvent e)
+        {
+        	visualRing[visualHead] = e;
+        	visualHead = (visualHead + 1) % visualRing.Length;
+        	visualTotal++;
+        	lock (visLock)
+        	{
+        		if (e.Shape == SwVisualShape.RemoveState) { if (!string.IsNullOrEmpty(e.StateKey)) visStates.Remove(e.StateKey); return; }
+        		if (e.Shape == SwVisualShape.RetireGroup)
+        		{
+        			if (string.IsNullOrEmpty(e.Group)) return;
+        			visScratchKeys.Clear();
+        			foreach (KeyValuePair<string, SwVisualEvent> kv in visStates) if (kv.Value.Group == e.Group) visScratchKeys.Add(kv.Key);
+        			for (int i = 0; i < visScratchKeys.Count; i++) visStates.Remove(visScratchKeys[i]);
+        			return;
+        		}
+        		if (!string.IsNullOrEmpty(e.StateKey)) { visStates[e.StateKey] = e; return; }
+        		if (!string.IsNullOrEmpty(e.RingKey))
+        		{
+        			List<SwVisualEvent> ring;
+        			if (!visRings.TryGetValue(e.RingKey, out ring)) { ring = new List<SwVisualEvent>(VisRingCap); visRings[e.RingKey] = ring; }
+        			ring.Add(e);
+        			if (ring.Count > VisRingCap) ring.RemoveRange(0, ring.Count - VisRingCap);
+        			return;
+        		}
+        		visPlain.Add(e);
+        		if (visPlain.Count > VisPlainCap) visPlain.RemoveRange(0, 512);
+        	}
+        }
+
+        /// <summary>v1.19. Кисть по роли: сигналы и структура — зелёный/красный, линии — синий, ядра — оранжевый и золото,
+        /// Лоренц — пурпурный, Калман — голубой, рычаг — бирюзовый, время и охрана — серый, прочее — белый.</summary>
+        private static int VisPalette(SwVisualRole r)
+        {
+        	switch (r)
+        	{
+        		case SwVisualRole.SignalLong: case SwVisualRole.StructureEvent: case SwVisualRole.BreakLevel: return 0;
+        		case SwVisualRole.SignalShort: case SwVisualRole.StructureFiltered: case SwVisualRole.BreakLevelFiltered: return 1;
+        		case SwVisualRole.TrfpLine1: case SwVisualRole.TrfpLine2: case SwVisualRole.TrfpLine3: case SwVisualRole.TrfpTrajectory: return 2;
+        		case SwVisualRole.KernelLine: return 3;
+        		case SwVisualRole.HurstKernelLine: return 4;
+        		case SwVisualRole.LorentzVote: return 5;
+        		case SwVisualRole.KalmanRange: case SwVisualRole.KalmanBreakout: case SwVisualRole.KalmanExit: case SwVisualRole.KalmanInteraction: return 6;
+        		case SwVisualRole.LeverVote: case SwVisualRole.LeverCenter: case SwVisualRole.LeverFulcrum: case SwVisualRole.LeverCluster: case SwVisualRole.LeverFade: return 7;
+        		case SwVisualRole.TimeWindow: case SwVisualRole.TimePause: case SwVisualRole.TimeFlattenBoundary:
+        		case SwVisualRole.GuardLock: case SwVisualRole.GuardLossLimit: case SwVisualRole.GuardProfitLimit: return 8;
+        		default: return 9;
+        	}
+        }
+
+        private void RenderVisualEvent(ChartControl chartControl, ChartScale chartScale, SwVisualEvent e, SharpDX.Direct2D1.Brush[] pal,
+        	SharpDX.DirectWrite.TextFormat tf, DateTime tFrom, DateTime tTo, float top, float bottom)
+        {
+        	if (e.IsDebug && !VisualDebugEnabled) return;
+        	if (e.Shape == SwVisualShape.RemoveState || e.Shape == SwVisualShape.RetireGroup) return;
+        	if (e.T1 < tFrom || e.T0 > tTo) return;
+        	SharpDX.Direct2D1.Brush br = pal[VisPalette(e.Role)];
+        	if (e.Variant < 0 && (e.Role == SwVisualRole.KernelLine || e.Role == SwVisualRole.HurstKernelLine || e.Role == SwVisualRole.LorentzVote)) br = pal[1];
+        	float x0 = chartControl.GetXByTime(e.T0), x1 = chartControl.GetXByTime(e.T1);
+        	float op = e.Opacity >= 0 ? Math.Max(0.1f, Math.Min(1f, e.Opacity / 100f)) : 1f;
+        	br.Opacity = op;
+        	switch (e.Shape)
+        	{
+        		case SwVisualShape.Segment:
+        			if (double.IsNaN(e.P0) || double.IsNaN(e.P1)) break;
+        			RenderTarget.DrawLine(new SharpDX.Vector2(x0, chartScale.GetYByValue(e.P0)), new SharpDX.Vector2(x1, chartScale.GetYByValue(e.P1)), br, 1.5f);
+        			break;
+        		case SwVisualShape.Arrow:
+        			if (double.IsNaN(e.P0) || double.IsNaN(e.P1)) break;
+        			RenderTarget.DrawLine(new SharpDX.Vector2(x0, chartScale.GetYByValue(e.P0)), new SharpDX.Vector2(x1, chartScale.GetYByValue(e.P1)), br, 2f);
+        			RenderTarget.FillEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(x1, chartScale.GetYByValue(e.P1)), 3f, 3f), br);
+        			break;
+        		case SwVisualShape.Marker:
+        		{
+        			if (double.IsNaN(e.P0)) break;
+        			float y = chartScale.GetYByValue(e.P0);
+        			if (e.Kind == SwVisualKind.ArrowUp || e.Kind == SwVisualKind.ArrowDown)
+        			{
+        				float d = e.Kind == SwVisualKind.ArrowUp ? -1f : 1f;
+        				RenderTarget.DrawLine(new SharpDX.Vector2(x0, y), new SharpDX.Vector2(x0, y + 10f * d), br, 2f);
+        				RenderTarget.DrawLine(new SharpDX.Vector2(x0 - 4f, y + 5f * d), new SharpDX.Vector2(x0, y), br, 2f);
+        				RenderTarget.DrawLine(new SharpDX.Vector2(x0 + 4f, y + 5f * d), new SharpDX.Vector2(x0, y), br, 2f);
+        			}
+        			else if (e.Kind == SwVisualKind.Diamond)
+        				RenderTarget.DrawRectangle(new SharpDX.RectangleF(x0 - 3f, y - 3f, 6f, 6f), br, 1.5f);
+        			else if (e.Kind == SwVisualKind.Text && !string.IsNullOrEmpty(e.Text))
+        			{
+        				using (SharpDX.DirectWrite.TextLayout tl = new SharpDX.DirectWrite.TextLayout(NinjaTrader.Core.Globals.DirectWriteFactory, e.Text, tf, 300f, tf.FontSize + 4f))
+        					RenderTarget.DrawTextLayout(new SharpDX.Vector2(x0 + 4f, y - tf.FontSize), tl, br);
+        			}
+        			else
+        				RenderTarget.FillEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(x0, y), 2.5f, 2.5f), br);
+        			break;
+        		}
+        		case SwVisualShape.Label:
+        			if (double.IsNaN(e.P0) || string.IsNullOrEmpty(e.Text)) break;
+        			using (SharpDX.DirectWrite.TextLayout tl = new SharpDX.DirectWrite.TextLayout(NinjaTrader.Core.Globals.DirectWriteFactory, e.Text, tf, 320f, tf.FontSize + 4f))
+        				RenderTarget.DrawTextLayout(new SharpDX.Vector2(x0 + 4f, chartScale.GetYByValue(e.P0) - tf.FontSize), tl, br);
+        			break;
+        		case SwVisualShape.Rect:
+        		{
+        			if (double.IsNaN(e.P0) || double.IsNaN(e.P1)) break;
+        			float ya = chartScale.GetYByValue(Math.Max(e.P0, e.P1)), yb = chartScale.GetYByValue(Math.Min(e.P0, e.P1));
+        			br.Opacity = op * 0.15f;
+        			RenderTarget.FillRectangle(new SharpDX.RectangleF(Math.Min(x0, x1), ya, Math.Max(1f, Math.Abs(x1 - x0)), Math.Max(1f, yb - ya)), br);
+        			br.Opacity = op;
+        			RenderTarget.DrawRectangle(new SharpDX.RectangleF(Math.Min(x0, x1), ya, Math.Max(1f, Math.Abs(x1 - x0)), Math.Max(1f, yb - ya)), br, 1f);
+        			break;
+        		}
+        		case SwVisualShape.Band:
+        			br.Opacity = op * 0.08f;
+        			RenderTarget.FillRectangle(new SharpDX.RectangleF(Math.Min(x0, x1), top, Math.Max(1f, Math.Abs(x1 - x0)), bottom - top), br);
+        			break;
+        		case SwVisualShape.VLine:
+        			RenderTarget.DrawLine(new SharpDX.Vector2(x0, top), new SharpDX.Vector2(x0, bottom), br, 1f);
+        			break;
+        	}
+        	br.Opacity = 1f;
+        }
+
+        private void RenderModuleVisuals(ChartControl chartControl, ChartScale chartScale, int from, int to)
+        {
+        	SharpDX.Direct2D1.Brush[] pal = new SharpDX.Direct2D1.Brush[10];
+        	System.Windows.Media.Brush[] src = {
+        		System.Windows.Media.Brushes.LimeGreen, System.Windows.Media.Brushes.Red, System.Windows.Media.Brushes.DodgerBlue,
+        		System.Windows.Media.Brushes.Orange, System.Windows.Media.Brushes.Gold, System.Windows.Media.Brushes.Magenta,
+        		System.Windows.Media.Brushes.DeepSkyBlue, System.Windows.Media.Brushes.Turquoise, System.Windows.Media.Brushes.Gray,
+        		System.Windows.Media.Brushes.White };
+        	for (int i = 0; i < pal.Length; i++) pal[i] = src[i].ToDxBrush(RenderTarget);
+        	SharpDX.DirectWrite.TextFormat tf = chartControl.Properties.LabelFont.ToDirectWriteTextFormat();
+        	try
+        	{
+        		DateTime tFrom = Bars.GetTime(Math.Max(0, from)), tTo = Bars.GetTime(Math.Min(Bars.Count - 1, to)).AddMinutes(1);
+        		float top = (float)chartScale.GetYByValue(chartScale.MaxValue), bottom = (float)chartScale.GetYByValue(chartScale.MinValue);
+        		lock (visLock)
+        		{
+        			for (int i = 0; i < visPlain.Count; i++) RenderVisualEvent(chartControl, chartScale, visPlain[i], pal, tf, tFrom, tTo, top, bottom);
+        			foreach (KeyValuePair<string, List<SwVisualEvent>> kv in visRings)
+        				for (int i = 0; i < kv.Value.Count; i++) RenderVisualEvent(chartControl, chartScale, kv.Value[i], pal, tf, tFrom, tTo, top, bottom);
+        			foreach (KeyValuePair<string, SwVisualEvent> kv in visStates) RenderVisualEvent(chartControl, chartScale, kv.Value, pal, tf, tFrom, tTo, top, bottom);
+        		}
+        	}
+        	finally
+        	{
+        		for (int i = 0; i < pal.Length; i++) if (pal[i] != null) pal[i].Dispose();
+        		tf.Dispose();
+        	}
+        }
+
+        internal void HubChannelPlot(int track, int line, double value, int variant)
+        {
+        	if (track >= 0 && track < 8 && line >= 0 && line < 3) channelPlot[track, line] = value;
+        }
+
+        internal int VisualEventsTotal { get { return visualTotal; } }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[V01] Визуализация модулей", Order = 1, GroupName = "13 · Визуализация",
+        	Description = "Разрешает модулям выдавать события визуального слоя и рисует их на графике: линии, маркеры, подписи, зоны (v1.19). Выключено — модули не рисуют, светофор решений остаётся.")]
+        public bool VisualsEnabled { get; set; }

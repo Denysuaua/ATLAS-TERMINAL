@@ -1,0 +1,300 @@
+﻿| `pac` | `ExpBreakWindow` | [M10] Структура: окно ATR и объёма, баров | `PacExpBreakWindow` |
+| `pac` | `ExpMinBarsBetweenSignals` | [M18] Структура: минимум баров между сигналами (эксперимент) | `PacExpMinBarsBetween` |
+| `dc` | `M1BarMinutes` | [W42] Пробой: длина бара минутной серии, минут | `DboM1BarMinutes` |
+| `dc` | `Zone` | [M81] Пробой: часовой пояс окон | `DboWindowZone` |
+| `Morning` | `Enabled` | [M82] Пробой: утренняя сессия | `DboUseMorning` |
+| `Evening` | `Enabled` | [M83] Пробой: вечерняя сессия | `DboUseEvening` |
+| `dc` | `M1Slot` | [M84] Пробой: слот минутной серии | `DboM1Slot` |
+| `dc` | `M15Slot` | [M85] Пробой: слот серии 15M | `DboM15Slot` |
+| `dc` | `H4Slot` | [M86] Пробой: слот серии 4H | `DboH4Slot` |
+| `Morning` | `BaseStart` | [W11] Утро: база, начало | `DboMorningBaseStart` |
+| `Morning` | `BaseEnd` | [W12] Утро: база, конец | `DboMorningBaseEnd` |
+| `Morning` | `SignalStart` | [W13] Утро: окно сигналов, начало | `DboMorningSignalStart` |
+| `Morning` | `SignalEnd` | [W14] Утро: окно сигналов, конец | `DboMorningSignalEnd` |
+| `Morning` | `SessionEnd` | [W15] Утро: выход по времени | `DboMorningSessionEnd` |
+| `Morning` | `TrailTicks` | [W16] Утро: трейлинг, тиков | `DboMorningTrailTicks` |
+| `Evening` | `BaseStart` | [W21] Вечер: база, начало | `DboEveningBaseStart` |
+| `Evening` | `BaseEnd` | [W22] Вечер: база, конец | `DboEveningBaseEnd` |
+| `Evening` | `SignalStart` | [W23] Вечер: окно сигналов, начало | `DboEveningSignalStart` |
+| `Evening` | `SignalEnd` | [W24] Вечер: окно сигналов, конец | `DboEveningSignalEnd` |
+| `Evening` | `SessionEnd` | [W25] Вечер: выход по времени | `DboEveningSessionEnd` |
+| `Evening` | `TrailTicks` | [W26] Вечер: трейлинг, тиков | `DboEveningTrailTicks` |
+| `dc` | `MinRangeTicks` | [W31] Ширина базы, минимум, тиков | `DboMinRangeTicks` |
+| `dc` | `MaxRangeTicks` | [W32] Ширина базы, максимум, тиков | `DboMaxRangeTicks` |
+| `dc` | `MinBaseBars` | [W33] Минимум баров базы | `DboMinBaseBars` |
+| `dc` | `FlatThreshold` | [W34] Порог NormVol | `DboFlatThreshold` |
+| `dc` | `AtrFast` | [W35] ATR быстрый, баров 15M | `DboAtrFast` |
+| `dc` | `AtrSlow` | [W36] ATR медленный, баров 15M | `DboAtrSlow` |
+| `dc` | `TrendBars` | [W37] Баров 4H для наклона | `DboTrendBars` |
+| `dc` | `EntryOffsetTicks` | [W38] Отступ входа от границы базы, тиков | `DboEntryOffsetTicks` |
+| `dc` | `MaxEntriesPerSession` | [W39] Предел входов за сессию | `DboMaxEntries` |
+| `dc` | `EveningDir` | [W40] Направление вечера | `DboEveningDir` |
+| `dc` | `CloseAtSessionEnd` | [W41] Закрывать позицию по окончании сессии | `DboCloseAtSessionEnd` |
+| `dc` | `ExpRetestEntry` | [W43] Пробой: вход на ретесте (эксперимент) | `DboExpRetest` |
+| `dc` | `ExpRetestBeyondBars` | [W44] Пробой: удержание за границей, минуток | `DboExpRetestBars` |
+| `dc` | `ExpAtrWidth` | [W45] Пробой: ширина базы в ATR 15M (эксперимент) | `DboExpAtrWidth` |
+| `dc` | `ExpAtrMin` | [W46] Пробой: ширина базы, минимум ATR | `DboExpAtrMin` |
+| `dc` | `ExpAtrMax` | [W47] Пробой: ширина базы, максимум ATR | `DboExpAtrMax` |
+| `kc` | `AdaptMin` | [K66] Адаптация окна: множитель, минимум | `KerAdaptMin` |
+| `kc` | `AdaptMax` | [K67] Адаптация окна: множитель, максимум | `KerAdaptMax` |
+| `kc` | `SkillWindow` | [K68] Окно самопроверки, баров | `KerSkillWindow` |
+| `kc` | `Kernel` | [K50] Ядро | `KerKernel` |
+| `kc` | `Regression` | [K51] Тип регрессии | `KerRegression` |
+| `kc` | `Slot` | [K52] Слот серии | `KerSlot` |
+| `kc` | `Bandwidth` | [K53] Ширина окна, баров | `KerBandwidth` |
+| `kc` | `AdaptiveBandwidth` | [K54] Адаптивная ширина окна | `KerAdaptive` |
+| `kc` | `VolumeWeighting` | [K55] Вес по объёму | `KerVolumeWeighting` |
+| `kc` | `VolumeGamma` | [K56] Множитель γ веса объёма | `KerVolumeGamma` |
+| `kc` | `VolumeScale` | [K57] Нормировка объёма | `KerVolumeScale` |
+| `kc` | `VolumeWindow` | [K58] Окно статистики объёма, баров | `KerVolumeWindow` |
+| `kc` | `SlopeThresholdTicks` | [K59] Порог наклона, тиков на бар | `KerSlopeThreshold` |
+| `kc` | `Divergence` | [K60] Действие при развороте наклона против позиции | `KerDivergence` |
+| `kc` | `ExpSlopeTGate` | [K61] Значимость наклона | `KerExpTGate` |
+| `kc` | `ExpTMin` | [K62] Порог t-статистики | `KerExpTMin` |
+| `kc` | `ExpFastSlowCross` | [K63] Пересечение быстрой и медленной прямых | `KerExpFastSlow` |
+| `kc` | `ExpSkillCheck` | [K64] Самопроверка предсказательной силы | `KerExpSkill` |
+| `kc` | `ExpShrinkTauTicks` | [K69] Сжатие наклона к нулю, τ тиков на бар (эксперимент) | `KerExpShrinkTau` |
+| `kc` | `SignalMode` | [K65] Режим сигнала | `KerSignalMode` |
+| `kalc` | `Bands` | [C08] Границы канала | `KalBands` |
+| `kalc` | `EntryWindowMin` | [C09] Окно входа: минимум, баров | `KalEntryWindowMin` |
+| `kalc` | `EntryWindowMax` | [C10] Окно входа: максимум, баров | `KalEntryWindowMax` |
+| `kalc` | `EscortWindowMin` | [C11] Окно сопровождения: минимум, баров | `KalEscortWindowMin` |
+| `kalc` | `EscortWindowMax` | [C12] Окно сопровождения: максимум, баров | `KalEscortWindowMax` |
+| `kalc` | `FlatTilt` | [C13] Горизонталь: смещение не больше, доля ширины | `KalFlatTilt` |
+| `kalc` | `SymmetryMax` | [C14] Симметрия: дисбаланс не больше | `KalSymmetryMax` |
+| `kalc` | `RangeConfirmBars` | [C15] Боковик: свечей подряд | `KalRangeConfirmBars` |
+| `kalc` | `TrendZ` | [C16] Тренд: значимость наклона, z | `KalTrendZ` |
+| `kalc` | `TrendTilt` | [C17] Тренд: смещение середины, доля ширины | `KalTrendTilt` |
+| `kalc` | `CompressionRatio` | [C18] Сжатие: ширина к средней ниже | `KalCompressionRatio` |
+| `kalc` | `ExpansionRatio` | [C19] Расширение: ширина к средней выше | `KalExpansionRatio` |
+| `kalc` | `DirectionTf` | [C20] ТФ направления | `KalDirectionTf` |
+| `kalc` | `EscortTf` | [C21] ТФ сопровождения | `KalEscortTf` |
+| `kalc` | `RequireHigherAgreement` | [C22] Требовать согласия старшего ТФ | `KalRequireHigherAgreement` |
+| `kalc` | `SignalBars` | [C23] Сигнал действует, баров | `KalSignalBars` |
+| `kalc` | `EscortStop` | [C24] Сопровождать стопом по границе | `KalEscortStop` |
+| `kalc` | `StopOffsetTicks` | [C25] Отступ стопа от границы, тиков | `KalStopOffsetTicks` |
+| `kalc` | `ExitOnSlopeFlip` | [C26] Выход при развороте середины | `KalExitOnSlopeFlip` |
+| `kalc` | `ExitConfirmBars` | [C27] Разворот подтверждён, баров | `KalExitConfirmBars` |
+| `kalc` | `Research` | [C28] Исследование: статистика в Output | `KalResearch` |
+| `kalc` | `ResearchHorizon` | [C29] Исследование: горизонт исхода, баров | `KalResearchHorizon` |
+| `kalc` | `RangeHoldBars` | [C30] Исследование: удержание боковика, баров | `KalRangeHoldBars` |
+| `kalc` | `WarmupPeriods` | [C31] Прогрев, эквивалентных периодов | `KalWarmupPeriods` |
+| `kalc` | `ProvisionalDisplay` | [C32] Показывать предварительный канал | `KalProvisionalDisplay` |
+| `kalc` | `Role` | [C01] Роль | `KalRole` |
+| `kalc` | `LowerSlot` | [C02] Младшая серия | `KalLowerSlot` |
+| `kalc` | `CurrentSlot` | [C03] Текущая серия | `KalCurrentSlot` |
+| `kalc` | `HigherSlot` | [C04] Старшая серия | `KalHigherSlot` |
+| `kalc` | `Period` | [C05] Период | `KalPeriod` |
+| `kalc` | `BandSigma` | [C06] Ширина полос, σ | `KalBandSigma` |
+| `kalc` | `Policy` | [C07] Политика фильтра | `KalPolicy` |
+| `kalc` | `ExpNisGate` | [C33] Порог несогласованности фильтра (эксперимент) | `KalExpNisGate` |
+| `levc` | `Weight` | [B07] Масса кластера | `LevWeight` |
+| `levc` | `Fulcrum` | [B08] Опора | `LevFulcrum` |
+| `levc` | `Measure` | [B09] Мера баланса | `LevMeasure` |
+| `levc` | `SmoothCandles` | [B10] Сглаживание, свечей | `LevSmoothCandles` |
+| `levc` | `ScaleWindow` | [B11] Окно масштаба, свечей | `LevScaleWindow` |
+| `levc` | `SignalWithTrend` | [B12] Сигнал только по тренду | `LevSignalWithTrend` |
+| `levc` | `TrendWindow` | [B13] Окно тренда, свечей | `LevTrendWindow` |
+| `levc` | `SignalBars` | [B14] Сигнал действует, баров | `LevSignalBars` |
+| `levc` | `ExitAgainst` | [B15] Выход при голосе против | `LevExitAgainst` |
+| `levc` | `ExitConfirm` | [B16] Голос против подтверждён, свечей | `LevExitConfirm` |
+| `levc` | `MinHeightTicks` | [B17] Минимальная высота свечи, тиков | `LevMinHeightTicks` |
+| `levc` | `Finalize` | [B18] Готовность голоса | `LevFinalize` |
+| `levc` | `Research` | [B19] Исследование: статистика в Output | `LevResearch` |
+| `levc` | `ResearchHorizon` | [B20] Исследование: горизонт, свечей | `LevResearchHorizon` |
+| `levc` | `Role` | [B01] Роль | `LevRole` |
+| `levc` | `AnalysisSlot` | [B02] Серия анализа | `LevAnalysisSlot` |
+| `levc` | `ClusterSlot` | [B03] Серия кластеров | `LevClusterSlot` |
+| `levc` | `Clusters` | [B04] Кластеров | `LevClusters` |
+| `levc` | `VoteZ` | [B05] Порог голоса, z | `LevVoteZ` |
+| `levc` | `Policy` | [B06] Политика | `LevPolicy` |
+| `levc` | `ExpPocMeasure` | [B21] Мера POC (эксперимент) | `LevExpPoc` |
+| `hmc` | `SqueezeLookback` | [G11] История ширины для сжатия, расчётов | `HmSqueezeLookback` |
+| `hmc` | `Slot` | [G01] Серия | `HmSlot` |
+| `hmc` | `WindowMinutes` | [G02] Окно, минут | `HmWindow` |
+| `hmc` | `Weight5` | [G03] Вес эшелона 5M | `HmWeight5` |
+| `hmc` | `Weight15` | [G04] Вес эшелона 15M | `HmWeight15` |
+| `hmc` | `Percentile` | [G06] Процентиль ширины | `HmPercentile` |
+| `hmc` | `BiasThresholdTicks` | [G07] Порог смещения, тиков | `HmBiasThreshold` |
+| `hmc` | `SignalMode` | [G05] Режим сигнала | `HmSignalMode` |
+| `hmc` | `ExpSqueezeGate` | [G08] Шлюз сжатия | `HmExpSqueeze` |
+| `hmc` | `ExpSqueezeRatio` | [G09] Доля медианы для сжатия | `HmExpSqueezeRatio` |
+| `hmc` | `ExpPersistBars` | [G10] Устойчивость знака, расчётов | `HmExpPersist` |
+| `hmc` | `ExpTrendScan` | [G12] Подтверждение трендовым сканированием (эксперимент) | `HmExpTrendScan` |
+| `hmc` | `ExpScanMin` | [G13] Сканирование: минимальное окно, минут | `HmExpScanMin` |
+| `hmc` | `ExpScanT` | [G14] Сканирование: порог t | `HmExpScanT` |
+| `fc` | `Path` | [Q01] Файл сигнала | `FsPath` |
+| `fc` | `MaxAgeSeconds` | [Q02] Свежесть, секунд | `FsMaxAge` |
+| `fc` | `MaxLagBars` | [Q03] Отставание, баров | `FsMaxLag` |
+| `fc` | `SignalMode` | [Q04] Режим сигнала | `FsSignalMode` |
+| `fc` | `MinConfidence` | [Q05] Минимальная уверенность | `FsMinConfidence` |
+| `fc` | `ExpBetSize` | [Q06] Уверенность как размер ставки AFML (эксперимент) | `FsExpBetSize` |
+| `hc` | `Slot` | [H01] Слот серии | `HkSlot` |
+| `hc` | `Regression` | [H02] Тип регрессии | `HkRegression` |
+| `hc` | `Kernel` | [H03] Ядро | `HkKernel` |
+| `hc` | `HurstPeriod` | [H04] Окно Хёрста, доходностей | `HkHurstPeriod` |
+| `hc` | `MinBandwidth` | [H05] Ширина окна, минимум | `HkMinBandwidth` |
+| `hc` | `MaxBandwidth` | [H06] Ширина окна, максимум | `HkMaxBandwidth` |
+| `hc` | `HLow` | [H07] Хёрст, нижняя граница отображения | `HkHLow` |
+| `hc` | `HHigh` | [H08] Хёрст, верхняя граница отображения | `HkHHigh` |
+| `hc` | `RwLevel` | [H15] Уровень блуждания оценщика | `HkRwLevel` |
+| `hc` | `SlopeThresholdTicks` | [H09] Порог наклона, тиков на бар | `HkSlopeThreshold` |
+| `hc` | `SignalMode` | [H10] Режим сигнала | `HkSignalMode` |
+| `hc` | `ExpRandomWalkGate` | [H11] Шлюз блуждания | `HkExpGate` |
+| `hc` | `ExpGateBand` | [H12] Полоса шлюза | `HkExpGateBand` |
+| `hc` | `ExpInverseMap` | [H13] Обратное отображение | `HkExpInverse` |
+| `hc` | `ExpHurstConfidence` | [H14] Уверенность по Хёрсту | `HkExpConfidence` |
+| `hc` | `ExpPriorObs` | [H16] Хёрст: априорных наблюдений блуждания (эксперимент) | `HkExpPriorObs` |
+| `lc` | `EvalWindow` | [L22] Окно самопроверки, прогнозов | `LorEvalWindow` |
+| `lc` | `Slot` | [L01] Слот серии | `LorSlot` |
+| `lc` | `Lookback` | [L02] Окно поиска, баров | `LorLookback` |
+| `lc` | `Neighbors` | [L03] Число соседей K | `LorNeighbors` |
+| `lc` | `Stride` | [L04] Шаг выборки соседей | `LorStride` |
+| `lc` | `Horizon` | [L05] Горизонт метки, баров | `LorHorizon` |
+| `lc` | `VoteThreshold` | [L06] Порог перевеса голосов | `LorVoteThreshold` |
+| `lc` | `UseYeoJohnson` | [L07] Нормализация Йео–Джонсона | `LorYeoJohnson` |
+| `lc` | `RefitBars` | [L08] Пересчёт нормализации, баров | `LorRefitBars` |
+| `lc` | `FitWindow` | [L09] Окно нормализации, баров | `LorFitWindow` |
+| `lc` | `KalmanQ` | [L10] Калман: шум процесса Q | `LorKalmanQ` |
+| `lc` | `KalmanR` | [L11] Калман: шум измерения R | `LorKalmanR` |
+| `lc` | `SignalMode` | [L12] Режим сигнала | `LorSignalMode` |
+| `lc` | `ExpKernelVote` | [L13] Голос с гауссовым весом | `LorExpKernelVote` |
+| `lc` | `ExpPrecisionGate` | [L14] Самопроверка точности | `LorExpPrecisionGate` |
+| `lc` | `ExpPrecisionMin` | [L15] Порог точности | `LorExpPrecisionMin` |
+| `lc` | `ExpAgreeKernel` | [L16] Согласие с адаптивным ядром | `LorExpAgreeKernel` |
+| `lc` | `Method` | [L17] Метод решения | `LorMethod` |
+| `lc` | `NwKernel` | [L18] Ядро Надарая–Ватсона | `LorNwKernel` |
+| `lc` | `NwBandMult` | [L19] Ширина ядра, доля медианы расстояний | `LorNwBandMult` |
+| `lc` | `NwThreshold` | [L20] Порог прогноза, ATR | `LorNwThreshold` |
+| `lc` | `NwMinEff` | [L21] Минимальный эффективный объём | `LorNwMinEff` |
+| `lc` | `ExpEmbargoBars` | [L23] Эмбарго, баров (эксперимент) | `LorExpEmbargo` |
+| `lc` | `ExpDecayHalfLife` | [L24] Полураспад веса соседа, баров (эксперимент) | `LorExpHalfLife` |
+| `t` | `NeutralPolicy` | [M103] Линии: нейтральная линия | `TrfpPeriodNeutralPolicy` |
+| `Line1` | `Slot` | [M11] Линии: слот линии 1 | `TrfpLine1Slot` |
+| `Line1` | `Period` | [M15] Линии: период сглаживания | `TrfpPeriod` |
+| `Line1` | `Multiplier` | [M16] Линии: множитель ширины | `TrfpMultiplier` |
+| `Line2` | `Slot` | [M12] Линии: слот линии 2 | `TrfpLine2Slot` |
+| `Line2` | `Period` | [M15] Линии: период сглаживания | `TrfpPeriod` |
+| `Line2` | `Multiplier` | [M16] Линии: множитель ширины | `TrfpMultiplier` |
+| `Line3` | `Slot` | [M13] Линии: слот линии 3 | `TrfpLine3Slot` |
+| `Line3` | `Period` | [M15] Линии: период сглаживания | `TrfpPeriod` |
+| `Line3` | `Multiplier` | [M16] Линии: множитель ширины | `TrfpMultiplier` |
+| `Line3` | `Enabled` | [M14] Линии: использовать третью | `TrfpUseLine3` |
+| `t` | `WarmupBarsPerLine` | [M15] Линии: период сглаживания | `TrfpPeriod` |
+| `t` | `ExpMinBarsAfterFlip` | [M17] Линии: баров после переворота до права голоса (эксперимент) | `TrfpExpMinBarsAfterFlip` |
+| `tc` | `OutsidePolicy` | [M07] Время: закрывать позицию на жёсткой границе | `TimeForceFlatten` |
+| `tc` | `EscortUntilHhmmss` | [M30] Время: новые входы до, ЧЧММСС | `TimeEntriesUntil` |
+| `tc` | `UseForceClose` | [M35] Время: принудительное закрытие | `TimeForceCloseOn` |
+| `tc` | `ForceCloseHhmmss` | [M36] Время: время закрытия, ЧЧММСС | `TimeForceCloseAt` |
+| `tc` | `AllowMonday` | [M37] Время: понедельник | `TimeMon` |
+| `tc` | `AllowTuesday` | [M38] Время: вторник | `TimeTue` |
+| `tc` | `AllowWednesday` | [M39] Время: среда | `TimeWed` |
+| `tc` | `AllowThursday` | [M40] Время: четверг | `TimeThu` |
+| `tc` | `AllowFriday` | [M45] Время: пятница | `TimeFri` |
+| `tc` | `ExpActiveShare` | [M46] Время: только активные часы, доля средней активности (эксперимент) | `TimeExpActiveShare` |
+| `tc` | `ActivitySlot` | [S90] Серия исполнения — слот | `ExecSeriesSlot` |
+| `rc` | `AggregationQ` | [M104] Режим: порядок агрегирования q | `RegimeAggregationQ` |
+| `rc` | `VarianceMode` | [M105] Режим: дисперсия оценки | `RegimeVarianceMode` |
+| `rc` | `ZThreshold` | [M106] Режим: порог z | `RegimeZThreshold` |
+| `rc` | `ExpHamiltonMinProb` | [M47] Режим: порог вероятности режима, фильтр Гамильтона (эксперимент) | `RegimeExpHamiltonProb` |
+| `rc` | `ExpHamiltonStay` | [M48] Режим: вероятность сохранить режим за бар | `RegimeExpHamiltonStay` |
+| `rc` | `RequireDriftAgreement` | [M107] Режим: дрейф по направлению входа | `RegimeRequireDriftAgreement` |
+| `rc` | `DriftZThreshold` | [M108] Режим: порог z дрейфа | `RegimeDriftZThreshold` |
+| `rc` | `Slot` | [M21] Режим: слот серии | `RegimeSlot` |
+| `rc` | `WindowLength` | [M22] Режим: длина окна | `RegimeWindow` |
+| `rc` | `Allow` | [M23] Режим: какой допускает вход | `RegimeAllow` |
+| `gc` | `UseDailyGuard` | [M109] Риск: дневные лимиты | `GuardUseDailyGuard` |
+| `gc` | `ExpLossSigma` | [M59] Охрана: лимит убытка дня в σ (эксперимент) | `GuardExpLossSigma` |
+| `gc` | `UseProfitLock` | [M110] Риск: замок прибыли | `GuardUseProfitLock` |
+| `gc` | `ProfitLockArmAt` | [M111] Риск: взвод замка при прибыли дня | `GuardProfitLockArmAt` |
+| `gc` | `ProfitLockGiveBackPct` | [M112] Риск: допустимый откат от пика, % | `GuardProfitLockGiveBackPct` |
+| `gc` | `UseNewsFilter` | [M113] Риск: фильтр новостей | `GuardUseNewsFilter` |
+| `gc` | `MinutesBefore` | [M114] Риск: пауза до новости, минут | `GuardMinutesBefore` |
+| `gc` | `MinutesAfter` | [M115] Риск: пауза после новости, минут | `GuardMinutesAfter` |
+| `gc` | `MinImpact` | [M116] Риск: минимальная значимость новости | `GuardMinImpact` |
+| `gc` | `MissingCalendarBlocks` | [M117] Риск: нет календаря — запрет входа | `GuardMissingCalendarBlocks` |
+| `gc` | `DailyLossLimit` | [M31] Риск: дневной лимит убытка | `GuardDailyLoss` |
+| `gc` | `DailyProfitLimit` | [M32] Риск: дневной лимит прибыли | `GuardDailyProfit` |
+| `gc` | `BreachAction` | [M33] Риск: действие при пробитии | `GuardBreachAction` |
+| `gc` | `RestartPolicy` | [M34] Риск: поведение при перезапуске | `GuardRestartPolicy` |
+| `gc` | `NewsCsvPath` | [M131] Риск: файл календаря новостей | `GuardNewsFile` |
+| `gc` | `ExpLossStreakPause` | [M132] Риск: пауза после убыточных ставок подряд (эксперимент) | `GuardLossStreakPause` |
+| `gc` | `ExpShockMultiplier` | [M133] Риск: всплеск волатильности, множитель (эксперимент) | `GuardShockMultiplier` |
+| `gc` | `ExpShockPauseBars` | [M134] Риск: пауза после всплеска, баров | `GuardShockPauseBars` |
+| `ac` | `MultiplierLowVol` | [M118] Адапт.стоп: множитель при низкой волатильности | `AStopMultiplierLowVol` |
+| `ac` | `MultiplierMidVol` | [M119] Адапт.стоп: множитель при средней волатильности | `AStopMultiplierMidVol` |
+| `ac` | `MultiplierHighVol` | [M120] Адапт.стоп: множитель при высокой волатильности | `AStopMultiplierHighVol` |
+| `ac` | `VolRankLookback` | [M121] Адапт.стоп: окно ранга волатильности, баров | `AStopVolRankLookback` |
+| `ac` | `LowVolPercentile` | [M122] Адапт.стоп: граница низкой волатильности, перцентиль | `AStopLowVolPercentile` |
+| `ac` | `HighVolPercentile` | [M123] Адапт.стоп: граница высокой волатильности, перцентиль | `AStopHighVolPercentile` |
+| `ac` | `WarmupBars` | [M124] Адапт.стоп: прогрев, баров | `AStopWarmupBars` |
+| `ac` | `RequireProtectiveSide` | [M125] Адапт.стоп: только с защитной стороны | `AStopRequireProtectiveSide` |
+| `ac` | `MinBarsBetweenRequests` | [M126] Адапт.стоп: баров между просьбами | `AStopMinBarsBetweenRequests` |
+| `ac` | `Slot` | [M41] Адапт.стоп: слот серии | `AStopSlot` |
+| `ac` | `AtrPeriod` | [M42] Адапт.стоп: период | `AStopAtrPeriod` |
+| `ac` | `WidthMode` | [M43] Адапт.стоп: режим ширины | `AStopWidthMode` |
+| `ac` | `FixedMultiplier` | [M44] Адапт.стоп: множитель | `AStopFixedMultiplier` |
+| `ac` | `ExpEwmaVol` | [M49] Адапт.стоп: ширина по волатильности доходностей (эксперимент) | `AStopExpEwma` |
+| `ac` | `ExpEwmaSpan` | [M50] Адапт.стоп: период EWMA, баров | `AStopExpEwmaSpan` |
+| `ec` | `FullExit` | [M127] Выход: закрывать всю позицию | `EscortFullExit` |
+| `ec` | `PartialQuantity` | [M128] Выход: частичный выход, контрактов | `EscortPartialQuantity` |
+| `ec` | `MinBarsInTrade` | [M129] Выход: минимум баров в позиции | `EscortMinBarsInTrade` |
+| `ec` | `StaleAfterBars` | [M130] Выход: застой линий после, баров | `EscortStaleAfterBars` |
+| `ec` | `LineNumber` | [M51] Выход: номер линии | `EscortLineNumber` |
+| `ec` | `Trigger` | [M52] Выход: повод | `EscortTrigger` |
+| `ec` | `ConfirmBars` | [M53] Выход: подтверждение, баров | `EscortConfirmBars` |
+| `ec` | `ExpVerticalBars` | [M54] Выход по линии: вертикальный барьер, баров (эксперимент) | `EscortExpVerticalBars` |
+
+## Ссылки модулей на слоты пула [S50]–[S82]
+
+Невключённый слот уводит расчёт на серию графика; в боевом режиме такое замечание запрещает новые входы (сторож конфигурации v1.1).
+
+| Проверка | Свойство-ссылка |
+|---|---|
+| [M01] структура, младший ТФ | `PacLowerSlot` |
+| [M02] структура, старший ТФ | `PacHigherSlot` |
+| [M11] линия 1 | `TrfpLine1Slot` |
+| [M12] линия 2 | `TrfpLine2Slot` |
+| [M13] линия 3 | `TrfpLine3Slot` |
+| [M21] режим рынка | `RegimeSlot` |
+| [M84] пробой, минутная серия | `DboM1Slot` |
+| [M85] пробой, серия 15M | `DboM15Slot` |
+| [M86] пробой, серия 4H | `DboH4Slot` |
+| [M41] адаптивный стоп | `AStopSlot` |
+| [K52] адаптивное ядро | `KerSlot` |
+| [L01] классификатор Лоренца | `LorSlot` |
+| [H01] ядро по Хёрсту | `HkSlot` |
+| [C02] Калман, младшая серия | `KalLowerSlot` |
+| [C04] Калман, старшая серия | `KalHigherSlot` |
+| [B02] рычаг, серия анализа | `LevAnalysisSlot` |
+| [B03] рычаг, серия кластеров | `LevClusterSlot` |
+| [G01] масса, серия | `HmSlot` |
+
+## Проверяемые конфликты и предупреждения
+
+- [M01][M02] младший и старший таймфрейм структуры указывают на ОДНУ серию bip=…. События старшего будут дублировать младший. Включите слоты пула [S50]-[S80] либо выключите [M03].
+- [MOD8][MOD3] модуль пробоя работает по собственным окнам, а фильтр времени накладывает свои. Входы вне пересечения окон будут запрещены без явной причины в логике пробоя. Для пробоя выключите [MOD3].
+- [M84][S90] минутная серия пробоя (bip=…) не совпадает с серией исполнения (bip=…). Установите [S90] равным [M84].
+- [MOD8][MOD1] включены два источника сигнала: структура и пробой. Решение принимается голосованием, см. [D01].
+- [M81] пояс окон пробоя = …. Данные исследования — в поясе Chicago; иной пояс означает другую фазу рынка и отдельную, непроверенную гипотезу.
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_SW_S021_12_Перечень_Модулей.md
+--------------------------------------------------------------------------------
+
+# DZ_SW_S021 — перечень модулей
+
+**Сборка:** `DZ_SW_Hub_S021-v1.14 (2026-10-04)` · **Модулей в слотах:** 15 · сгенерировано `DZ_DOC_Menu_S021-v1.0 (2026-10-04)` из `BuildSlots`.
+
+| Слот | Включён по умолчанию | Идентификатор | Класс | Файл | Версия | Назначение |
+|---|---|---|---|---|---|---|
+| [MOD1] | true | SIG-Структура | `SwPacStructureModule` | `DZ_SW_Mod_Pac_S021.cs` | v1.4 (2026-10-04) | МОДУЛЬ СТРУКТУРЫ РЫНКА |
+| [MOD2] | true | FLT-Линии | `SwTrfpVoteModule` | `DZ_SW_Mod_Trfp_S021.cs` | v1.2 (2026-10-04) | ГОЛОСОВАНИЕ ЛИНИЙ ДИАПАЗОННОГО ФИЛЬТРА |
+| [MOD3] | true | FLT-Время | `SwTimeWindowModule` | `DZ_SW_Mod_Time_S021.cs` | v1.2 (2026-10-04) | ВРЕМЕННЫЕ ОКНА |
+| [MOD4] | false | FLT-Режим | `SwRegimeModule` | `DZ_SW_Mod_Regime_S021.cs` | v1.2 (2026-10-04) | РЕЖИМ РЫНКА |
+| [MOD5] | true | RSK-Лимиты | `SwRiskGuardModule` | `DZ_SW_Mod_Guard_S021.cs` | v1.3 (2026-10-04) | РИСК-МОДУЛЬ |
+| [MOD6] | false | ESC-Стоп | `SwAdaptiveStopModule` | `DZ_SW_Mod_AdaptiveStop_S021.cs` | v1.2 (2026-10-04) | АДАПТИВНЫЙ СТОП |
+| [MOD7] | false | EXT-ЛинияВыход | `SwEscortLineExitModule` | `DZ_SW_Mod_EscortLine_S021.cs` | v1.2 (2026-10-04) | ВЫХОД ПО ЛИНИИ СОПРОВОЖДЕНИЯ |
+| [MOD8] | false | SIG-Пробой-… | `SwDualBreakoutModule` | `DZ_SW_Mod_DualBreakout_S021.cs` | v2.3 (2026-10-04) | ПРОБОЙ ДИАПАЗОНА ДВУХ СЕССИЙ |

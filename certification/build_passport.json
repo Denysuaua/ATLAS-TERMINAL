@@ -1,0 +1,145 @@
+{
+  "build_id": "dc7ba78a203c0ae8",
+  "taken_utc": "2026-09-30T08:34:26Z",
+  "terminal_root": "C:\\Users\\dzali\\Documents\\NinjaTrader 8",
+  "files": {
+    "bin\\Custom\\Strategies\\DZ_SW_Financial_S021.cs": {
+      "sha256": "6a7dff99d770fe6d2acf9f0b61ba0052812697442c7460d8d3cdee3f37467c86",
+      "mtime": 1790285032.4182427
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Hub_S021.cs": {
+      "sha256": "7dcdf0d956e82fa5d878e7e5092e663371576125d972c25f6d255a16c77dbaa3",
+      "mtime": 1790609609.2754788
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_AdaptiveKernel_S021.cs": {
+      "sha256": "4d8d5534b8ab1fdbb3005c5c41af05db35f09d9cd92d523f8edf9e6e0780a304",
+      "mtime": 1790522958.3279822
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_AdaptiveStop_S021.cs": {
+      "sha256": "ccef375c24bbfe6d75774bbfde5a5a46529c421bbec990368d12cbba04fb5cc3",
+      "mtime": 1790285053.8374496
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_DualBreakout_S021.cs": {
+      "sha256": "0df6c3051eec7b2f87772648ec1adace289e95f590828aa27f224c8b78b1536c",
+      "mtime": 1790285053.8479633
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_EscortLine_S021.cs": {
+      "sha256": "cdb18c573d49d6fd4cff0d669ff286a181843e9e112a09e0e23d2c4965799c8b",
+      "mtime": 1790285053.8424547
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_External_S021.cs": {
+      "sha256": "7168ff9d49819be6a3d1347e9df1b54a293977cf307454b0ffa8665fa0eee06a",
+      "mtime": 1790015660.5947056
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_FileSignal_S021.cs": {
+      "sha256": "09f9d848b818e1f84324faaa70cc39c9106306d6d6537f75e835038e54c7e1f7",
+      "mtime": 1790606326.090045
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Guard_S021.cs": {
+      "sha256": "f450004f7c3ec5a3bdbbe72a8ea7b9f5d88037168df4387fac1cbfb284d960c0",
+      "mtime": 1790285053.8329442
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_HierarchicalMass_S021.cs": {
+      "sha256": "cf21d7fbc52672375c825fc790f04ce6c3c5838ce7d1756ef07b2706dde70731",
+      "mtime": 1790609609.2644749
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_HurstKernel_S021.cs": {
+      "sha256": "a86735ebc4a5c09d9f519159c56aa1cbb17314ca105968ffeea5834903fd8dbb",
+      "mtime": 1790606326.085045
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Kalman_S021.cs": {
+      "sha256": "a831d1e945bc8fd56da73f4da7db8df16c42c0a66228fad785494af194ecfd2a",
+      "mtime": 1790285072.4376698
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Lever_S021.cs": {
+      "sha256": "0c54cfc836664d41494ec08b73ed7ddaad0bb019af121f2efaa366ada8d1020b",
+      "mtime": 1790296151.8397598
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Lorentzian_S021.cs": {
+      "sha256": "bd9b7b90dda26d9d9188658ecc9f873bec78a1a401483c920b325ef687fe73da",
+      "mtime": 1790523109.6588845
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Pac_S021.cs": {
+      "sha256": "f5b7d368da4fdd4351c0d27c45ac4153bf85ab056ceee97c2d91376b7fd5dacb",
+      "mtime": 1790303384.1990542
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Regime_S021.cs": {
+      "sha256": "ae163dcec20723ffbf46259feb9a93f6cec88c3cec7379e1e9e56adf755608ac",
+      "mtime": 1790285053.8276193
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Time_S021.cs": {
+      "sha256": "846e9a96800210cdc0d6b0e3c1a8810bbf26682c6916656990be3e524f7a4f9a",
+      "mtime": 1790285053.823619
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Mod_Trfp_S021.cs": {
+      "sha256": "b949688d0b7c4881255d482cf20667439452e0e04a29b64b50954e591220a509",
+      "mtime": 1790285053.8174365
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_Visual_S021.cs": {
+      "sha256": "f11744ad8d70a574160f4d4e2921ea0e3faff558c34dd3ed3ebc0e726d6ae6f5",
+      "mtime": 1790608926.3962216
+    },
+    "bin\\Custom\\Strategies\\DZ_SW_WsBridge_S021.cs": {
+      "sha256": "fc4fe0b7e6b5117de31ae3a01508c413cbe057d25581f885171b47a1e033e949",
+      "mtime": 1790608019.0374482
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_AiMovingAverage_S021.cs": {
+      "sha256": "33a4fee1862cfc6f303025d2b8c84f9f3faf6e34a00f9edefb9778890672e655",
+      "mtime": 1788956357.5523305
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_AiSourceSwitchingMa_S023.cs": {
+      "sha256": "4a32c2d07010f8fefbeab0925c5faa778cd045eb072a83a873ff9255c40711da",
+      "mtime": 1788958225.7534833
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_AiSuperTrendPivot_S020.cs": {
+      "sha256": "3ed14901eb7927e351067664bbd291bff08af6cda871f1741ad7bf743aea26f9",
+      "mtime": 1788953423.2341318
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_AiVolumeSuperTrend_S022.cs": {
+      "sha256": "2b78e02c8994d86e1f20780bd363ad1c188807f382c073756122c6c52c51a028",
+      "mtime": 1788957531.809697
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_CausalLogReturn_S021.cs": {
+      "sha256": "bcee9f21a95a355501152ab92956e8b1727da630e91f5de228ffa4e293956884",
+      "mtime": 1789481531.6856794
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_DoubleAiSuperTrend_S024.cs": {
+      "sha256": "2c52629c2ca588eeda1505536f30f861b597007efd2d8fddd0b07d9670d03124",
+      "mtime": 1788960975.4576883
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_EwmaVolatility_S028.cs": {
+      "sha256": "5902cfcbb151654ea254ea167acbd74c4ef8f6ef35ecd230027efbdd4c735872",
+      "mtime": 1789490039.7835364
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_KalmanTrend_S025.cs": {
+      "sha256": "dd64b21a1c1e3f2a59c16f371fb59858447c7fe49cbb7f65ffc6762cdea71180",
+      "mtime": 1789487028.9652035
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_MarkovSwitchingFiltered_S026.cs": {
+      "sha256": "0b3cc299c9f337b653ed6a33c95595b706a0947d8c2460f26e59ffe8d5b75614",
+      "mtime": 1789488925.7870774
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_PnlTrend_S020.cs": {
+      "sha256": "f7888463309bad7bdcffa17bf12c12a659912403f9f25721c07dfe563c83e512",
+      "mtime": 1789721823.4726124
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_QmlStochasticVol_S027.cs": {
+      "sha256": "c75fb3c8a22bff2ddee6f4ba4809edab723506a2fd03068211ee5bcc6c696740",
+      "mtime": 1789489507.0781145
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_RegimeTrendDirection.cs": {
+      "sha256": "5420703d7e6eb3312804008a13011bf231c354fba338e5e1476ab62319ca6289",
+      "mtime": 1789563884.322464
+    },
+    "bin\\Custom\\Indicators\\DZ_IND_TrendTargets_AlgoAlpha.cs": {
+      "sha256": "ea7b521e2bf86a2e6885386c4ed1ab68ec30a7b7fc6044581894d29bb2c03dd6",
+      "mtime": 1788949870.4091425
+    }
+  },
+  "dll": {
+    "exists": true,
+    "sha256": "802cf9064a522d2cee034d68d7fb036d14ee2d532d5e5765a7dcf1f7618f46f6",
+    "mtime": 1790756705.1394424
+  },
+  "warnings": []
+}

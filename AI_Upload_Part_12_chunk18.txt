@@ -1,0 +1,221 @@
+﻿                foreach (PacCandidate c in tickCandidates)
+                    if (c.Id != pendingSignalId)
+                        JournalNotSent(Host.Time, c.Id, c.Dir, c.Conf, c.Desc,
+                            "уступило событию выше рангом: " + (pendingShort.Length > 0 ? pendingShort : "—"));
+            }
+            catch { }
+        }
+
+        #endregion
+
+        #region Диагностика
+
+        /// <summary>Сводка состояния для панели и разбора.</summary>
+        public string StateLine
+        {
+            get
+            {
+                return string.Format(
+                    "МЛ int тренд {0} B{1} C{2} C+{3} | МЛ swg тренд {4} B{5} C{6} C+{7} | " +
+                    "СТ swg тренд {8} B{9} C{10} C+{11}",
+                    lowInternal.Trend, lowInternal.BosCount, lowInternal.ChochCount, lowInternal.ChochPlusCount,
+                    lowSwing.Trend, lowSwing.BosCount, lowSwing.ChochCount, lowSwing.ChochPlusCount,
+                    highSwing.Trend, highSwing.BosCount, highSwing.ChochCount, highSwing.ChochPlusCount);
+            }
+        }
+
+        /// <summary>Действующее направление структуры старшего свинга.</summary>
+        public int HigherSwingTrend { get { return highSwing.Trend; } }
+
+        /// <summary>Действующее направление структуры младшего свинга.</summary>
+        public int LowerSwingTrend { get { return lowSwing.Trend; } }
+
+        #endregion
+    }
+}
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_SW_S021_02_Руководство_Разработчика.md
+--------------------------------------------------------------------------------
+
+# DZ_SW_S021_02 — Руководство разработчика
+
+**Сгенерировано:** DZ_DOC_Dev_S021-v1.0 (2026-10-04) из `DZ_SW_Hub_S021-v1.14 (2026-10-04)`. Руками не править: контракты и такт — из кода.
+
+## 1. Устройство
+
+Одна стратегия — коммутатор `DZ_SW_Hub_S021` — и подключаемые модули `DZ_SW_Mod_*_S021`. Модули считают и голосуют, заявки отправляет только исполнитель внутри коммутатора. Модуль видит ядро через `SwHostView` — представление без ордерного API: вызвать `EnterLong` из модуля невозможно физически. Обмен — через ящики: модуль кладёт `SwSignal` или `SwAction`, коммутатор забирает и сверяет «отправлено — принято»: расхождение — потеря.
+
+## 2. Такт серии исполнения
+
+Порядок шагов `OnBarUpdate` — из кода:
+
+| Шаг | Что происходит |
+|---|---|
+| 0 | ВИРТУАЛЬНЫЕ ИСПОЛНЕНИЯ — ДО ОПРОСА МОДУЛЕЙ |
+| 1 | Опрос модулей НА КАЖДОЙ СЕРИИ |
+| 2 | Разбор ящиков и обнаружение потерь |
+| 3 | Сопровождение |
+| 4 | Исполнение требований |
+| 5 | Решение о входе |
+| 6 | Панель |
+
+Модули считаются на каждой серии пула; разбор, решение и заявки — только на закрытии бара серии исполнения `[S90]` (руководство NT, с. 2350: заявки — в первый контекст инструмента).
+
+## 3. Контракты
+
+**SwRole:** `Signal` — порождает кандидата направления; `Filter` — накладывает вето; `Sizing` — определяет объём; `Escort` — сопровождение открытой позиции; `Exit` — требование закрытия.
+
+**SwHealth:** `Disabled` — выключен настройкой; `NotAttached` — не создан; `Warmup` — прогревается; `Ok` — работает и отдаёт сигналы; `Silent` — не отдаёт сигнал дольше допустимого; `Stale` — отдаёт сигнал со старым номером бара; `Faulted` — бросил исключение.
+
+**SwActionKind:** `None`; `MoveStop`; `PartialExit`; `FullExit`.
+
+**SwVerdict:** `Neutral`; `Agree`; `Veto`.
+
+**SwSignal**
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `SignalId` | `string` | идентификатор сигнала для журнала (Pac, Kalman, Lever) |
+| `ShortDescription` | `string` | краткое описание для журнала |
+| `Direction` | `int` | +1 long, 0 нет, -1 short |
+| `Confidence` | `double` | 0..1, субъективная шкала модуля |
+| `Verdict` | `SwVerdict` | для роли Filter |
+| `IsReady` | `bool` | прогрев завершён |
+| `ProducedAtBar` | `int` | номер бара ИСПОЛНЯЮЩЕЙ серии |
+| `Text` | `string` | короткая диагностика |
+| `EntryStopPrice` | `double` | Уровень отложенного стоп-входа. Ноль или NaN — вход по рынку. Положительное значение — исполнитель выставляет стоп-ордер на этот уровень ДО пробоя, и вход происходит в момент касания, без задержки до закрытия бара. |
+| `TrailTicksOverride` | `double` | Трейлинг этой сделки в тиках. Ноль или NaN — общий [F44]. |
+
+**SwAction**
+
+| Поле | Тип | Смысл |
+|---|---|---|
+| `Source` | `string` | источник требования: "FIN" и т. п. |
+| `Code` | `string` | код причины: "STEP", код источника стопа |
+| `Kind` | `SwActionKind` |  |
+| `Price` | `double` | уровень стопа для MoveStop |
+| `Quantity` | `int` | объём для PartialExit |
+| `ProducedAtBar` | `int` |  |
+| `Reason` | `string` |  |
+| `Tag` | `string` | метка ступени: по ней исполнение опознаётся |
+
+**Базовый класс модуля `SwModule`**
+
+| Член | Примечание |
+|---|---|
+| `public string Id = "unnamed"` |  |
+| `public SwRole Role = SwRole.Signal` |  |
+| `public SwHealth Health = SwHealth.NotAttached` |  |
+| `protected SwHostView Host` |  |
+| `public long EmitCount` | сколько модуль ОТПРАВИЛ |
+| `public long CollectCount` | сколько коммутатор ПРИНЯЛ |
+| `public long LostCount` | расхождение, накопленное |
+| `public long FaultCount` |  |
+| `public int LastEmitBar = -1` |  |
+| `public string LastFaultText = string.Empty` |  |
+| `public SwSignal LastSignal` |  |
+| `public SwAction LastAction` |  |
+| `public virtual void Attach(SwHostView host)` |  |
+| `public abstract void Compute(int barsInProgress)` |  |
+| `public virtual string TelemetryJson(System.Globalization.CultureInfo inv)` |  |
+| `protected void EmitVisual(SwVisualEvent e)` |  |
+| `protected void Emit(SwSignal s)` |  |
+| `protected void Emit(SwAction a)` |  |
+| `public int DrainSignals(List<SwSignal> into)` |  |
+| `public int DrainActions(List<SwAction> into)` |  |
+| `public int PendingInOutbox` |  |
+| `public void MarkFault(string text)` |  |
+
+**Представление ядра `SwHostView`**
+
+| Член | Примечание |
+|---|---|
+| `public double MinConfidence` |  |
+| `public bool VisualOn(SwVisualRole role)` |  |
+| `public bool VisualDebugOn` |  |
+| `public void RequestSignalJournalEntry(string moduleId, DateTime time, string signalId, int direction,` |  |
+| `public void SetChannelPlot(int track, int line, double value, int variant)` |  |
+| `public int CurrentBar` |  |
+| `public int ExecBip` |  |
+| `public DateTime Time` |  |
+| `public double TickSize` |  |
+| `public double Close(int barsAgo)` |  |
+| `public double Open(int barsAgo)` |  |
+| `public double High(int barsAgo)` |  |
+| `public double Low(int barsAgo)` |  |
+| `public int Bip(int slot)` |  |
+| `public bool SlotLoaded(int slot)` |  |
+| `public int BarOf(int slot)` |  |
+| `public bool SlotReady(int slot, int needBars)` |  |
+| `public double CloseOf(int slot, int barsAgo)` |  |
+| `public double OpenOf(int slot, int barsAgo)` |  |
+| `public double HighOf(int slot, int barsAgo)` |  |
+| `public double LowOf(int slot, int barsAgo)` |  |
+| `public double VolumeOf(int slot, int barsAgo)` |  |
+| `public DateTime TimeOf(int slot, int barsAgo)` |  |
+| `public bool IsBarCloseOf(int slot, int currentBip)` |  |
+| `public int PositionSide` |  |
+| `public int PositionQuantity` |  |
+| `public double PositionAvgPrice` |  |
+| `public double RealizedPnl` |  |
+| `public int RealizedTradeCount` |  |
+| `public bool IsFirstBarOfSession` |  |
+| `public double TickValue` |  |
+| `public void Trace(string moduleId, string ev, string detail)` |  |
+
+## 4. Модули
+
+| Файл | Класс | Версия |
+|---|---|---|
+| `DZ_SW_Mod_AdaptiveKernel_S021.cs` | `SwAdaptiveKernelModule` | v1.1 (2026-10-04) |
+| `DZ_SW_Mod_AdaptiveStop_S021.cs` | `SwAdaptiveStopModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_DualBreakout_S021.cs` | `SwDualBreakoutModule` | v2.3 (2026-10-04) |
+| `DZ_SW_Mod_EscortLine_S021.cs` | `SwEscortLineExitModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_FileSignal_S021.cs` | `SwFileSignalModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_Guard_S021.cs` | `SwRiskGuardModule` | v1.3 (2026-10-04) |
+| `DZ_SW_Mod_HierarchicalMass_S021.cs` | `SwHierarchicalMassModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_HurstKernel_S021.cs` | `SwHurstKernelModule` | v1.1 (2026-10-04) |
+| `DZ_SW_Mod_Kalman_S021.cs` | `SwKalmanChannelModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_Lever_S021.cs` | `SwLeverModule` | v1.3 (2026-10-04) |
+| `DZ_SW_Mod_Lorentzian_S021.cs` | `SwLorentzianModule` | v1.3 (2026-10-04) |
+| `DZ_SW_Mod_Pac_S021.cs` | `SwPacStructureModule` | v1.4 (2026-10-04) |
+| `DZ_SW_Mod_Regime_S021.cs` | `SwRegimeModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_Time_S021.cs` | `SwTimeWindowModule` | v1.2 (2026-10-04) |
+| `DZ_SW_Mod_Trfp_S021.cs` | `SwTrfpVoteModule` | v1.2 (2026-10-04) |
+
+Слоты, роли и умолчания — в `DZ_SW_S021_12`; настройки — в `DZ_SW_S021_03`.
+
+## 5. Как добавить модуль
+
+1. Файл `DZ_SW_Mod_<Имя>_S021.cs`: класс конфигурации и класс-наследник `SwModule`; версия и дата в шапке.
+2. `Compute(int barsInProgress)`: только расчёт и `Emit`. Без выделения памяти в такте, без заглядывания вперёд, без ордерного API.
+3. Слот `[MODn]` в коммутаторе: флаг включения, передача настроек в сборке слотов, создание модуля.
+4. Настройки меню: индекс `[Xnn]`, русское название и описание, `Range` где есть пределы, умолчание в `SetDefaults`.
+5. Одна-две экспериментальные функции, выключенные по умолчанию, со ссылкой на учебник базы проекта.
+6. `python DZ_DEV_MemberCheck.py "DZ_SW_*.cs"` — ноль ошибок; затем компиляция F5.
+7. `DZ_DOC_Menu_S021.py` и `DZ_DOC_Dev_S021.py` — документы из кода; отпечаток схемы `[T15]` совпадает со справочником.
+8. Режим без ордеров с журналом `[T17]`; при наличии эталона на ПК — сверка `parity`.
+
+## 6. Правила
+
+- Одна величина — один источник; вторая реализация — только с перекрёстной сверкой.
+- Решение по OHLC не опирается на порядок цен внутри бара; спорный порядок — худший.
+- Исключение модуля изолируется: `MarkFault`, модуль снимается, торговля идёт без него.
+- Код NinjaScript сверяется с руководством NinjaTrader 8 со ссылкой на страницу.
+- Статистика и проверки — по AFML, MLAM и банковской книге; уровни объёма — по Volume Profile.
+- Документы 02, 03, 11, 12 генерируются; 00 и 05 ведутся вручную.
+
+## 7. Инструменты
+
+| Инструмент | Назначение |
+|---|---|
+| `DZ_DEV_MemberCheck.py` | члены и аргументы вызовов до компиляции |
+| `DZ_DOC_Menu_S021.py` | справочник меню, карта связей, перечень модулей |
+| `DZ_DOC_Dev_S021.py` | это руководство |
+| `DZ_OPT_Engine_S021.py parity` | сделка в сделку: NinjaTrader против эталона |
+| `DZ_SA_Audit_S021.py` | DSR и PBO оптимизации Strategy Analyzer |
+| `DZ_ACCEPT_S021.py` | приёмка по Output, детерминированность, метрики ставок |
+

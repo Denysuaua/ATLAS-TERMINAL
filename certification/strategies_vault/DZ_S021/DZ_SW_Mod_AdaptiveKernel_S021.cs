@@ -1,0 +1,464 @@
+#region Using declarations
+using System;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_AdaptiveKernel_S021 — АДАПТИВНАЯ ЯДЕРНАЯ РЕГРЕССИЯ, v1.0 (2026-09-26)
+//  Роль Filter по умолчанию, Signal в исследовательском режиме [K65].
+//
+//  ЧТО СЧИТАЕТ. Локальную линейную регрессию цены со взвешиванием ядром с
+//  компактным носителем. На правом краю — там, где принимается решение, —
+//  локальная прямая даёт оценку без смещения на линейном тренде, тогда как
+//  среднее Надарая–Ватсона на тренде систематически отстаёт.
+//
+//  ВЕРДИКТ. Наклон прямой в тиках на бар. По модулю ниже порога [K59] —
+//  нейтраль; выше — согласие в сторону наклона, и ядро коммутатора запрещает
+//  вход против него.
+//
+//  ZERO-GC. Все массивы создаются один раз в Attach. На такте бара нет ни
+//  одного new; строка диагностики пересобирается только при смене состояния.
+//  Трассировка пишет строки лишь при событиях. Это гарантия модуля, а не всей
+//  стратегии: панель коммутатора выделяет память на каждой отрисовке.
+//
+//  ЭКСПЕРИМЕНТАЛЬНЫЕ ФУНКЦИИ — выключены по умолчанию, требуют проверки:
+//    [K61] значимость наклона: вход по наклону, только если t-статистика
+//          наклона выше порога. Приближённая: остатки автокоррелированы, и
+//          t завышена — порог нужно подбирать на истории.
+//    [K63] пересечение быстрой и медленной прямых вместо знака наклона.
+//    [K64] самопроверка предсказательной силы: прогноз прямой на бар вперёд
+//          сравнивается с наивным «цена не изменится». Если прямая предсказывает
+//          не лучше — модуль уходит в нейтраль. На случайном блуждании наивный
+//          прогноз оптимален, поэтому эта проверка честно выключит модуль там,
+//          где сглаживание не несёт информации.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Ядро. Автовыбор по таймфрейму отклонён: см. описание модуля.</summary>
+    public enum SwKernelType { Epanechnikov, Triangular, Tricube, Cosine, Gaussian }
+
+    /// <summary>Тип регрессии.</summary>
+    public enum SwRegressionType { LocalLinear, NadarayaWatson }
+
+    /// <summary>Нормировка объёма для веса.</summary>
+    public enum SwVolumeScale { Robust, Standard }
+
+    /// <summary>Что делать, когда наклон разворачивается против открытой позиции.</summary>
+    public enum SwKernelDivergenceAction { Neutral, Veto, RequestPartialExit }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwAdaptiveKernelConfig
+    {
+        public SwKernelType Kernel = SwKernelType.Epanechnikov;
+        public SwRegressionType Regression = SwRegressionType.LocalLinear;
+        public int Slot = 1;
+        public int Bandwidth = 20;
+        public bool AdaptiveBandwidth = true;
+        public double AdaptMin = 0.5, AdaptMax = 2.0;
+        public bool VolumeWeighting = false;
+        public double VolumeGamma = 1.0;
+        public SwVolumeScale VolumeScale = SwVolumeScale.Robust;
+        public int VolumeWindow = 50;
+        public double SlopeThresholdTicks = 0.5;
+        public SwKernelDivergenceAction Divergence = SwKernelDivergenceAction.Neutral;
+        public bool ExpSlopeTGate = false;
+        public double ExpTMin = 2.0;
+        public bool ExpFastSlowCross = false;
+        public bool ExpSkillCheck = false;
+        public int SkillWindow = 100;
+        public bool SignalMode = false;
+    }
+
+    /// <summary>
+    /// Чистое вычислительное ядро без обращений к платформе. Подгонка взвешенной
+    /// прямой в замкнутой форме: пять сумм за один проход, второй проход — для
+    /// стандартной ошибки наклона. Памяти не выделяет.
+    /// </summary>
+    public sealed class SwAdaptiveKernelEngine
+    {
+        public double Alpha, Beta, TStat;
+        public bool Ok;
+
+        /// <summary>
+        /// Значение ядра. Нормирующие множители опущены: в отношениях сумм они
+        /// сокращаются. Гаусс усечён на ширине окна, вес на краю exp(−4.5) ≈ 0.011.
+        /// </summary>
+        public static double K(SwKernelType k, double u)
+        {
+            if (u < 0) u = -u;
+            switch (k)
+            {
+                case SwKernelType.Triangular: return u < 1.0 ? 1.0 - u : 0.0;
+                case SwKernelType.Tricube:
+                {
+                    if (u >= 1.0) return 0.0;
+                    double a = 1.0 - u * u * u;
+                    return a * a * a;
+                }
+                case SwKernelType.Cosine: return u < 1.0 ? Math.Cos(Math.PI * 0.5 * u) : 0.0;
+                case SwKernelType.Gaussian: { double z = 3.0 * u; return Math.Exp(-0.5 * z * z); }
+                default: return u < 1.0 ? 1.0 - u * u : 0.0;   // Епанечников
+            }
+        }
+
+        /// <summary>
+        /// y[i] — цена i баров назад, x_i = −i. mult[i] — дополнительный множитель
+        /// веса, строго положительный. Решение:
+        ///   α = (T0·S2 − T1·S1) / D,  β = (S0·T1 − S1·T0) / D,  D = S0·S2 − S1².
+        /// При вырожденном D и в режиме Надарая–Ватсона α = T0/S0, β не определён.
+        /// </summary>
+        public void Fit(double[] y, double[] mult, int n, int h, SwKernelType k, SwRegressionType reg)
+        {
+            Ok = false; TStat = 0; Beta = double.NaN;
+            if (n < 2 || h < 2) return;
+
+            double s0 = 0, s1 = 0, s2 = 0, t0 = 0, t1 = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double w = K(k, (double)i / h) * mult[i];
+                if (w <= 0) continue;
+                double x = -i;
+                s0 += w; s1 += w * x; s2 += w * x * x;
+                t0 += w * y[i]; t1 += w * x * y[i];
+            }
+            if (s0 <= 0) return;
+
+            double d = s0 * s2 - s1 * s1;
+            if (reg == SwRegressionType.NadarayaWatson || d <= 1e-12 * s0 * s0)
+            {
+                Alpha = t0 / s0;
+                Ok = true;
+                return;
+            }
+
+            Alpha = (t0 * s2 - t1 * s1) / d;
+            Beta = (s0 * t1 - s1 * t0) / d;
+
+            // Стандартная ошибка наклона: β = Σ c_i·y_i, c_i = w_i·(S0·x_i − S1)/D,
+            // Var(β) = σ²·Σc_i². σ² — взвешенная дисперсия остатков.
+            double rss = 0, cc = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double w = K(k, (double)i / h) * mult[i];
+                if (w <= 0) continue;
+                double x = -i;
+                double r = y[i] - (Alpha + Beta * x);
+                rss += w * r * r;
+                double c = w * (s0 * x - s1) / d;
+                cc += c * c;
+            }
+            double se = Math.Sqrt(Math.Max(0.0, rss / s0 * cc));
+            TStat = se > 0 ? Beta / se : 0.0;
+            Ok = true;
+        }
+    }
+
+    public class SwAdaptiveKernelModule : SwModule
+    {
+        private readonly SwAdaptiveKernelConfig cfg;
+        private readonly SwAdaptiveKernelEngine eng = new SwAdaptiveKernelEngine();
+        private readonly SwAdaptiveKernelEngine engFast = new SwAdaptiveKernelEngine();
+
+        // --- буферы: создаются один раз в Attach ---
+        private double[] yBuf, mult, volWin, scratch, trRing;
+        private int nMax;
+
+        private int trCount, trIdx;
+        private double prevClose = double.NaN;
+
+        // --- результат подгонки ---
+        private double alpha = double.NaN, beta = double.NaN, tstat, alphaFast = double.NaN, prevAlpha = double.NaN;
+        private int hUsed, fits;
+
+        // --- самопроверка предсказательной силы ---
+        private double fcPrev = double.NaN, lastClose = double.NaN, emaK, emaN;
+        private int skillN;
+
+        // --- расхождение с позицией ---
+        private bool divActive;
+        private int divEvents, partialRequests;
+
+        // --- диагностика без выделения памяти на каждом баре ---
+        private int lastDir = int.MinValue, lastCode = -1;
+        private string textCache = "";
+
+        public SwAdaptiveKernelModule(string id, SwAdaptiveKernelConfig config)
+        {
+            Id = id;
+            cfg = config ?? new SwAdaptiveKernelConfig();
+            Role = cfg.SignalMode ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+            nMax = Math.Max(4, (int)Math.Ceiling(Math.Max(1, cfg.Bandwidth) * Math.Max(1.0, cfg.AdaptMax))) + 1;
+            yBuf = new double[nMax];
+            mult = new double[nMax];
+            int vw = Math.Max(5, cfg.VolumeWindow);
+            volWin = new double[vw];
+            scratch = new double[vw];
+            trRing = new double[20];
+            for (int i = 0; i < nMax; i++) mult[i] = 1.0;
+
+            Host.Trace(Id, "KER_ATTACHED", "ядро " + cfg.Kernel + ", " + cfg.Regression + ", слот " + cfg.Slot
+                + ", окно " + cfg.Bandwidth + (cfg.AdaptiveBandwidth ? " адаптивно" : "")
+                + (cfg.VolumeWeighting ? ", вес по объёму γ=" + cfg.VolumeGamma : "")
+                + ", роль " + Role);
+        }
+
+        public override void Compute(int bip)
+        {
+            if (Host.IsBarCloseOf(cfg.Slot, bip)) UpdateFit();
+            if (bip != Host.ExecBip) return;
+
+            int bar = Host.CurrentBar;
+            bool ready = fits > 0 && eng.Ok && (!cfg.AdaptiveBandwidth || trCount >= trRing.Length);
+            if (!ready)
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                return;
+            }
+
+            double tick = Host.TickSize > 0 ? Host.TickSize : 1.0;
+            double slopeT = double.IsNaN(beta) ? 0.0 : beta / tick;
+
+            // --- направление ---
+            int dir = 0, code = 0;                       // code: причина для кэша строки
+            if (cfg.ExpFastSlowCross && !double.IsNaN(alphaFast))
+            {
+                double diff = (alphaFast - alpha) / tick;
+                if (Math.Abs(diff) >= cfg.SlopeThresholdTicks) { dir = Math.Sign(diff); code = 1; }
+            }
+            else if (Math.Abs(slopeT) >= cfg.SlopeThresholdTicks) { dir = Math.Sign(slopeT); code = 1; }
+
+            if (dir != 0 && cfg.ExpSlopeTGate && cfg.Regression == SwRegressionType.LocalLinear
+                && Math.Abs(tstat) < cfg.ExpTMin) { dir = 0; code = 2; }
+
+            double skill = SkillScore();
+            if (dir != 0 && cfg.ExpSkillCheck && skillN >= cfg.SkillWindow && skill <= 0) { dir = 0; code = 3; }
+
+            // --- расхождение с позицией: наклон разворачивается против неё ---
+            int pos = Host.PositionSide;
+            bool div = pos != 0 && Math.Abs(slopeT) >= cfg.SlopeThresholdTicks && Math.Sign(slopeT) == -pos;
+            if (div && !divActive)
+            {
+                divActive = true; divEvents++;
+                Host.Trace(Id, "KER_DIVERGENCE", "наклон " + slopeT.ToString("F2") + " т/бар против позиции " + pos
+                    + ", действие " + cfg.Divergence);
+                if (cfg.Divergence == SwKernelDivergenceAction.RequestPartialExit)
+                {
+                    int q = Host.PositionQuantity * 2 / 3;
+                    if (q >= 1)
+                    {
+                        SwAction a = SwAction.None(bar);
+                        a.Kind = SwActionKind.PartialExit;
+                        a.Quantity = q;
+                        a.Tag = "KDIV";
+                        a.Reason = "ядро: наклон против позиции";
+                        Emit(a);
+                        partialRequests++;
+                    }
+                }
+            }
+            if (!div) divActive = false;
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            if (divActive && cfg.Divergence == SwKernelDivergenceAction.Veto)
+            {
+                s.Verdict = SwVerdict.Veto; s.Direction = 0; s.Confidence = 1.0; code = 4;
+            }
+            else if (dir != 0)
+            {
+                s.Verdict = SwVerdict.Agree; s.Direction = dir;
+                s.Confidence = Math.Min(1.0, Math.Abs(slopeT) / Math.Max(1e-9, 4.0 * cfg.SlopeThresholdTicks));
+            }
+            else
+            {
+                s.Verdict = SwVerdict.Neutral; s.Direction = 0; s.Confidence = 0;
+            }
+
+            // Строка пересобирается только при смене состояния: на остальных
+            // барах переиспользуется та же ссылка, и память не выделяется.
+            if (dir != lastDir || code != lastCode)
+            {
+                lastDir = dir; lastCode = code;
+                textCache = CodeText(code) + (dir > 0 ? " вверх" : dir < 0 ? " вниз" : "")
+                          + ", наклон " + slopeT.ToString("F2") + " т/бар, окно " + hUsed;
+            }
+            s.Text = textCache;
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private static string CodeText(int code)
+        {
+            switch (code)
+            {
+                case 1: return "ядро: наклон";
+                case 2: return "ядро: наклон незначим";
+                case 3: return "ядро: нет предсказательной силы";
+                case 4: return "ядро: вето, наклон против позиции";
+                default: return "ядро: плоско";
+            }
+        }
+
+        #region Подгонка на закрытии бара своей серии
+
+        private void UpdateFit()
+        {
+            if (!Host.SlotReady(cfg.Slot, Math.Max(nMax, volWin.Length) + 1)) return;
+
+            double h = Host.HighOf(cfg.Slot, 0), l = Host.LowOf(cfg.Slot, 0), c = Host.CloseOf(cfg.Slot, 0);
+            if (double.IsNaN(c)) return;
+
+            // Истинный диапазон для адаптации ширины окна.
+            double tr = double.IsNaN(prevClose) ? h - l
+                      : Math.Max(h - l, Math.Max(Math.Abs(h - prevClose), Math.Abs(l - prevClose)));
+            prevClose = c;
+            trRing[trIdx] = tr; trIdx = (trIdx + 1) % trRing.Length;
+            if (trCount < trRing.Length) trCount++;
+
+            // Самопроверка: прогноз прошлого бара против фактического закрытия.
+            if (!double.IsNaN(fcPrev) && !double.IsNaN(lastClose))
+            {
+                double a = 2.0 / (Math.Max(2, cfg.SkillWindow) + 1.0);
+                double ek = Math.Abs(c - fcPrev), en = Math.Abs(c - lastClose);
+                if (skillN == 0) { emaK = ek; emaN = en; }
+                else { emaK += a * (ek - emaK); emaN += a * (en - emaN); }
+                skillN++;
+            }
+
+            // Ширина окна. Высокая краткосрочная волатильность — окно короче,
+            // быстрее реакция на импульс; затишье — длиннее, сильнее подавление шума.
+            int hb = Math.Max(3, cfg.Bandwidth);
+            if (cfg.AdaptiveBandwidth && trCount >= trRing.Length)
+            {
+                double atr5 = 0, atr20 = 0;
+                for (int k = 1; k <= trRing.Length; k++)
+                {
+                    double x = trRing[(trIdx - k + trRing.Length) % trRing.Length];
+                    if (k <= 5) atr5 += x;
+                    atr20 += x;
+                }
+                atr5 /= 5.0; atr20 /= trRing.Length;
+                double ratio = atr5 > 0 ? atr20 / atr5 : 1.0;
+                ratio = Math.Max(cfg.AdaptMin, Math.Min(cfg.AdaptMax, ratio));
+                hb = (int)Math.Round(cfg.Bandwidth * ratio);
+            }
+            hb = Math.Max(3, Math.Min(nMax - 1, hb));
+            hUsed = hb;
+
+            for (int i = 0; i < hb; i++) { yBuf[i] = Host.CloseOf(cfg.Slot, i); mult[i] = 1.0; }
+            if (cfg.VolumeWeighting) FillVolumeWeights(hb);
+
+            eng.Fit(yBuf, mult, hb, hb, cfg.Kernel, cfg.Regression);
+            if (!eng.Ok) return;
+
+            alpha = eng.Alpha;
+            if (cfg.Regression == SwRegressionType.NadarayaWatson)
+                beta = double.IsNaN(prevAlpha) ? 0.0 : alpha - prevAlpha;   // наклон как приращение уровня
+            else
+                beta = eng.Beta;
+            tstat = eng.TStat;
+
+            if (cfg.ExpFastSlowCross)
+            {
+                int hf = Math.Max(3, hb / 2);
+                engFast.Fit(yBuf, mult, hf, hf, cfg.Kernel, cfg.Regression);
+                alphaFast = engFast.Ok ? engFast.Alpha : double.NaN;
+            }
+
+            fcPrev = double.IsNaN(beta) ? alpha : alpha + beta;
+            lastClose = c;
+            prevAlpha = alpha;
+            fits++;
+        }
+
+        /// <summary>
+        /// Вес по объёму: множитель 1 + γ·z, ОГРАНИЧЕННЫЙ снизу 0.1 и сверху 4.
+        /// В ТЗ множитель не ограничен и при z &lt; −1/γ становится отрицательным;
+        /// отрицательные веса разрушают взвешенный МНК. Робастная нормировка —
+        /// медиана и 1.4826·MAD: не искажается одиночными всплесками объёма.
+        /// </summary>
+        private void FillVolumeWeights(int hb)
+        {
+            int n = volWin.Length;
+            for (int i = 0; i < n; i++) volWin[i] = Host.VolumeOf(cfg.Slot, i);
+
+            double center, scale;
+            if (cfg.VolumeScale == SwVolumeScale.Robust)
+            {
+                center = Median(volWin, n);
+                for (int i = 0; i < n; i++) scratch[i] = Math.Abs(volWin[i] - center);
+                scale = 1.4826 * MedianInPlace(scratch, n);
+            }
+            else
+            {
+                double s = 0; for (int i = 0; i < n; i++) s += volWin[i];
+                center = s / n;
+                double v = 0; for (int i = 0; i < n; i++) v += (volWin[i] - center) * (volWin[i] - center);
+                scale = Math.Sqrt(v / Math.Max(1, n - 1));
+            }
+            if (!(scale > 0)) return;
+
+            for (int i = 0; i < hb; i++)
+            {
+                double z = (Host.VolumeOf(cfg.Slot, i) - center) / scale;
+                double m = 1.0 + cfg.VolumeGamma * z;
+                mult[i] = Math.Max(0.1, Math.Min(4.0, m));
+            }
+        }
+
+        /// <summary>Медиана без выделения памяти: копия в scratch и сортировка вставками.</summary>
+        private double Median(double[] src, int n)
+        {
+            for (int i = 0; i < n; i++) scratch[i] = src[i];
+            return MedianInPlace(scratch, n);
+        }
+
+        private static double MedianInPlace(double[] a, int n)
+        {
+            for (int i = 1; i < n; i++)
+            {
+                double key = a[i]; int j = i - 1;
+                while (j >= 0 && a[j] > key) { a[j + 1] = a[j]; j--; }
+                a[j + 1] = key;
+            }
+            return (n % 2 == 1) ? a[n / 2] : 0.5 * (a[n / 2 - 1] + a[n / 2]);
+        }
+
+        #endregion
+
+        #region Диагностика
+
+        /// <summary>Доля улучшения против наивного прогноза: 1 − ошибка_ядра / ошибка_наивная.</summary>
+        public double SkillScore()
+        {
+            return emaN > 0 ? 1.0 - emaK / emaN : 0.0;
+        }
+
+        public string StateLine
+        {
+            get
+            {
+                double tick = Host != null && Host.TickSize > 0 ? Host.TickSize : 1.0;
+                return string.Format("{0} {1} h={2} | наклон {3:F2} т/бар, t {4:F1} | предсказ. сила {5:F2} ({6}) | расхожд. {7}, частичных {8}",
+                    cfg.Kernel, cfg.Regression == SwRegressionType.LocalLinear ? "LL" : "NW", hUsed,
+                    double.IsNaN(beta) ? 0.0 : beta / tick, tstat, SkillScore(), skillN, divEvents, partialRequests);
+            }
+        }
+
+        #endregion
+    }
+}

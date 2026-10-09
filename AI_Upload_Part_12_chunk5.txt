@@ -1,0 +1,300 @@
+﻿        public int BarsSeen;
+        public bool Ready;
+
+        public double Level, Upper, Lower, Width;
+        public double PrevLevel, PrevUpper, PrevLower;
+        public double Slope;                // наклон середины, цена за бар
+        public double SlopeZ;               // значимость наклона: наклон / его стандартная ошибка
+        public double Tilt;                 // смещение середины за окно, доля ширины канала
+        public double TiltUpper, TiltLower; // то же для границ
+        public double Dup, Ddn;             // полуотклонения выше и ниже середины
+        public double Imbalance;            // (Dup − Ddn) / (Dup + Ddn): + импульс вверх, − вниз
+        public double WidthRatio = 1.0;     // ширина к своей средней: сжатие и расширение
+
+        public double SmoothZ { get { return zS; } }
+        public double SmoothTilt { get { return tiltS; } }
+        public double SmoothImbalance { get { return imbS; } }
+        public double CorridorTilt { get { return (tuS + tlS) / 2.0; } }
+        public int ConfirmBars { get { return confirmBars; } }
+
+        public bool FlatNow, InRange, RangeDeclared, RangeEnded, BreakUp, BreakDown, RangeCompressed;
+        public int FlatStreak, RangeBars, RangeSeq;
+        public DateTime StreakStart, RangeStart;
+        public double RangeUpperAtBreak, RangeLowerAtBreak;
+
+        public bool Compression, Expansion, CompressionStarted, ExpansionStarted;
+        public bool CrossMidUp, CrossMidDown, TouchUpper, TouchLower, CloseAbove, CloseBelow;
+
+        public SwKalmanState State;
+        public int MidVariant, UpperVariant, LowerVariant;   // окраска: +1 рост, −1 падение, 0 горизонталь
+
+        public double ZFlat { get { return trendZ / 2.0; } }
+
+        /// <summary>Один шаг: закрытие бара своей серии.</summary>
+        public void Update(double z, double hi, double lo, DateTime time)
+        {
+            RangeDeclared = RangeEnded = BreakUp = BreakDown = false;
+            CrossMidUp = CrossMidDown = TouchUpper = TouchLower = CloseAbove = CloseBelow = false;
+            CompressionStarted = ExpansionStarted = false;
+
+            if (double.IsNaN(z)) return;
+            if (double.IsNaN(hi)) hi = z;
+            if (double.IsNaN(lo)) lo = z;
+
+            double prevClose = closes.Count > 0 ? closes.Get(0) : double.NaN;
+            closes.Push(z);
+            Window.Update(closes);
+            Time = time; Close = z; High = hi; Low = lo;
+            BarsSeen++;
+
+            // --- затравка: пять баров на начальную оценку шума и наклона ---
+            if (n < 5)
+            {
+                boot[n] = z;
+                n++;
+                if (n == 5)
+                {
+                    double acc = 0;
+                    for (int i = 1; i < 5; i++) { double d = boot[i] - boot[i - 1]; acc += d * d; }
+                    r = Math.Max(acc / 4.0, rMin);
+                    x0 = z; x1 = (boot[4] - boot[0]) / 4.0;
+                    p00 = 10 * r; p01 = 0; p11 = r;
+                    s = p00 + r;
+                }
+                Ready = false;
+                State = SwKalmanState.Warmup;
+                return;
+            }
+
+            // --- прогноз ---
+            double q = lam2 * r;
+            double a00 = p00 + 2 * p01 + p11 + q / 4.0;
+            double a01 = p01 + p11 + q / 2.0;
+            double a11 = p11 + q;
+            double xp0 = x0 + x1, xp1 = x1;
+
+            // --- обновление ---
+            double nu = z - xp0;
+            double sv = a00 + r;
+            double k0 = a00 / sv, k1 = a01 / sv;
+            x0 = xp0 + k0 * nu;
+            x1 = xp1 + k1 * nu;
+            p00 = (1 - k0) * a00;
+            p01 = (1 - k0) * a01;
+            p11 = a11 - k1 * a01;
+            if (p11 < 1e-18) p11 = 1e-18;
+            if (p00 < 1e-18) p00 = 1e-18;
+            s = sv;
+            double nis = sv > 0 ? nu * nu / sv : double.NaN;   // Э21
+            if (!double.IsNaN(nis)) NisAvg = double.IsNaN(NisAvg) ? nis : NisAvg + nisA * (nis - NisAvg);
+
+            // --- шум измерения по Сейджу–Хьюзу ---
+            steps++;
+            double dsh = (1 - forget) / (1 - Math.Pow(forget, steps + 1));
+            r = Math.Max((1 - dsh) * r + dsh * (nu * nu - a00), rMin);
+            n++;
+
+            // --- канал ---
+            resid.Push(z - x0);
+            int L = Math.Min(Window.Length, resid.Count);
+            if (L < 3) { Ready = false; State = SwKalmanState.Warmup; return; }
+
+            double sig = L / 2.0, W = 0, U2 = 0, D2 = 0;
+            for (int i = 0; i < L; i++)
+            {
+                double rr = resid.Get(i);
+                double u = i / sig;
+                double w = Math.Exp(-0.5 * u * u);
+                W += w;
+                if (rr > 0) U2 += w * rr * rr; else D2 += w * rr * rr;
+            }
+            Dup = Math.Sqrt(U2 / W);
+            Ddn = Math.Sqrt(D2 / W);
+            Imbalance = Dup + Ddn > 0 ? (Dup - Ddn) / (Dup + Ddn) : 0;
+
+            double halfUp, halfDn;
+            if (method == SwKalmanBands.KalmanInnovation)
+            {
+                halfUp = halfDn = k * Math.Sqrt(s);
+            }
+            else
+            {
+                // Множитель √2 приводит полуотклонение к сигме: у симметричного
+                // распределения средний квадрат положительной части — σ²/2.
+                halfUp = k * Math.Sqrt(2.0) * Dup;
+                halfDn = k * Math.Sqrt(2.0) * Ddn;
+            }
+            if (halfUp < tick) halfUp = tick;
+            if (halfDn < tick) halfDn = tick;
+
+            PrevLevel = Level; PrevUpper = Upper; PrevLower = Lower;
+            Level = x0; Slope = x1;
+            Upper = x0 + halfUp; Lower = x0 - halfDn;
+            Width = Upper - Lower;
+            uppers.Push(Upper); lowers.Push(Lower); widths.Push(Width);
+
+            // --- ширина к своей средней по окну: сжатие и расширение ---
+            int lw = Math.Min(widths.Count, Window.Max);
+            double sw = Math.Max(1.0, lw / 2.0), ww = 0, swd = 0;
+            for (int i = 0; i < lw; i++)
+            {
+                double u = i / sw;
+                double w = Math.Exp(-0.5 * u * u);
+                ww += w; swd += w * widths.Get(i);
+            }
+            bool wasComp = Compression, wasExp = Expansion;
+            WidthRatio = swd > 0 ? Width / (swd / ww) : 1.0;
+            Compression = WidthRatio < compRatio;
+            Expansion = WidthRatio > expRatio;
+            CompressionStarted = Compression && !wasComp;
+            ExpansionStarted = Expansion && !wasExp;
+
+            // --- геометрия ---
+            int m = Math.Max(5, L / 2);
+            double wd = Math.Max(Width, 2 * tick);
+            Tilt = x1 * L / wd;
+            TiltUpper = OlsSlope(uppers, m) * m / wd;
+            TiltLower = OlsSlope(lowers, m) * m / wd;
+            SlopeZ = x1 / Math.Sqrt(p11);
+
+            if (!smoothed)
+            {
+                zS = SlopeZ; tiltS = Tilt; tuS = TiltUpper; tlS = TiltLower; imbS = Imbalance;
+                smoothed = true;
+            }
+            else
+            {
+                zS += SmoothA * (SlopeZ - zS);
+                tiltS += SmoothA * (Tilt - tiltS);
+                tuS += SmoothA * (TiltUpper - tuS);
+                tlS += SmoothA * (TiltLower - tlS);
+                imbS += SmoothA * (Imbalance - imbS);
+            }
+
+            // --- боковик: горизонтально, параллельно, симметрично ---
+            double zFlat = trendZ / 2.0, tauB = 1.25 * flatTilt;
+            FlatNow = Math.Abs(zS) < zFlat && Math.Abs(tiltS) < flatTilt
+                   && Math.Abs(tuS) < tauB && Math.Abs(tlS) < tauB
+                   && Math.Abs(tuS - tlS) < tauB && Math.Abs(imbS) < symMax;
+
+            if (FlatNow)
+            {
+                if (FlatStreak == 0) StreakStart = time;
+                FlatStreak++;
+            }
+            else FlatStreak = 0;
+
+            bool readyNow = n >= warmupBars && resid.Count >= Window.Min;
+            bool trendNow = Math.Abs(zS) >= trendZ && Math.Abs(tiltS) >= trendTilt;
+
+            if (InRange)
+            {
+                // Выход — пробой границы ПРЕДЫДУЩЕГО бара: собственный остаток
+                // бара пробоя уже расширил текущую границу. Либо появился тренд.
+                bool up = !double.IsNaN(PrevUpper) && z > PrevUpper;
+                bool dn = !double.IsNaN(PrevLower) && z < PrevLower;
+                if (up || dn || trendNow)
+                {
+                    InRange = false;
+                    RangeEnded = true;
+                    BreakUp = up;
+                    BreakDown = dn;
+                    RangeUpperAtBreak = PrevUpper;
+                    RangeLowerAtBreak = PrevLower;
+                    FlatStreak = 0;
+                }
+                else
+                {
+                    RangeBars++;
+                    if (Compression) RangeCompressed = true;
+                }
+            }
+            else if (readyNow && FlatStreak >= confirmBars)
+            {
+                InRange = true;
+                RangeDeclared = true;
+                RangeSeq++;
+                RangeStart = StreakStart;
+                RangeBars = FlatStreak;
+                RangeCompressed = Compression;
+            }
+
+            // --- состояние и окраска ---
+            if (!readyNow) State = SwKalmanState.Warmup;
+            else if (InRange) State = SwKalmanState.Range;
+            else if (trendNow) State = x1 > 0 ? SwKalmanState.TrendUp : SwKalmanState.TrendDown;
+            else State = SwKalmanState.Undefined;
+            Ready = readyNow;
+
+            MidVariant = zS >= zFlat ? 1 : zS <= -zFlat ? -1 : 0;
+            UpperVariant = tuS >= tauB ? 1 : tuS <= -tauB ? -1 : 0;
+            LowerVariant = tlS >= tauB ? 1 : tlS <= -tauB ? -1 : 0;
+
+            // --- цена и линии ---
+            if (!double.IsNaN(PrevLevel) && !double.IsNaN(prevClose))
+            {
+                CrossMidUp = prevClose <= PrevLevel && z > Level;
+                CrossMidDown = prevClose >= PrevLevel && z < Level;
+            }
+            if (!double.IsNaN(PrevUpper))
+            {
+                CloseAbove = z > PrevUpper;
+                TouchUpper = hi >= PrevUpper && !CloseAbove;
+            }
+            if (!double.IsNaN(PrevLower))
+            {
+                CloseBelow = z < PrevLower;
+                TouchLower = lo <= PrevLower && !CloseBelow;
+            }
+        }
+
+        /// <summary>
+        /// Предварительное состояние: где была бы середина, закройся бар сейчас
+        /// по цене z. Шаг фильтра без сохранения; границы — нынешние
+        /// полуширины от новой середины. Для окраски и исследования.
+        /// </summary>
+        public bool Peek(double z, out double level, out double upper, out double lower, out int variant)
+        {
+            level = upper = lower = double.NaN;
+            variant = 0;
+            if (n <= 5 || double.IsNaN(Level) || double.IsNaN(z)) return false;
+
+            double q = lam2 * r;
+            double a00 = p00 + 2 * p01 + p11 + q / 4.0;
+            double a01 = p01 + p11 + q / 2.0;
+            double a11 = p11 + q;
+            double xp0 = x0 + x1, xp1 = x1;
+            double nu = z - xp0;
+            double sv = a00 + r;
+            double k0 = a00 / sv, k1 = a01 / sv;
+
+            level = xp0 + k0 * nu;
+            double slope = xp1 + k1 * nu;
+            double pp11 = Math.Max(a11 - k1 * a01, 1e-18);
+            double zz = slope / Math.Sqrt(pp11);
+
+            upper = level + (Upper - Level);
+            lower = level - (Level - Lower);
+            double zFlat = trendZ / 2.0;
+            variant = zz >= zFlat ? 1 : zz <= -zFlat ? -1 : 0;
+            return true;
+        }
+
+        /// <summary>Наклон по методу наименьших квадратов за m последних значений, за бар.</summary>
+        private static double OlsSlope(SwRing ring, int m)
+        {
+            int mm = Math.Min(m, ring.Count);
+            if (mm < 3) return 0;
+            double xb = (mm - 1) / 2.0, yb = 0;
+            for (int i = 0; i < mm; i++) yb += ring.Get(i);
+            yb /= mm;
+            double num = 0, den = 0;
+            for (int i = 0; i < mm; i++)
+            {
+                double x = (mm - 1 - i) - xb;
+                num += x * (ring.Get(i) - yb);
+                den += x * x;
+            }
+            return den > 0 ? num / den : 0;
+        }
+

@@ -1,0 +1,108 @@
+#region Using declarations
+using System;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Visual_S021 — ВИЗУАЛЬНЫЙ СЛОЙ МОДУЛЕЙ: КОНТРАКТ СОБЫТИЙ, v1.2 (2026-10-05)
+//
+//  v1.2 — три роли для модулей, которые прежде ничего не рисовали: KernelLine (MOD9),
+//    HurstKernelLine (MOD10), LorentzVote (MOD11). Отрисовку кольца событий делает коммутатор v1.19.
+//
+//  Модули описывают, ЧТО показать; коммутатор решает, КАК и показывать ли вообще.
+//  Сигнатуры восстановлены по 43 вызовам в 9 модулях (Pac, Trfp, Time, Regime,
+//  AdaptiveStop, EscortLine, DualBreakout, Kalman, Lever) — ничего не придумано.
+//
+//  СОБЫТИЕ — структура: копия без выделения памяти. Цепочки AsState / WithVariant /
+//  InRing возвращают изменённую копию. Строки ключей формирует модуль, и только при
+//  включённой визуализации (Host.VisualOn).
+//
+//  ОТРИСОВКА на этапе 0 не выполняется: коммутатор принимает события в кольцо.
+//  Отрисовка — следующий шаг, после подтверждённой чистой компиляции.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    public enum SwVisualKind { Dot, Diamond, ArrowUp, ArrowDown, Text, Line, Region, Rect }
+
+    public enum SwVisualRole
+    {
+        SignalLong, SignalShort, StructureEvent, StructureFiltered, BreakLevel, BreakLevelFiltered,
+        PivotSwing, PivotSwingHigh, PivotInternal, PivotInternalHigh, PivotCandidateSwing, PivotCandidateInternal,
+        TrfpLine1, TrfpLine2, TrfpLine3, TrfpTrajectory,
+        TimeWindow, TimePause, TimeFlattenBoundary,
+        RegimeBand, RegimeWindow,
+        AdaptiveStopBand, AdaptiveStopLine, AdaptiveStopMultiplier,
+        LineExitMarker, LineExitConfirm,
+        DboBase, DboEntryLevel, DboArmed, DboSnapshot, DboBlocked,
+        KalmanRange, KalmanBreakout, KalmanExit, KalmanInteraction,
+        LeverVote, LeverCenter, LeverFulcrum, LeverCluster, LeverFade,
+        GuardLock, GuardLossLimit, GuardProfitLimit,
+        KernelLine, HurstKernelLine, LorentzVote
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public enum SwVisualShape { Marker, Segment, Label, Rect, Band, VLine, Arrow, RemoveState, RetireGroup }
+
+    public struct SwVisualEvent
+    {
+        public SwVisualShape Shape;
+        public SwVisualKind Kind;
+        public SwVisualRole Role;
+        public DateTime T0, T1;
+        public double P0, P1;
+        public string Text;
+        public string StateKey;    // AsState: одно состояние на ключ — новое событие заменяет прежнее
+        public string RingKey;     // InRing: кольцо ограниченной длины по ключу
+        public string Group;       // RetireGroup: снять все объекты группы
+        public string Detail;      // WithDetail: пояснение к объекту
+        public bool IsDebug;
+        public int Variant, Opacity, Rank;
+
+        private static SwVisualEvent Make(SwVisualShape s, SwVisualRole r)
+        {
+            SwVisualEvent e = new SwVisualEvent();
+            e.Shape = s; e.Role = r; e.P0 = double.NaN; e.P1 = double.NaN; e.Opacity = -1;
+            return e;
+        }
+
+        public static SwVisualEvent Marker(SwVisualKind kind, SwVisualRole role, DateTime t, double price)
+        { SwVisualEvent e = Make(SwVisualShape.Marker, role); e.Kind = kind; e.T0 = t; e.T1 = t; e.P0 = price; return e; }
+
+        public static SwVisualEvent Segment(SwVisualRole role, DateTime t0, double p0, DateTime t1, double p1)
+        { SwVisualEvent e = Make(SwVisualShape.Segment, role); e.T0 = t0; e.P0 = p0; e.T1 = t1; e.P1 = p1; return e; }
+
+        public static SwVisualEvent Arrow(SwVisualRole role, DateTime t0, double p0, DateTime t1, double p1)
+        { SwVisualEvent e = Make(SwVisualShape.Arrow, role); e.T0 = t0; e.P0 = p0; e.T1 = t1; e.P1 = p1; return e; }
+
+        public static SwVisualEvent Label(SwVisualRole role, DateTime t, double y, string text)
+        { SwVisualEvent e = Make(SwVisualShape.Label, role); e.T0 = t; e.T1 = t; e.P0 = y; e.Text = text; return e; }
+
+        public static SwVisualEvent Rect(SwVisualRole role, DateTime t0, double low, DateTime t1, double high)
+        { SwVisualEvent e = Make(SwVisualShape.Rect, role); e.T0 = t0; e.P0 = low; e.T1 = t1; e.P1 = high; return e; }
+
+        public static SwVisualEvent Band(SwVisualRole role, DateTime t0, DateTime t1)
+        { SwVisualEvent e = Make(SwVisualShape.Band, role); e.T0 = t0; e.T1 = t1; return e; }
+
+        public static SwVisualEvent VLine(SwVisualRole role, DateTime t)
+        { SwVisualEvent e = Make(SwVisualShape.VLine, role); e.T0 = t; e.T1 = t; return e; }
+
+        public static SwVisualEvent RemoveState(string key)
+        { SwVisualEvent e = Make(SwVisualShape.RemoveState, SwVisualRole.StructureEvent); e.StateKey = key; return e; }
+
+        public static SwVisualEvent RetireGroup(string group)
+        { SwVisualEvent e = Make(SwVisualShape.RetireGroup, SwVisualRole.StructureEvent); e.Group = group; return e; }
+
+        public SwVisualEvent AsState(string key) { SwVisualEvent e = this; e.StateKey = key; return e; }
+        /// <summary>Состояние по ключу внутри группы: RetireGroup(group) снимает все объекты группы.</summary>
+        public SwVisualEvent AsState(string key, string group) { SwVisualEvent e = this; e.StateKey = key; e.Group = group; return e; }
+        public SwVisualEvent WithDetail(string detail) { SwVisualEvent e = this; e.Detail = detail; return e; }
+        public SwVisualEvent InRing(string key) { SwVisualEvent e = this; e.RingKey = key; return e; }
+        public SwVisualEvent AsDebug() { SwVisualEvent e = this; e.IsDebug = true; return e; }
+        public SwVisualEvent WithVariant(int variant) { SwVisualEvent e = this; e.Variant = variant; return e; }
+        public SwVisualEvent WithOpacity(int opacity) { SwVisualEvent e = this; e.Opacity = opacity; return e; }
+        public SwVisualEvent WithRank(int rank) { SwVisualEvent e = this; e.Rank = rank; return e; }
+    }
+}

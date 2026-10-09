@@ -1,0 +1,300 @@
+﻿            Array.Sort(a, 0, n);
+            return n % 2 == 1 ? a[n / 2] : 0.5 * (a[n / 2 - 1] + a[n / 2]);
+        }
+
+        private int WarmupCount { get { return Math.Max(10, Math.Min(cfg.ScaleWindow, 20)); } }
+
+        private void OnCandle(SwLeverCandle c)
+        {
+            last = c;
+            candlesWeighed++;
+            PushCapped(hB, c.Balance, cap);
+            PushCapped(hW, c.Weight, cap);
+            PushCapped(hC, c.Close, cap);
+            PushCapped(hR, c.High - c.Low, cap);
+
+            SwLeverState prev = state;
+            if (hB.Count < WarmupCount)
+            {
+                state = SwLeverState.Warmup;
+                try { ObserveCandle(c, prev); }
+                catch { }
+                return;
+            }
+
+            smooth = TailWeightedMedian(hB, hW, Math.Max(1, cfg.SmoothCandles));
+            double mad = TailMad(hB, Math.Max(5, cfg.ScaleWindow));
+            scale = Math.Max(0.02, 1.4826 * (double.IsNaN(mad) ? 0 : mad));
+            biasMedian = TailMedian(hB, Math.Max(5, cfg.ScaleWindow));
+            z = smooth / scale;
+            trendDir = TheilSenDir(hC, cfg.TrendWindow);
+
+            double vz = Math.Max(0.01, cfg.VoteZ);
+            state = z >= vz ? SwLeverState.Up : z <= -vz ? SwLeverState.Down : SwLeverState.Middle;
+
+            if (state != prev)
+                Host.Trace(Id, "LEVER_STATE", StateText(prev) + " → " + StateText(state) + ", баланс сглаж. "
+                    + F2(smooth) + ", z " + F2(z) + ", рычаг " + F2(c.Lever) + ", медиана " + F2(c.MedianOffset)
+                    + ", тренд Т–С " + (trendDir > 0 ? "↑" : trendDir < 0 ? "↓" : "нет"));
+
+            bool newUp = state == SwLeverState.Up && prev != SwLeverState.Up;
+            bool newDn = state == SwLeverState.Down && prev != SwLeverState.Down;
+            bool fade = state == SwLeverState.Middle && (prev == SwLeverState.Up || prev == SwLeverState.Down);
+            if (newUp) votesUp++;
+            if (newDn) votesDown++;
+            if (fade) fades++;
+
+            if ((newUp || newDn) && Role == SwRole.Signal) ArmSignal(c, newUp ? 1 : -1);
+            StepExit();
+
+            try { if (cfg.Research) RegisterResearch(c, prev, newUp, newDn, fade); }
+            catch { }
+            try { ObserveCandle(c, prev); }
+            catch { }
+        }
+
+        private void ArmSignal(SwLeverCandle c, int dir)
+        {
+            string sid = "LEV_" + c.End.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                       + (dir > 0 ? "_U" : "_D");
+            string desc = "РЫЧ масса " + (dir > 0 ? "выше" : "ниже") + " опоры";
+            double vz = Math.Max(0.01, cfg.VoteZ);
+            double conf = Math.Min(1.0, 0.5 + 0.25 * Math.Abs(z) / vz);
+
+            if (cfg.SignalWithTrend && trendDir != dir)
+            {
+                suppressedTrend++;
+                try
+                {
+                    Host.RequestSignalJournalEntry(Id, c.End, sid, dir, conf, desc,
+                        "тренд Тейла–Сена " + (trendDir > 0 ? "вверх" : trendDir < 0 ? "вниз" : "не выражен") + " [B12]");
+                }
+                catch { }
+                return;
+            }
+
+            pendDir = dir;
+            pendConf = conf;
+            pendBarsLeft = Math.Max(1, cfg.SignalBars);
+            pendId = sid;
+            pendShort = desc;
+            pendText = desc + ", z " + F2(z) + ", рычаг " + F2(c.Lever) + ", медиана " + F2(c.MedianOffset);
+            Host.Trace(Id, "LEVER_VOTE", pendText + ", уверенность " + conf.ToString("F2"));
+        }
+
+        /// <summary>
+        /// Против позиции на закрытой свече: голос на противоположной стороне
+        /// [B16] свечей подряд. Требование повторяется каждый такт, пока позиция
+        /// открыта: исполнитель пропускает не больше одного выхода на бар.
+        /// </summary>
+        private void StepExit()
+        {
+            int pos = Host.PositionSide;
+            if (!cfg.ExitAgainst || pos == 0)
+            {
+                exitAgainst = 0;
+                return;
+            }
+            bool against = (pos > 0 && state == SwLeverState.Down) || (pos < 0 && state == SwLeverState.Up);
+            if (against)
+            {
+                exitAgainst++;
+                if (exitAgainst >= Math.Max(1, cfg.ExitConfirm) && !exitArmed)
+                {
+                    exitArmed = true;
+                    exitReason = "Рычаг: масса " + (pos > 0 ? "ниже" : "выше") + " опоры " + exitAgainst + " св. подряд, z " + F2(z);
+                    Host.Trace(Id, "LEVER_EXIT_REQUESTED", exitReason);
+                }
+            }
+            else
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+        }
+
+        #endregion
+
+        #region Такт исполнения
+
+        private void ExecTick()
+        {
+            int bar = Host.CurrentBar;
+            int pos = Host.PositionSide;
+
+            double avg = Host.PositionAvgPrice;
+            bool newTrade = pos != lastPosSide
+                || (pos != 0 && !double.IsNaN(lastAvg) && Math.Abs(avg - lastAvg) > 1e-9);
+            if (newTrade)
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+            lastPosSide = pos;
+            lastAvg = pos != 0 ? avg : double.NaN;
+
+            if (pos != 0 && exitArmed) EmitExit(bar, pos);
+
+            if (Role == SwRole.Signal) EmitSignalRole(bar);
+            else EmitFilterRole(bar);
+        }
+
+        private void EmitExit(int bar, int pos)
+        {
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.FullExit;
+            a.Reason = exitReason;
+            Emit(a);
+            exitsRequested++;
+
+            try
+            {
+                if (exitShownBar != bar && Host.VisualOn(SwVisualRole.LeverVote))
+                {
+                    exitShownBar = bar;
+                    double y = pos > 0 ? Host.High(0) + 5 * Host.TickSize : Host.Low(0) - 5 * Host.TickSize;
+                    EmitVisual(SwVisualEvent.Label(SwVisualRole.LeverVote, Host.Time, y, "LEV EXIT").WithVariant(-pos));
+                }
+            }
+            catch { }
+        }
+
+        private bool Ready { get { return srcOk && state != SwLeverState.Warmup; } }
+
+        private void EmitSignalRole(int bar)
+        {
+            if (!Ready)
+            {
+                Health = SwHealth.Warmup;
+                SwSignal w = SwSignal.Empty(bar);
+                w.Text = WarmupText();
+                Emit(w);
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            if (pendBarsLeft > 0)
+            {
+                pendBarsLeft--;
+                s.Direction = pendDir;
+                s.Confidence = pendConf;
+                s.SignalId = pendId;
+                s.ShortDescription = pendShort;
+                s.Text = pendText;
+            }
+            else
+            {
+                s.Direction = 0;
+                s.Text = StatusShort();
+            }
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private void EmitFilterRole(int bar)
+        {
+            if (!Ready)
+            {
+                Health = SwHealth.Warmup;
+                SwSignal w = SwSignal.Empty(bar);
+                w.Text = WarmupText();
+                Emit(w);
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.Direction = 0;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+            s.Confidence = Math.Min(1.0, Math.Abs(z) / Math.Max(0.02, 2 * cfg.VoteZ));
+
+            switch (state)
+            {
+                case SwLeverState.Up:
+                    s.Verdict = SwVerdict.Agree; s.Direction = 1;
+                    break;
+                case SwLeverState.Down:
+                    s.Verdict = SwVerdict.Agree; s.Direction = -1;
+                    break;
+                default:
+                    s.Verdict = cfg.Policy == SwLeverPolicy.BlockMiddle ? SwVerdict.Veto : SwVerdict.Neutral;
+                    break;
+            }
+
+            string gate = string.Empty;
+            if (s.Verdict == SwVerdict.Agree && last != null)                                   // Э69
+            {
+                if (cfg.ExpClrMin > 0)
+                {
+                    double rng = last.High - last.Low;
+                    double clr = rng > 0 ? Math.Abs(last.Close - last.Open) / rng : 0.0;
+                    if (clr < cfg.ExpClrMin) { s.Verdict = SwVerdict.Neutral; s.Direction = 0; gate = "CLR " + clr.ToString("F2") + " ниже порога; "; }
+                }
+                if (cfg.ExpVolZMin > 0 && s.Verdict == SwVerdict.Agree && hW.Count >= 5)
+                {
+                    int n = Math.Min(20, hW.Count); double m = 0, v = 0;
+                    for (int i = hW.Count - n; i < hW.Count; i++) m += hW[i];
+                    m /= n;
+                    for (int i = hW.Count - n; i < hW.Count; i++) v += (hW[i] - m) * (hW[i] - m);
+                    double sd = Math.Sqrt(v / Math.Max(1, n - 1));
+                    double zv = sd > 0 ? (last.Weight - m) / sd : 0.0;
+                    if (zv < cfg.ExpVolZMin) { s.Verdict = SwVerdict.Neutral; s.Direction = 0; gate = "z объёма " + zv.ToString("F2") + " ниже порога; "; }
+                }
+            }
+            s.Text = (s.Verdict == SwVerdict.Veto ? "вето: середина, движение затухает; " : "") + gate + StatusShort();
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private string WarmupText()
+        {
+            if (!srcOk) return "нет серии кластеров [B03]";
+            return "прогрев: свечей со взвешиванием " + hB.Count + " из " + WarmupCount;
+        }
+
+        #endregion
+
+        #region Экспериментальный блок
+
+        private sealed class PendingEval
+        {
+            public int Type;
+            public int Dir;         // 0 — модуль доходности, без знака
+            public double Start;
+            public double Norm;
+            public long Due;
+        }
+
+        private static readonly string[] EventNames =
+        {
+            "база: каждая свеча, в сторону роста",                    // 0
+            "голос вверх (масса выше опоры)",                         // 1
+            "голос вниз (масса ниже опоры)",                          // 2
+            "новый голос вверх",                                      // 3
+            "новый голос вниз",                                       // 4
+            "затухание после голоса вверх, в сторону разворота",      // 5
+            "затухание после голоса вниз, в сторону разворота",       // 6
+            "голос вверх по тренду Тейла–Сена",                       // 7
+            "голос вверх против тренда",                              // 8
+            "голос вниз по тренду Тейла–Сена",                        // 9
+            "голос вниз против тренда",                               // 10
+            "рычаг T < −0.6",                                         // 11
+            "рычаг T от −0.6 до −0.2",                                // 12
+            "рычаг T от −0.2 до 0.2",                                 // 13
+            "рычаг T от 0.2 до 0.6",                                  // 14
+            "рычаг T > 0.6",                                          // 15
+            "медианный центр m < −0.6",                               // 16
+            "медианный центр m от −0.6 до −0.2",                      // 17
+            "медианный центр m от −0.2 до 0.2",                       // 18
+            "медианный центр m от 0.2 до 0.6",                        // 19
+            "медианный центр m > 0.6"                                 // 20
+        };
+

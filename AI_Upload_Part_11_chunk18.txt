@@ -1,0 +1,300 @@
+﻿        public int PacLowerSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M02] Структура: слот старшего ТФ", Order = 2, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для старшего таймфрейма.")]
+        public int PacHigherSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M03] Структура: использовать старший ТФ", Order = 3, GroupName = "04 · Настройки модулей",
+            Description = "Выключение оставляет только младшую структуру.")]
+        public bool PacUseHigher { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[M04] Структура: сила внутренней", Order = 4, GroupName = "04 · Настройки модулей",
+            Description = "Баров слева и справа для подтверждения мелкой опорной точки. Задаёт запаздывание подтверждения.")]
+        public int PacInternalStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 200)]
+        [Display(Name = "[M05] Структура: сила свинговой", Order = 5, GroupName = "04 · Настройки модулей",
+            Description = "То же для крупной структуры. Больше значение — реже и надёжнее события, больше запаздывание.")]
+        public int PacSwingStrength { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M06] Структура: чем подтверждается пробой", Order = 6, GroupName = "04 · Настройки модулей",
+            Description = "BarClose строже и надёжнее. BarExtreme раньше, но чаще ложно.")]
+        public SwPacBreakBy PacBreakBy { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M81] Пробой: часовой пояс окон", Order = 28, GroupName = "04 · Настройки модулей",
+            Description = "В каком поясе заданы окна: база 06:00–06:59 и 17:00–17:59, сигналы 07:00–09:59 и 18:00–19:59, сброс 14:30 и 21:30. Chicago — пояс данных исследования, подтверждён. Berlin — отдельный профиль регламента: те же часы означают другую фазу рынка; запускается вторым экземпляром на втором счёте.")]
+        public SwWindowZone DboWindowZone { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M82] Пробой: утренняя сессия", Order = 29, GroupName = "04 · Настройки модулей",
+            Description = "База 06:00–06:59, сигналы 07:00–09:59, сброс 14:30, трейлинг 15 тиков.")]
+        public bool DboUseMorning { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M83] Пробой: вечерняя сессия", Order = 30, GroupName = "04 · Настройки модулей",
+            Description = "База 17:00–17:59, сигналы 18:00–19:59, сброс 21:30, трейлинг 10 тиков, направление обязано совпасть с трендом дня.")]
+        public bool DboUseEvening { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 4)]
+        [Display(Name = "[M84] Пробой: слот минутной серии", Order = 31, GroupName = "04 · Настройки модулей",
+            Description = "Серия, по которой строится база и определяется пробой. Должна быть минутной.")]
+        public int DboM1Slot { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 4)]
+        [Display(Name = "[M85] Пробой: слот серии 15M", Order = 32, GroupName = "04 · Настройки модулей",
+            Description = "Серия 15 минут для фильтра боковика NormVol.")]
+        public int DboM15Slot { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 4)]
+        [Display(Name = "[M86] Пробой: слот серии 4H", Order = 33, GroupName = "04 · Настройки модулей",
+            Description = "Серия 240 минут для старшего контура направления.")]
+        public int DboH4Slot { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M07] Время: закрывать позицию на жёсткой границе", Order = 7, GroupName = "04 · Настройки модулей",
+            Description = "Включено — в 22:30 по Берлину модуль времени требует закрыть открытую позицию. Выключено — только запрещаются новые входы, позиция остаётся до закрытия сессии. По умолчанию включено: удержание позиции через технический перерыв CME несёт риск разрыва.")]
+        public bool TimeForceFlatten { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M11] Линии: слот линии 1", Order = 8, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для первой линии.")]
+        public int TrfpLine1Slot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M12] Линии: слот линии 2", Order = 9, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для второй линии.")]
+        public int TrfpLine2Slot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M13] Линии: слот линии 3", Order = 10, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для третьей линии.")]
+        public int TrfpLine3Slot { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M14] Линии: использовать третью", Order = 11, GroupName = "04 · Настройки модулей",
+            Description = "Выключение оставляет голосование двух линий.")]
+        public bool TrfpUseLine3 { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 2000)]
+        [Display(Name = "[M15] Линии: период сглаживания", Order = 12, GroupName = "04 · Настройки модулей",
+            Description = "Период двойного сглаживания диапазона. Он же задаёт прогрев каждой линии.")]
+        public int TrfpPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 50.0)]
+        [Display(Name = "[M16] Линии: множитель ширины", Order = 13, GroupName = "04 · Настройки модулей",
+            Description = "Ширина диапазона. Больше значение — реже развороты линии.")]
+        public double TrfpMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M21] Режим: слот серии", Order = 14, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для расчёта отношения дисперсий.")]
+        public int RegimeSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(30, 250)]
+        [Display(Name = "[M22] Режим: длина окна", Order = 15, GroupName = "04 · Настройки модулей",
+            Description = "Число приращений. При шестидесяти значимым признаётся отклонение около 0.26; при двадцати около 0.45, что практически недостижимо.")]
+        public int RegimeWindow { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M23] Режим: какой допускает вход", Order = 16, GroupName = "04 · Настройки модулей",
+            Description = "PersistentOnly для трендовых входов, MeanRevertOnly для контртрендовых, Any выключает фильтр.")]
+        public SwRegimeAllow RegimeAllow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1000000.0)]
+        [Display(Name = "[M31] Риск: дневной лимит убытка", Order = 17, GroupName = "04 · Настройки модулей",
+            Description = "Ноль отключает. Валюта счёта.")]
+        public double GuardDailyLoss { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1000000.0)]
+        [Display(Name = "[M32] Риск: дневной лимит прибыли", Order = 18, GroupName = "04 · Настройки модулей",
+            Description = "Ноль отключает.")]
+        public double GuardDailyProfit { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M33] Риск: действие при пробитии", Order = 19, GroupName = "04 · Настройки модулей",
+            Description = "BlockNewEntries или BlockAndFlatten.")]
+        public SwGuardBreachAction GuardBreachAction { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M34] Риск: поведение при перезапуске", Order = 20, GroupName = "04 · Настройки модулей",
+            Description = "BlockUntilNextSession безопасно: история сделок экземпляра обнуляется при Disable и Enable, это проверено на сборке 8.1.8.")]
+        public SwGuardRestartPolicy GuardRestartPolicy { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M41] Адапт.стоп: слот серии", Order = 21, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для расчёта линии.")]
+        public int AStopSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 200)]
+        [Display(Name = "[M42] Адапт.стоп: период", Order = 22, GroupName = "04 · Настройки модулей",
+            Description = "Период сглаживания истинного диапазона.")]
+        public int AStopAtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M43] Адапт.стоп: режим ширины", Order = 23, GroupName = "04 · Настройки модулей",
+            Description = "Fixed или VolatilityBuckets по рангу волатильности.")]
+        public SwAdaptiveWidth AStopWidthMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 50.0)]
+        [Display(Name = "[M44] Адапт.стоп: множитель", Order = 24, GroupName = "04 · Настройки модулей",
+            Description = "Действует при режиме Fixed.")]
+        public double AStopFixedMultiplier { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 3)]
+        [Display(Name = "[M51] Выход: номер линии", Order = 25, GroupName = "04 · Настройки модулей",
+            Description = "Какая линия ведёт позицию: 1, 2 или 3.")]
+        public int EscortLineNumber { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[M52] Выход: повод", Order = 26, GroupName = "04 · Настройки модулей",
+            Description = "LineFlip, PriceCross или FlipOrCross.")]
+        public SwEscortExitTrigger EscortTrigger { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[M53] Выход: подтверждение, баров", Order = 27, GroupName = "04 · Настройки модулей",
+            Description = "Сколько баров подряд линия держит встречное направление. Единица — реакция на первый разворот.")]
+        public int EscortConfirmBars { get; set; }
+
+        #endregion
+
+        #region Свойства — решение
+
+        [NinjaScriptProperty] [Display(Name = "[D01] Требовать согласия всех сигналов", Order = 1, GroupName = "02 · Решение",
+            Description = "Включено — вход только при совпадении направления всех готовых модулей роли Signal. Выключено — решает знак суммы голосов.")]
+        public bool RequireAllSignalsAgree { get; set; }
+
+        [NinjaScriptProperty] [Range(0.0, 1.0)]
+        [Display(Name = "[D02] Минимальная уверенность", Order = 2, GroupName = "02 · Решение",
+            Description = "Порог средней уверенности по голосующим модулям. Ноль отключает проверку.")]
+        public double MinConfidence { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[D03] Отсутствие вердикта фильтра блокирует вход", Order = 3, GroupName = "02 · Решение",
+            Description = "Включено — если фильтр подключён, но вердикта не дал, вход запрещён. Выключено — молчание фильтра считается согласием.")]
+        public bool FilterMissingBlocksEntry { get; set; }
+
+        #endregion
+
+        #region Свойства — исполнение
+
+        [NinjaScriptProperty] [Display(Name = "[E01] Режим без отправки ордеров", Order = 1, GroupName = "03 · Исполнение",
+            Description = "Включено — исполнитель только записывает намерения в трассировку, заявки не отправляются. Значение по умолчанию включено: боевой режим требует осознанного переключения.")]
+        public bool DryRunMode { get; set; }
+
+        [NinjaScriptProperty] [Range(1, 1000)]
+        [Display(Name = "[E02] Объём по умолчанию", Order = 2, GroupName = "03 · Исполнение",
+            Description = "Объём входа, когда модуль роли Sizing не подключён.")]
+        public int DefaultQuantity { get; set; }
+
+        [NinjaScriptProperty] [Range(1, 10000)]
+        [Display(Name = "[E03] Стартовый стоп, тиков", Order = 3, GroupName = "03 · Исполнение",
+            Description = "Защитный стоп, выставляемый исполнителем при входе.")]
+        public int StopLossTicks { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 500)]
+        [Display(Name = "[E04] Минимум баров в сделке", Order = 4, GroupName = "03 · Исполнение",
+            Description = "Защита от закрытия на баре входа.")]
+        public int MinBarsInTrade { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 50)]
+        [Display(Name = "[E05] Проскальзывание режима без ордеров, тиков", Order = 5, GroupName = "03 · Исполнение",
+            Description = "Против позиции на каждое рыночное и стоповое исполнение режима без ордеров, не дальше экстремума бара — как в NinjaTrader. Для сверки с эталоном — то же, что в задаче ПК.")]
+        public int DryRunSlippageTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[E06] Стресс-исполнение без ордеров (эксперимент)", Order = 6, GroupName = "03 · Исполнение",
+            Description = "Рыночные исполнения режима без ордеров — по худшей цене бара: покупка по максимуму, продажа по минимуму. Нижняя граница результата: выдерживает ли стратегия плохое исполнение.")]
+        public bool DryRunStressFill { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[E07] Сторож рассинхрона позиции и счёта", Order = 7, GroupName = "03 · Исполнение",
+            Description = "В реальном времени сверяет позицию стратегии с позицией счёта. Расхождение два бара подряд — новые входы запрещены, выходы и стоп — только если не перевернут счёт. Выключать, только если на этом счёте и инструменте вы торгуете ещё и вручную.")]
+        public bool PositionSyncGuard { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 0.999)]
+        [Display(Name = "[E08] Стоп-кран: порог вероятности провала (эксперимент)", Order = 8, GroupName = "03 · Исполнение",
+            Description = "Вероятность того, что истинная точность ставок ниже p* — точности, при которой годовой Шарп не выше [E09] (AFML гл. 15). Достигнута — новые входы запрещены до перезапуска. 0 — выключено; разумно 0,95.")]
+        public double CraneThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[D00] Вход только от структуры (догма)", Order = 0, GroupName = "02 · Решение",
+            Description = "Догма проекта: единственные источники сигналов — шесть событий структуры [MOD1]: внутренние BOS, CHoCH, CHoCH+ и свинговые BOS, CHoCH, CHoCH+. Прочие модули в роли Signal не голосуют. Выключать только для сверки пробоя (П4).")]
+        public bool EntryFromStructureOnly { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 5)]
+        [Display(Name = "[E09] Стоп-кран: целевой годовой Шарп", Order = 9, GroupName = "03 · Исполнение",
+            Description = "θ* в формуле подразумеваемой точности AFML (с. 214–215). 0 — провал означает работу в убыток.")]
+        public double CraneTargetSharpe { get; set; }
+
+        [NinjaScriptProperty] [Range(5, 1000)]
+        [Display(Name = "[E10] Стоп-кран: минимум ставок", Order = 10, GroupName = "03 · Исполнение",
+            Description = "Стоп-кран не срабатывает раньше этого числа закрытых ставок.")]
+        public int CraneMinBets { get; set; }
+
+        #endregion
+
+        #region Свойства — финансовый модуль
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F01] Режим расчёта объёма", Order = 1, GroupName = "05 · Финансовый модуль",
+            Description = "FixedQuantity — брать [E02]. RiskMoneyPerTrade — от денежного бюджета риска. RiskPercentOfEquity — от процента расчётного капитала. В двух последних объём вычисляется как бюджет, делённый на полный риск контракта, и отказ при нехватке бюджета записывается в трассировку, а не игнорируется.")]
+        public SwSizingMode SizingMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "[F02] Бюджет риска на сделку", Order = 2, GroupName = "05 · Финансовый модуль",
+            Description = "Деньги на одну сделку при режиме RiskMoneyPerTrade.")]
+        public double RiskMoneyPerTrade { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, double.MaxValue)]
+        [Display(Name = "[F03] Расчётный капитал", Order = 3, GroupName = "05 · Финансовый модуль",
+            Description = "Ручное значение капитала при режиме RiskPercentOfEquity. Живой капитал счёта намеренно не читается: он недетерминирован между прогонами.")]
+        public double AccountEquityReference { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 100.0)]
+        [Display(Name = "[F04] Риск на сделку, процент", Order = 4, GroupName = "05 · Финансовый модуль",
+            Description = "Доля расчётного капитала на одну сделку.")]
+        public double RiskPercentOfEquity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 1000)]
+        [Display(Name = "[F05] Минимум контрактов", Order = 5, GroupName = "05 · Финансовый модуль",
+            Description = "Расчётный объём ниже этого значения означает отказ от входа, а не округление вверх.")]
+        public int MinQuantity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 1000)]
+        [Display(Name = "[F06] Максимум контрактов", Order = 6, GroupName = "05 · Финансовый модуль",
+            Description = "Жёсткий верхний предел. Если он ниже, чем требует структура ступеней, часть ступеней не сработает.")]
+        public int MaxQuantity { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "[F07] Издержки круга на контракт", Order = 7, GroupName = "05 · Финансовый модуль",
+            Description = "Комиссия обеих сторон плюс биржевые сборы. Входит в полный риск контракта и в минимальный отступ безубытка.")]
+        public double RoundTurnCostPerContract { get; set; }
+
+        [NinjaScriptProperty]

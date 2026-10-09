@@ -1,0 +1,300 @@
+﻿            if (x >= 0) return Math.Abs(l) < 1e-9 ? Math.Log(x + 1) : (Math.Pow(x + 1, l) - 1) / l;
+            return Math.Abs(l - 2) < 1e-9 ? -Math.Log(1 - x) : -(Math.Pow(1 - x, 2 - l) - 1) / (2 - l);
+        }
+
+        /// <summary>Логарифм правдоподобия Йео–Джонсона с точностью до константы.</summary>
+        private double LogLik(int n, double l)
+        {
+            double m = 0; for (int i = 0; i < n; i++) m += YJ(scratch[i], l); m /= n;
+            double v = 0, j = 0;
+            for (int i = 0; i < n; i++) { double y = YJ(scratch[i], l) - m; v += y * y; j += Math.Sign(scratch[i]) * Math.Log(Math.Abs(scratch[i]) + 1); }
+            v /= n;
+            return v > 0 ? -0.5 * n * Math.Log(v) + (l - 1) * j : double.NegativeInfinity;
+        }
+
+        /// <summary>
+        /// Пересчёт параметров по окну [L09] ПРОШЛЫХ баров. λ ищется золотым сечением
+        /// на [−2; 2]. Используются только бары, уже записанные в кольцо: будущего нет.
+        /// </summary>
+        private bool Refit()
+        {
+            int n = Math.Min(count, cfg.FitWindow);
+            if (n < 50) return false;
+            for (int f = 0; f < F; f++)
+            {
+                double m = 0; for (int i = 0; i < n; i++) m += raw[Idx(i), f]; m /= n;
+                double v = 0; for (int i = 0; i < n; i++) { double z = raw[Idx(i), f] - m; v += z * z; }
+                preMu[f] = m; preSd[f] = Math.Sqrt(v / Math.Max(1, n - 1)); if (!(preSd[f] > 0)) preSd[f] = 1;
+                for (int i = 0; i < n; i++) scratch[i] = (raw[Idx(i), f] - preMu[f]) / preSd[f];
+
+                double lo = -2, hi = 2, gr = 0.6180339887;
+                if (cfg.UseYeoJohnson)
+                {
+                    double x1 = hi - gr * (hi - lo), x2 = lo + gr * (hi - lo), f1 = LogLik(n, x1), f2 = LogLik(n, x2);
+                    for (int it = 0; it < 30; it++)
+                    {
+                        if (f1 < f2) { lo = x1; x1 = x2; f1 = f2; x2 = lo + gr * (hi - lo); f2 = LogLik(n, x2); }
+                        else { hi = x2; x2 = x1; f2 = f1; x1 = hi - gr * (hi - lo); f1 = LogLik(n, x1); }
+                    }
+                    lam[f] = 0.5 * (lo + hi);
+                }
+                else lam[f] = 1.0;
+
+                double pm = 0; for (int i = 0; i < n; i++) pm += YJ(scratch[i], lam[f]); pm /= n;
+                double pv = 0; for (int i = 0; i < n; i++) { double y = YJ(scratch[i], lam[f]) - pm; pv += y * y; }
+                postMu[f] = pm; postSd[f] = Math.Sqrt(pv / Math.Max(1, n - 1)); if (!(postSd[f] > 0)) postSd[f] = 1;
+            }
+            normReady = true;
+            return true;
+        }
+
+        private double Z(int back, int f)
+        {
+            return (YJ((raw[Idx(back), f] - preMu[f]) / preSd[f], lam[f]) - postMu[f]) / postSd[f];
+        }
+
+        #endregion
+
+        #region K ближайших по расстоянию Лоренца
+
+        private void Classify()
+        {
+            int K = kDist.Length; kN = 0; nwN = 0;
+            double q0 = Z(0, 0), q1 = Z(0, 1), q2 = Z(0, 2), q3 = Z(0, 3), q4 = Z(0, 4);
+            int maxBack = Math.Min(count - 1, cfg.Lookback);
+
+            // Соседи — только с известным исходом: back ≥ H. Шаг снижает зависимость меток.
+            for (int back = cfg.Horizon + Math.Max(0, cfg.ExpEmbargoBars); back <= maxBack; back += Math.Max(1, cfg.Stride))   // Э17
+            {
+                if (back + 0 > count - 1) break;
+                double d = Math.Log(1 + Math.Abs(q0 - Z(back, 0))) + Math.Log(1 + Math.Abs(q1 - Z(back, 1)))
+                         + Math.Log(1 + Math.Abs(q2 - Z(back, 2))) + Math.Log(1 + Math.Abs(q3 - Z(back, 3)))
+                         + Math.Log(1 + Math.Abs(q4 - Z(back, 4)));
+                int lab = cfg.ExpMetaLabels ? (TripleOutcome(back, 1) * 2 + TripleOutcome(back, -1))                 // L17
+                        : (closeRing[Idx(back - cfg.Horizon)] > closeRing[Idx(back)] ? 1 : -1);
+
+                // Для Надарая–Ватсона — доходность за H баров в ATR на момент ситуации:
+                // регрессии нужна величина хода, а не только знак.
+                if (nwN < nwD.Length)
+                {
+                    double at = atrRing[Idx(back)];
+                    nwD[nwN] = d;
+                    nwY[nwN] = at > 0 ? (closeRing[Idx(back - cfg.Horizon)] - closeRing[Idx(back)]) / at : 0.0;
+                    nwW[nwN] = DecayWeight(back);   // Э18
+                    nwN++;
+                }
+
+                if (kN < K) { Insert(d, lab, back, kN); kN++; }
+                else if (d < kDist[K - 1]) Insert(d, lab, back, K - 1);
+            }
+
+            double sw = 0, vote = 0, h2 = 0, upW = 0, dnW = 0;
+            if (cfg.ExpKernelVote && kN > 0) { double md = kDist[kN / 2]; h2 = md > 0 ? 2 * md * md : 1; }
+            for (int i = 0; i < kN; i++)
+            {
+                double w = (cfg.ExpKernelVote ? Math.Exp(-kDist[i] * kDist[i] / h2) : 1.0) * DecayWeight(kBack[i]);   // Э18
+                sw += w;
+                if (cfg.ExpMetaLabels) { upW += w * (kLab[i] >> 1); dnW += w * (kLab[i] & 1); }                   // L17
+                else vote += w * kLab[i];
+            }
+            double knnStrength;
+            if (cfg.ExpMetaLabels)                                                                                 // L17
+            {
+                double pUp = sw > 0 ? upW / sw : 0, pDn = sw > 0 ? dnW / sw : 0;
+                knnDir = (pUp >= cfg.VoteThreshold && pUp > pDn) ? 1 : (pDn >= cfg.VoteThreshold && pDn > pUp) ? -1 : 0;
+                knnStrength = Math.Max(pUp, pDn);
+            }
+            else
+            {
+                knnStrength = sw > 0 ? Math.Abs(vote) / sw : 0;
+                knnDir = knnStrength >= cfg.VoteThreshold ? Math.Sign(vote) : 0;
+            }
+
+            double nwStrength = 0; nwDir = 0; nwPred = double.NaN; nwEff = 0;
+            if (cfg.Method != SwLorentzMethod.KnnVote && nwN >= 3) nwStrength = NadarayaWatson();
+
+            switch (cfg.Method)
+            {
+                case SwLorentzMethod.NadarayaWatson: dir = nwDir; strength = nwStrength; break;
+                case SwLorentzMethod.Consensus:
+                    dir = (knnDir != 0 && knnDir == nwDir) ? knnDir : 0;
+                    strength = dir != 0 ? Math.Min(knnStrength, nwStrength) : 0;
+                    break;
+                default: dir = knnDir; strength = knnStrength; break;
+            }
+
+            predRing[predHead] = dir; predHead = (predHead + 1) % predRing.Length; if (predCnt < predRing.Length + cfg.Horizon + 1) predCnt++;
+        }
+
+        /// <summary>
+        /// Надарая–Ватсон в пространстве признаков: ŷ = Σ K(dᵢ/h)·yᵢ / Σ K(dᵢ/h) по ВСЕМ
+        /// допустимым ситуациям. Ширина h = 3 · множитель · медиана расстояний: у гауссова ядра
+        /// вычислителя MOD9 z = 3u, поэтому σ = множитель × медиана. Функция ядра — из MOD9,
+        /// не переписана. Эффективный объём (Σw)²/Σw² защищает от решения по одной-двум точкам.
+        /// </summary>
+        private double NadarayaWatson()
+        {
+            for (int i = 0; i < nwN; i++) nwScratch[i] = nwD[i];
+            for (int i = 1; i < nwN; i++)
+            {
+                double key = nwScratch[i]; int j = i - 1;
+                while (j >= 0 && nwScratch[j] > key) { nwScratch[j + 1] = nwScratch[j]; j--; }
+                nwScratch[j + 1] = key;
+            }
+            double med = nwScratch[nwN / 2];
+            double h = 3.0 * Math.Max(1e-9, cfg.NwBandMult * med);
+
+            double sw = 0, sw2 = 0, sy = 0;
+            for (int i = 0; i < nwN; i++)
+            {
+                double w = SwAdaptiveKernelEngine.K(cfg.NwKernel, nwD[i] / h) * nwW[i];   // Э18
+                if (w <= 0) continue;
+                sw += w; sw2 += w * w; sy += w * nwY[i];
+            }
+            if (sw <= 0) return 0;
+            nwPred = sy / sw;
+            nwEff = sw * sw / Math.Max(1e-12, sw2);
+            if (nwEff < cfg.NwMinEff || Math.Abs(nwPred) < cfg.NwThreshold) return 0;
+            nwDir = Math.Sign(nwPred);
+            return Math.Min(1.0, Math.Abs(nwPred) / (2.0 * Math.Max(1e-9, cfg.NwThreshold)));
+        }
+
+        /// <summary>Вставка в отсортированный массив длины K без выделения памяти.</summary>
+        private void Insert(double d, int lab, int back, int pos)
+        {
+            int j = pos;
+            while (j > 0 && kDist[j - 1] > d) { kDist[j] = kDist[j - 1]; kLab[j] = kLab[j - 1]; kBack[j] = kBack[j - 1]; j--; }
+            kDist[j] = d; kLab[j] = lab; kBack[j] = back;
+        }
+
+        /// <summary>Э18: вес давности — 0,5^(давность / полураспад); без полураспада — 1.</summary>
+        private double DecayWeight(int back)
+        {
+            return cfg.ExpDecayHalfLife > 0 ? Math.Pow(0.5, (double)back / cfg.ExpDecayHalfLife) : 1.0;
+        }
+
+        #endregion
+
+        public string StateLine
+        {
+            get
+            {
+                return string.Format("{0} | K {1}, NW {2:F2} ATR (эфф. {3:F0}) → {4} | точность {5:P0} при базе {6:P0} ({7})",
+                    cfg.Method, knnDir > 0 ? "↑" : knnDir < 0 ? "↓" : "—", double.IsNaN(nwPred) ? 0.0 : nwPred, nwEff,
+                    dir > 0 ? "вверх" : dir < 0 ? "вниз" : "нет", Precision(), BaseRate(), evalCnt);
+            }
+        }
+    }
+}
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_SW_Mod_Pac_S021.cs.txt
+--------------------------------------------------------------------------------
+
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_Pac_S021 — МОДУЛЬ СТРУКТУРЫ РЫНКА, роль Signal, v1.5 (2026-10-05)
+//
+//  v1.5 — ЛОГИКА ИЗ ИНДИКАТОРА PACV025MarketStructureCoreFix v0.2.7 (извлечена по его исходнику, перенос
+//    DZ_PACV025_Port_S021.py, проверка на реестрах движений 2015–2018). Расчёт умолчаний не изменён. Два
+//    эксперимента, выключены:
+//    Э76 ExpChochPlusFailedExtreme — правила структуры PACV025: CHoCH+ только если перед пробоем последний пивот
+//        той же стороны НЕ обновил экстремум (несостоявшийся HH перед пробоем вниз, несостоявшийся LL перед
+//        пробоем вверх) — каноническое определение; у умолчаний CHoCH+ = пробой за предыдущий уровень. Также BOS
+//        засчитывается лишь после первого CHoCH в истории контура (priorEventConfirmed).
+//    Э77 ExpStrongWeak — сильные/слабые экстремумы: VolumeRatio — объём ноги между подтверждениями пивотов одного
+//        типа сопоставим с предыдущей (min/max ≥ 50 %) → Strong, иначе Weak; TrendSide — в медвежьем тренде
+//        High сильные и Low слабые, в бычьем наоборот. Сила пробитого уровня меняет уверенность события на
+//        ±ExpStrongBonus и пишется в описание. Измерено на реестрах: ход после якоря не зависит от метки ни в одном
+//        режиме (медианы 181/188, 232/238, 361/410 тиков) — функция остаётся экспериментом для связок.
+//
+//  v1.4 — ДОГМА ПРОЕКТА: ЕДИНСТВЕННЫЕ ИСТОЧНИКИ СИГНАЛОВ — ШЕСТЬ СОБЫТИЙ СТРУКТУРЫ:
+//    внутренние BOS, CHoCH, CHoCH+ и свинговые BOS, CHoCH, CHoCH+. Прочие модули сигналов
+//    не порождают (ядро, [D00]). Внутренний BOS младшего ТФ прежде был выключен по
+//    умолчанию ([M87]) — теперь включён: на младшем ТФ по умолчанию работают все шесть.
+//    На старшем ТФ по умолчанию — три свинговых: внутренняя структура старшего ТФ по
+//    масштабу близка к свинговой младшего, и один слом засчитывался бы дважды; включается
+//    флагами [M93]–[M95].
+//    Эксперимент Э42 [M18], выключен нулём: УНИКАЛЬНОСТЬ СОБЫТИЙ. Сигнал, пришедший ближе
+//    [M18] баров серии исполнения к прошлому, не отправляется. AFML гл. 4 (4.3–4.4):
+//    одновременные события делят одни и те же исходы и несут меньше независимой
+//    информации; пачка сломов на одном движении — одно событие, а не несколько.
+//
+//  v1.3 — ПРОХОД 2 ПОЛНОЙ ПРОВЕРКИ. По догме проекта этот модуль — единственный
+//    источник входов.
+//    1. ОБА ЭКСТРЕМУМА ПРОБИТЫ ОДНИМ БАРОМ (только при [M06] = BarExtreme). Прежде первым
+//       проверялся верхний, и порядок событий внутри бара выбирался произвольно — путь,
+//       отклонённый Книгой проекта (раздел 10). Теперь оба уровня помечаются пробитыми,
+//       событие не порождается, тренд не меняется: трасса PAC_AMBIGUOUS_BAR. При закрытии
+//       бара ([M06] = BarClose, умолчание) такое невозможно: закрытие одно.
+//    2. Ссылки шапки на прежнее меню исправлены: флаги допуска — [M87]–[M98], наблюдение —
+//       [V01] и отладочное наблюдение [V02].
+//    Эксперименты, выключены нулём:
+//    Э37 [M08] пробой засчитывается, только если цена ушла за уровень не меньше чем на
+//       [M08] × ATR серии за [M10] баров. AFML 3.3 (с. 44): порог в долях волатильности, а
+//       не «хоть на тик» — пробой на один тик внутри шума сигналом не считается.
+//    Э38 [M09] пробой засчитывается, только если объём бара пробоя не меньше [M09] × среднего
+//       за [M10] баров. Volume Profile (Trader Dale, с. 35): пробой сильного уровня — признак
+//       «сильной силы», крупных покупателей или продавцов; без объёма — без подтверждения.
+//       Нужен настоящий объём: на данных без объёма событий не будет.
+//    Неподтверждённый пробой уровень не тратит: следующий бар может его подтвердить.
+//
+//  v1.2.1 — РАСЧЁТ НЕ ИЗМЕНЁН. Правка только комментариев шапки: модуль —
+//  один из источников направления, а не единственный; к замечанию о
+//  DetectEvents добавлен разбор предложенного исправления.
+//
+//  v1.2 — РАСЧЁТ НЕ ИЗМЕНЁН. Изменено только наблюдение:
+//    - метки и уровни событий такта рисуются после отправки сигнала, когда
+//      известно, какое событие отобрано. Отобранное — рабочий объект, ранг 0;
+//      уступившие и отсеянные — отладочные (отладочное наблюдение [V02]),
+//      ранг подписи по уверенности относительно [D02] — для плотности наблюдения [V01];
+//    - причина отсева [M6x выкл] передаётся уточнением подписи, ядро
+//      показывает её по [V07b];
+//    - незавершённые опорные точки ([V02]): бар среди последних strength баров,
+//      который станет опорным, если следующие бары его не превысят.
+//
+//  v1.1 — РАСЧЁТ НЕ ИЗМЕНЁН. Добавлено только наблюдение:
+//    - у сигнала идентификатор события SignalId и описание ShortDescription;
+//      идентификатор строится по времени бара пробоя и совпадает между
+//      прогонами с разной глубиной загруженной истории;
+//    - визуальные события: подтверждённые опорные точки на баре экстремума,
+//      метки BOS/CHoCH/CHoCH+ на баре пробоя, пробитые уровни, стрелка
+//      отправленного сигнала. Рисует ядро; модуль только просит (EmitVisual)
+//      и только если роль включена (Host.VisualOn);
+//    - события, выключенные флагами [M87]-[M98], и события, уступившие по
+//      рангу, записываются в журнал сигналов ядра с причиной.
+//  Весь код наблюдения обёрнут и стоит после изменения состояния: его сбой не
+//  переводит модуль в отказ и не меняет ни состояния структуры, ни сигнала.
+//
+//  ЗАМЕЧАНИЕ, НЕ ИСПРАВЛЕННОЕ НАМЕРЕННО (это торговая логика): в DetectEvents
+//  ветка «первый пробой устанавливает тренд» выходит из метода через return,
+//  и проверка пробоя нижнего экстремума на этом баре не выполняется. При
+//  BreakBy = BarClose одно закрытие не может пробить оба экстремума, при
+//  BarExtreme на широком баре — может. Решение — за отдельным ТЗ.
+//  Разбор ТЗ v1.4.1 (2026-09-24): просто удалить return нельзя. После
+//  st.Trend = 1 выполнение доходит до ветки «тренд вверх → BOS», и первый
+//  пробой каждого из четырёх состояний структуры регистрирует BOS — при
+//  BarClose тоже. Это вернуло бы сигналы сразу после прогрева, устранённые
+//  ранее. Перестановка «без регистрации на первом пробое, но с проверкой
+//  второго экстремума» на широком баре даёт смену характера в обратную
+//  сторону по порядку строк кода, а не по порядку цен внутри бара — ранг
+//  CHoCH выше BOS, и она станет сигналом. Нужны правило базы порта для
+//  пробоя обоих экстремумов одним баром и подсчёт таких баров на истории.
+//
+//  ОДИН ИЗ ИСТОЧНИКОВ НАПРАВЛЕНИЯ. Направление порождают модули роли Signal:
+//  этот модуль, пробой диапазона двух сессий [MOD8], а в роли Signal — канал
+//  Калмана [MOD9], рычаг свечи [MOD10] и адаптер внешнего индикатора. Прочие
+//  модули фильтруют, сопровождают или требуют закрытия. Вход решает ядро по
+//  голосам всех сигнальных модулей.
+//
+//  ЧТО СЧИТАЕТ. Опорные экстремумы и три типа структурных событий на двух
+//  таймфреймах в двух масштабах.
+//
+//    BOS    — пробой структуры в сторону действующего тренда, продолжение;

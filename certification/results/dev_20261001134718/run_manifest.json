@@ -1,0 +1,12 @@
+{
+  "engine": "DZ_OPT_Engine_S021-v1.3 (2026-09-30)",
+  "task_id": "dev_20261001134718",
+  "data_sha256": "dd9fada66065fd49af3370603b0b57fcc4383b7c60f64848ce2c2bc80f607ef5",
+  "data_file": "data_certified\\MGC\\MGC_M1.npz",
+  "data_certificate": "data_certified\\MGC\\MGC_DATA_CERTIFICATE.json",
+  "period": [
+    null,
+    null
+  ],
+  "instrument": "MGC"
+}

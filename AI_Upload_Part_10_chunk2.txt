@@ -1,0 +1,300 @@
+﻿Ни один фильтр в умолчаниях не отличает прибыльный кандидат от убыточного: точность пропущенных 48,9–49,4 % при базовой 48,9 %. Валидация входа рычагом и Лоренцем (связка MOD1 → MOD14/MOD11) на этом горизонте **не подтверждается**; Лоренц к тому же почти всегда нейтрален — перевес голосов есть на 9 % баров.
+
+## 3. Цепочки по сделкам, 2015–2018, $/контракт после издержек
+
+| Цепочка | Сделок | PnL | $/сделку | PF | Прибыльных | MFE мед. | MAE мед. | Захват MFE у прибыльных | 2015 | 2016 | 2017 | 2018 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| A: PAC без фильтров, стоп 40 + 22:30 | 2,091 | -7,710 | -3.69 | 0.86 | 33% | 33 | 31 | 60% | -2,038 | -826 | -2,316 | -2,530 |
+| B: PAC ∧ MOD14 ∧ MOD11 (валидация) | 1,987 | -8,469 | -4.26 | 0.84 | 32% | 33 | 31 | 60% | -2,760 | -806 | -2,054 | -2,850 |
+| C: PAC ∧ MOD9 (ядро M15) | 1,963 | -5,076 | -2.59 | 0.90 | 34% | 34 | 31 | 60% | -500 | -552 | -1,298 | -2,725 |
+| D: PAC ∧ MOD13-направление M60 | 1,984 | -4,526 | -2.28 | 0.91 | 34% | 35 | 31 | 61% | -1,390 | +1,278 | -2,134 | -2,280 |
+| E: PAC → сопровождение MOD13 (канал M5) | 6,370 | -15,618 | -2.45 | 0.78 | 33% | 12 | 10 | 43% | -3,811 | -5,419 | -4,160 | -2,229 |
+| F: PAC ∧ MOD14 ∧ MOD11 ∧ MOD9 → MOD13 | 4,075 | -6,897 | -1.69 | 0.85 | 34% | 16 | 11 | 42% | -1,506 | -1,148 | -2,794 | -1,449 |
+| G: PAC ∧ MOD9 ∧ MOD13-напр. → MOD13 | 4,126 | -5,664 | -1.37 | 0.88 | 34% | 17 | 11 | 43% | -1,304 | -1,256 | -1,725 | -1,380 |
+| H: PAC по тренду структуры 240m | 1,762 | +1,079 | +0.61 | 1.02 | 36% | 34 | 30 | 63% | +518 | +1,665 | +424 | -1,529 |
+| I: PAC по тренду 240m ∧ H(240m) > 0,5 | 853 | +2,071 | +2.43 | 1.11 | 40% | 36 | 29 | 61% | -872 | +2,345 | +1,632 | -1,034 |
+| J: PAC ∧ H(240m) > 0,5 | 1,050 | -6,047 | -5.76 | 0.78 | 32% | 32 | 31 | 58% | -1,549 | -1,689 | -1,525 | -1,284 |
+| E2 (Э58): PAC → сопровождение MOD13 по каналу M60 | 2,193 | -6,795 | -3.10 | 0.87 | 32% | 32 | 29 | 59% | — | — | — | — |
+
+**Что видно.** Базовая структура (A) убыточна: −3,7 $ на сделку при издержках 2,44 $ — то есть входы без издержек почти ровно нулевые. Валидация (B) ухудшает. Ядро M15 (C) и направление канала M60 (D) поднимают PF с 0,86 до 0,90–0,91 — всё ещё убыток. Сопровождение каналом Калмана M5 (E, F, G) — худшее: стоп по нижней границе с отступом 2 тика выбивает 77–94 % сделок, MFE прибыльных падает втрое, захват потенциала 42 % против 60 % у простого выхода по времени. Единственный положительный знак — направление триггера по тренду структуры 240m (H: PF 1,03, безубыток) и то же с Хёрстом 240m > 0,5 (I: PF 1,11, +2 071 $ на 853 сделках, 40 % прибыльных), но два года из четырёх у I убыточны — устойчивости нет. Хёрст без контекста (J) вредит.
+
+## 4. Выводы и решения
+
+1. Связка MOD1 → MOD14/MOD11 как валидация входа в умолчаниях ценности не несёт — измерено на 24 457 кандидатах. Дальнейший перебор их параметров без новой гипотезы — испытания без теории (MLAM, гл. 8).
+2. Эстафета MOD1 → MOD9 → MOD13 в умолчаниях вредна из-за сопровождения: тесный стоп по каналу текущего ТФ. Э58 (канал M60) — проверка, не в отступе ли дело.
+3. Сам триггер структуры на M5 — монетка: 48,9 % прибыльных кандидатов по тройному барьеру. Это главный факт: никакой фильтр не создаёт ожидания там, где его нет у источника сигналов. Работа переносится на источник: контекст 240m (единственный с положительным знаком) и определение триггера.
+4. Все числа — на обучении, порт без паритета; на 2022–2025 не заходили.
+
+## 5. Паритет переноса с NinjaTrader — что сделать на вашей машине
+
+1. На графике MGC M5 с пулом серий M1/M15/M60 (слоты 1/2/3), [MOD1] младший слот 0, старший 2; [MOD9] слот 2; [MOD11] слот 0; [MOD14] анализ 0, кластеры 1; [MOD13] младший 1, текущий 0, старший 3 — два торговых дня Playback, режим без ордеров, [T13] журнал решений включён.
+2. На ПК: `python DZ_PORT_Chains_S021.py parity-dump --npz MGC_M1.npz --volume-nt <папка> --start <день> --days 2 --out parity` — те же дни.
+3. Сравнить по минутам: события структуры (тип, направление), направление ядра, перевес Лоренца, состояние рычага, состояние и границы Калмана. Расхождения — это либо ошибка переноса, либо порядок тактов; до совпадения числа разделов 2–3 остаются гипотезой.
+
+Экспериментальные функции порции: Э58 — цепочка E2, сопровождение по каналу M60; Э59 — `--meta-horizon N`, горизонт мета-разметки, с N = 4 совпадает с горизонтом Лоренца.
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_PRESET_ALL_MODULES_S021.json
+--------------------------------------------------------------------------------
+
+{
+  "strategy": "DZ_SW_Hub_S021",
+  "preset": "ALL_MODULES — все 15 модулей включены, эксперименты выключены (поэтапные испытания)",
+  "hub_version": "DZ_SW_Hub_S021-v1.20 (2026-10-05)",
+  "menu_fingerprint": "47e75ce0bb48",
+  "note": "Все слоты [MOD1]–[MOD15] включены по указанию руководителя от 2026-10-05. Следствия: [MOD8] пробой двух сессий — модуль-сигнал, догма [D00] оставляет источником входов только [MOD1]; [MOD12] сигнал ПК без файла сигнала остаётся неготовым и как фильтр запрещает входы — на машине без моста ПК выключить [MOD12] или подать файл. Режим без ордеров [E01] и пульт пресетом не меняются. Пул серий 1/5/15/60 минут включён. Версия коммутатора v1.19, отпечаток 35517fec3e7f.",
+  "params": {
+    "UseSeries1": true,
+    "UseSeries2": true,
+    "UseSeries3": true,
+    "UseSeries4": true,
+    "Slot1Enabled": true,
+    "Slot2Enabled": true,
+    "Slot3Enabled": true,
+    "Slot4Enabled": true,
+    "Slot5Enabled": true,
+    "Slot6Enabled": true,
+    "Slot7Enabled": true,
+    "Slot8Enabled": true,
+    "Slot9Enabled": true,
+    "Slot10Enabled": true,
+    "Slot11Enabled": true,
+    "Slot12Enabled": true,
+    "Slot13Enabled": true,
+    "Slot14Enabled": true,
+    "Slot15Enabled": true,
+    "DecisionJournal": true,
+    "MeasureSlippage": true,
+    "MenuFingerprint": true,
+    "ReportNonDefaults": true,
+    "DryTradeJournal": true,
+    "DryTradeVotes": true,
+    "AnalyzerJournal": true,
+    "YearlySummary": true,
+    "RiskLineEnabled": true,
+    "BetStatsEnabled": true,
+    "MetaLabels": true,
+    "MetaTargetR": 1.0,
+    "MetaVerticalBars": 60,
+    "GuardLossStreakPause": 0,
+    "GuardShockMultiplier": 0.0,
+    "GuardShockPauseBars": 15,
+    "CraneThreshold": 0.0,
+    "CraneTargetSharpe": 0.0,
+    "CraneMinBets": 30,
+    "LorExpEmbargo": 0,
+    "LorExpHalfLife": 0,
+    "HmExpTrendScan": false,
+    "HmExpScanMin": 8,
+    "HmExpScanT": 2.0,
+    "KalExpNisGate": 0.0,
+    "KalExpMinStateBars": 0,
+    "LevExpPoc": false,
+    "PacExpBreakAtr": 0.0,
+    "PacExpBreakWindow": 14,
+    "PacExpBreakVol": 0.0,
+    "PacExpMinBarsBetween": 0,
+    "TimeExpActiveShare": 0.0,
+    "TrfpExpMinBarsAfterFlip": 0,
+    "RegimeExpHamiltonProb": 0.0,
+    "RegimeExpHamiltonStay": 0.95,
+    "AStopExpEwma": false,
+    "AStopExpEwmaSpan": 100,
+    "EscortExpVerticalBars": 0,
+    "KerExpShrinkTau": 0.0,
+    "KerExpTGate": false,
+    "KerExpTMin": 2.0,
+    "KerExpFastSlow": false,
+    "KerExpSkill": false,
+    "KerSkillWindow": 100,
+    "HkExpPriorObs": 0,
+    "HkExpGate": false,
+    "HkExpGateBand": 0.03,
+    "HkExpInverse": false,
+    "HkExpConfidence": false,
+    "GuardExpLossSigma": 0.0,
+    "FinExpStopAtrFloor": 0.0,
+    "LorExpKernelVote": false,
+    "LorExpPrecisionGate": false,
+    "LorExpPrecisionMin": 0.65,
+    "LorExpAgreeKernel": false,
+    "HmExpSqueeze": false,
+    "HmExpPersist": 0,
+    "WsCommandLog": false,
+    "RegimeExpHamiltonStep": 0,
+    "KerExpThrSigma": 0.0,
+    "HkExpThrSigma": 0.0,
+    "HkExpVrGateZ": 0.0,
+    "LorExpMetaAtr": 1.0,
+    "LevExpClrMin": 0.0,
+    "LevExpVolZMin": 0.0,
+    "KalExpEscortOffsetSigma": 0.0,
+    "KerExpTrendScan": false,
+    "LorExpMetaLabels": false,
+    "VisualsEnabled": true,
+    "PacExpChochPlusFailed": false,
+    "PacExpStrongWeak": "Off",
+    "PacExpStrongBonus": 0.1
+  }
+}
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_PRESET_EXP_ALL_S021.json
+--------------------------------------------------------------------------------
+
+{
+  "strategy": "DZ_SW_Hub_S021",
+  "preset": "EXP_ALL — все эксперименты включены (прогон B)",
+  "hub_version": "DZ_SW_Hub_S021-v1.20 (2026-10-05)",
+  "menu_fingerprint": "47e75ce0bb48",
+  "note": "Значения экспериментов — стартовые гипотезы ревизии от 2026-10-04, не результат оптимизации. Режим без ордеров [E01] и пульт [U01]/[U03] пресетом не меняются. [MOD8] и [MOD12] выключены: догма [D00] и отсутствие сигнала ПК; их эксперименты Э15, Э16, Э20 — отдельными прогонами. [E06] стресс-исполнение — отдельный прогон. Ветви-альтернативы выключены: [K63] пересечение прямых, [H13] обратное отображение. Эксперименты ревизии v1.19 (Э65, Э66, Э73, L17, Э69, Э72) выключены и в EXP_ALL: это ветви-альтернативы, каждая — отдельное испытание.",
+  "params": {
+    "UseSeries1": true,
+    "UseSeries2": true,
+    "UseSeries3": true,
+    "UseSeries4": true,
+    "Slot1Enabled": true,
+    "Slot2Enabled": true,
+    "Slot3Enabled": true,
+    "Slot4Enabled": true,
+    "Slot5Enabled": true,
+    "Slot6Enabled": true,
+    "Slot7Enabled": true,
+    "Slot8Enabled": false,
+    "Slot9Enabled": true,
+    "Slot10Enabled": true,
+    "Slot11Enabled": true,
+    "Slot12Enabled": false,
+    "Slot13Enabled": true,
+    "Slot14Enabled": true,
+    "Slot15Enabled": true,
+    "DecisionJournal": true,
+    "MeasureSlippage": true,
+    "MenuFingerprint": true,
+    "ReportNonDefaults": true,
+    "DryTradeJournal": true,
+    "DryTradeVotes": true,
+    "AnalyzerJournal": true,
+    "YearlySummary": true,
+    "RiskLineEnabled": true,
+    "BetStatsEnabled": true,
+    "MetaLabels": true,
+    "MetaTargetR": 1.0,
+    "MetaVerticalBars": 60,
+    "GuardLossStreakPause": 3,
+    "GuardShockMultiplier": 3.0,
+    "GuardShockPauseBars": 15,
+    "CraneThreshold": 0.95,
+    "CraneTargetSharpe": 0.0,
+    "CraneMinBets": 30,
+    "LorExpEmbargo": 20,
+    "LorExpHalfLife": 1000,
+    "HmExpTrendScan": true,
+    "HmExpScanMin": 8,
+    "HmExpScanT": 2.0,
+    "KalExpNisGate": 3.0,
+    "KalExpMinStateBars": 3,
+    "LevExpPoc": true,
+    "PacExpBreakAtr": 0.25,
+    "PacExpBreakWindow": 14,
+    "PacExpBreakVol": 1.0,
+    "PacExpMinBarsBetween": 5,
+    "TimeExpActiveShare": 0.5,
+    "TrfpExpMinBarsAfterFlip": 3,
+    "RegimeExpHamiltonProb": 0.85,
+    "RegimeExpHamiltonStay": 0.95,
+    "AStopExpEwma": true,
+    "AStopExpEwmaSpan": 100,
+    "EscortExpVerticalBars": 60,
+    "KerExpShrinkTau": 0.5,
+    "KerExpTGate": true,
+    "KerExpTMin": 2.0,
+    "KerExpFastSlow": false,
+    "KerExpSkill": true,
+    "KerSkillWindow": 100,
+    "HkExpPriorObs": 128,
+    "HkExpGate": true,
+    "HkExpGateBand": 0.03,
+    "HkExpInverse": false,
+    "HkExpConfidence": true,
+    "GuardExpLossSigma": 2.0,
+    "FinExpStopAtrFloor": 1.0,
+    "LorExpKernelVote": true,
+    "LorExpPrecisionGate": true,
+    "LorExpPrecisionMin": 0.65,
+    "LorExpAgreeKernel": true,
+    "HmExpSqueeze": true,
+    "HmExpPersist": 3,
+    "WsCommandLog": true,
+    "RegimeExpHamiltonStep": 0,
+    "KerExpThrSigma": 0.0,
+    "HkExpThrSigma": 0.0,
+    "HkExpVrGateZ": 0.0,
+    "LorExpMetaAtr": 1.0,
+    "LevExpClrMin": 0.0,
+    "LevExpVolZMin": 0.0,
+    "KalExpEscortOffsetSigma": 0.0,
+    "KerExpTrendScan": false,
+    "LorExpMetaLabels": false,
+    "PacExpChochPlusFailed": false,
+    "PacExpStrongWeak": "Off",
+    "PacExpStrongBonus": 0.1
+  }
+}
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_PRESET_EXP_BASE_S021.json
+--------------------------------------------------------------------------------
+
+{
+  "strategy": "DZ_SW_Hub_S021",
+  "preset": "EXP_BASE — те же модули и диагностика, эксперименты выключены (прогон A)",
+  "hub_version": "DZ_SW_Hub_S021-v1.20 (2026-10-05)",
+  "menu_fingerprint": "47e75ce0bb48",
+  "note": "Опорный прогон для сравнения с EXP_ALL: тот же пул серий, те же слоты и та же диагностика, все эксперименты в значениях по умолчанию.",
+  "params": {
+    "UseSeries1": true,
+    "UseSeries2": true,
+    "UseSeries3": true,
+    "UseSeries4": true,
+    "Slot1Enabled": true,
+    "Slot2Enabled": true,
+    "Slot3Enabled": true,
+    "Slot4Enabled": true,
+    "Slot5Enabled": true,
+    "Slot6Enabled": true,
+    "Slot7Enabled": true,
+    "Slot8Enabled": false,
+    "Slot9Enabled": true,
+    "Slot10Enabled": true,
+    "Slot11Enabled": true,
+    "Slot12Enabled": false,
+    "Slot13Enabled": true,
+    "Slot14Enabled": true,
+    "Slot15Enabled": true,
+    "DecisionJournal": true,
+    "MeasureSlippage": true,
+    "MenuFingerprint": true,
+    "ReportNonDefaults": true,
+    "DryTradeJournal": true,
+    "DryTradeVotes": true,
+    "AnalyzerJournal": true,
+    "YearlySummary": true,
+    "RiskLineEnabled": true,
+    "BetStatsEnabled": true,
+    "MetaLabels": true,
+    "MetaTargetR": 1.0,
+    "MetaVerticalBars": 60,
+    "GuardLossStreakPause": 0,
+    "GuardShockMultiplier": 0.0,
+    "GuardShockPauseBars": 15,
+    "CraneThreshold": 0.0,
+    "CraneTargetSharpe": 0.0,
+    "CraneMinBets": 30,
+    "LorExpEmbargo": 0,
+    "LorExpHalfLife": 0,
+    "HmExpTrendScan": false,

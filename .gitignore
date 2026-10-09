@@ -1,0 +1,26 @@
+# Node.js зависимости и Electron
+node_modules/
+**/node_modules/
+dist/
+build/
+
+# Бинарники и исполняемые файлы
+*.exe
+*.dll
+*.pdb
+*.node
+
+# Python кэш и виртуальные среды
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+venv/
+.venv/
+
+# Данные и тяжелые архивы
+*.csv
+*.npz
+*.zip
+*.tar.gz
+*.log

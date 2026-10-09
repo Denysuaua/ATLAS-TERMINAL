@@ -1,0 +1,300 @@
+﻿        [Range(0, 235959)]
+        [Display(Name = "[M58] Охрана: запретное окно 2, конец, ЧЧММСС", Order = 929, GroupName = "04 · Настройки модулей",
+            Description = "Конец второй паузы.")]
+        public int GuardBlack2End { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10)]
+        [Display(Name = "[M59] Охрана: лимит убытка дня в σ (эксперимент)", Order = 930, GroupName = "04 · Настройки модулей",
+            Description = "Блокировка входов, когда убыток дня достиг этого числа σ дневного результата за 20 дней (AFML 3.3); действует после 10 дней. 0 — выключено.")]
+        public double GuardExpLossSigma { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 20)]
+        [Display(Name = "[F45] Стоп не уже доли ATR (эксперимент)", Order = 33, GroupName = "05 · Финансовый модуль",
+            Description = "В режиме FixedTicks стартовый стоп не уже этого кратного ATR в тиках (AFML 3.3); объём считается от того же расстояния. 0 — выключено.")]
+        public double FinExpStopAtrFloor { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "[C34] Выдержка состояния канала, баров (эксперимент)", Order = 34, GroupName = "15 · Канал Калмана",
+            Description = "Вердикт по новому состоянию канала — только после этого числа баров серии исполнения; до того нейтраль — выдержка по времени, не фильтр CUSUM (AFML 2.5.2.1, с. 39); CUSUM по накопленному сдвигу — кандидат Э50. 0 — выключено.")]
+        public int KalExpMinStateBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 5)]
+        [Display(Name = "[C35] Отступ стопа сопровождения в долях полуширины канала (эксперимент)", Order = 35, GroupName = "15 · Канал Калмана",
+            Description = "Э72. Отступ стопа от границы канала = это число × полуширина канала (≈ k·σ остатков) вместо тиков [C1x]: отступ масштабируется с волатильностью (AFML 3.3). По отчёту о связках отступ 2 тика выбивал 77–94 % сделок. 0 — выключено.")]
+        public double KalExpEscortOffsetSigma { get; set; }
+
+        #endregion
+
+        #region Внутренний доступ для исполнителя
+
+        // Исполнитель — вложенный класс: только он имеет доступ к ордерному API
+        // родителя. Вынесение его в отдельный файл потребовало бы открыть этот
+        // доступ шире, чего архитектура не допускает.
+
+        internal bool HubDryRun { get { return DryRunMode; } }
+        internal int HubBreakevenAfter { get { return BreakevenAfterTicks; } }
+        internal int HubBreakevenOffset { get { return BreakevenOffsetTicks; } }
+        internal int HubTrailAfter { get { return TrailAfterTicks; } }
+        internal int HubTrailDistance { get { return TrailDistanceTicks; } }
+        /// <summary>
+        /// Реализованный результат СТРАТЕГИИ, не счёта.
+        ///
+        /// Источник намеренно ограничен собственными сделками: ручная
+        /// торговля и другие стратегии на том же счёте не должны закрывать
+        /// исправную позицию этой.
+        ///
+        /// ОГРАНИЧЕНИЕ, ПОДТВЕРЖДЁННОЕ ЭМПИРИЧЕСКИ на сборке 8.1.8:
+        /// история сделок экземпляра ОБНУЛЯЕТСЯ при Disable и Enable.
+        /// Восстановить дневной результат после перезапуска невозможно;
+        /// риск-модуль обязан это учитывать, а не делать вид, что помнит.
+        /// </summary>
+        internal double HubRealizedPnl
+        {
+            get
+            {
+                if (DryRunMode) return virtRealizedPnl;
+                try { return SystemPerformance.AllTrades.TradesPerformance.Currency.CumProfit; }
+                catch { return 0; }
+            }
+        }
+
+        internal int HubRealizedTradeCount
+        {
+            get
+            {
+                if (DryRunMode) return 0;
+                try { return SystemPerformance.AllTrades.Count; } catch { return 0; }
+            }
+        }
+
+        internal bool HubIsFirstBarOfSession
+        {
+            get { try { return Bars != null && Bars.IsFirstBarOfSession; } catch { return false; } }
+        }
+
+        internal double HubPointValue
+        {
+            get
+            {
+                try { return Instrument.MasterInstrument.PointValue; } catch { return 1.0; }
+            }
+        }
+
+        /// <summary>ATR в ТИКАХ. Создаётся один раз в DataLoaded.</summary>
+        internal double HubAtrTicks
+        {
+            get
+            {
+                try
+                {
+                    if (hubAtr == null || TickSize <= 0) return 0;
+                    return hubAtr[0] / TickSize;
+                }
+                catch { return 0; }
+            }
+        }
+        private ATR hubAtr;
+        internal int HubStopTicks { get { return StopLossTicks; } }
+
+        /// <summary>
+        /// ЕДИНЫЙ ИСТОЧНИК РАССТОЯНИЯ СТАРТОВОГО СТОПА.
+        ///
+        /// Прежде исполнитель ставил стоп всегда по [E03] в тиках, а
+        /// финансовый модуль считал R через [F11] с долларами цены и ATR.
+        /// При [F11] = AtrMultiple реальный стоп стоял на одном расстоянии,
+        /// а объём рассчитывался под другое — позиция могла оказаться в разы
+        /// крупнее задуманной. Теперь оба берут расстояние отсюда.
+        /// </summary>
+        internal double HubInitialStopTicks
+        {
+            get
+            {
+                if (fin != null)
+                {
+                    double t = fin.StopDistanceTicks();
+                    if (t > 0 && !double.IsNaN(t)) return t;
+                }
+                return StopLossTicks;
+            }
+        }
+
+        /// <summary>Фактический стоп по данным исполнителя. Единственный источник истины.</summary>
+        internal double HubCurrentStop { get { return exec != null ? exec.CurrentStop : double.NaN; } }
+        internal int HubMinBars { get { return MinBarsInTrade; } }
+
+        internal Order HubEnter(int dir, int qty, string sig)
+        {
+            return dir > 0 ? EnterLong(execBip, qty, sig) : EnterShort(execBip, qty, sig);
+        }
+
+        /// <summary>
+        /// Отложенный стоп-вход. Сигнатура проверена по руководству NinjaTrader:
+        /// EnterLongStopMarket(int barsInProgressIndex, bool isLiveUntilCancelled,
+        /// int quantity, double stopPrice, string signalName).
+        /// isLiveUntilCancelled = false: ордер живёт, пока его подтверждают
+        /// каждый бар; прекращение сигнала снимает вход по закрытию окна.
+        /// </summary>
+        internal Order HubEnterStop(int dir, int qty, double stopPrice, string sig)
+        {
+            return dir > 0 ? EnterLongStopMarket(execBip, false, qty, stopPrice, sig)
+                           : EnterShortStopMarket(execBip, false, qty, stopPrice, sig);
+        }
+
+        internal Order HubExit(int dir, int qty, string sig, string fromSig)
+        {
+            return dir > 0 ? ExitLong(execBip, qty, sig, fromSig)
+                           : ExitShort(execBip, qty, sig, fromSig);
+        }
+
+        /// <summary>
+        /// v1.4. Стартовый стоп в тиках от цены исполнения входа. Руководство NT, SetStopLoss
+        /// (с. 2349–2350): в режиме Ticks значение — отступ от цены входа позиции; стоп
+        /// выставляется по исполнению входа. Тики округляются до целых.
+        /// </summary>
+        internal void HubSetStopTicks(string fromSig, double ticks)
+        {
+            SetStopLoss(fromSig, CalculationMode.Ticks, Math.Max(1, Math.Round(ticks)), false);
+        }
+
+        internal void HubSetStop(string fromSig, double price)
+        {
+            SetStopLoss(fromSig, CalculationMode.Price, price, false);
+        }
+
+        internal double HubRoundTick(double p)
+        {
+            try { return Instrument.MasterInstrument.RoundToTickSize(p); } catch { return p; }
+        }
+
+        internal bool HubExitPending
+        {
+            get
+            {
+                if (DryRunMode) return vmExitBar >= 0;   // v1.4: рыночный выход ждёт открытия бара
+                try
+                {
+                    for (int i = Orders.Count - 1; i >= 0 && i >= Orders.Count - 30; i--)
+                    {
+                        Order o = Orders[i];
+                        if (o == null) continue;
+                        if (o.OrderState == OrderState.Working || o.OrderState == OrderState.Accepted
+                            || o.OrderState == OrderState.Submitted)
+                        {
+                            if (o.Name != null && o.Name.StartsWith("SW_EXIT")) return true;
+                        }
+                    }
+                }
+                catch { }
+                return false;
+            }
+        }
+
+        #endregion
+    }
+
+    #region Исполнитель — ЕДИНСТВЕННАЯ точка ордеров
+
+    /// <summary>
+    /// ЕДИНСТВЕННЫЙ КЛАСС, ВЫСТАВЛЯЮЩИЙ ЗАЯВКИ.
+    ///
+    /// Ни ядро, ни подключаемые модули ордерных вызовов не содержат. Все
+    /// обращения к EnterLong, ExitLong и SetStopLoss проходят здесь и нигде
+    /// более. Это проверяемо машинным поиском по файлу.
+    ///
+    /// Арбитраж встроен: один выход на один бар серии исполнения, кто бы его
+    /// ни инициировал. Слот такта занимает первый успевший источник.
+    /// </summary>
+    /// <summary>
+    /// v1.8. Общая математика ядра. Φ(z) — функция нормального распределения через erfc
+    /// (Numerical Recipes); тот же алгоритм, что в модуле сигнала ПК v1.2, сверен со scipy
+    /// до 4·10⁻⁸ на [−8, 8]. При следующей обработке модуля сигнала ПК он перейдёт на эту копию.
+    /// </summary>
+    public static class SwMath
+    {
+        public static double Phi(double z)
+        {
+            double x = -z / Math.Sqrt(2.0), a = Math.Abs(x), t = 1.0 / (1.0 + 0.5 * a);
+            double e = t * Math.Exp(-a * a - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418
+                     + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587
+                     + t * (-0.82215223 + t * 0.17087277)))))))));
+            return 0.5 * (x >= 0 ? e : 2.0 - e);
+        }
+    }
+
+    public class SwExecutionModule
+    {
+        private const string SigLong = "SW_LONG";
+        private const string SigShort = "SW_SHORT";
+
+        private readonly DZ_SW_Hub_S021 hub;
+
+        private int lastExitBar = -1;
+        private int entryBar = -1;
+        private int side;
+        private double lastStop = double.NaN;
+
+        public int EntriesSent, ExitsSent, StopMoves, Rejected, ArbitrationBlocks;
+        public string StatusText = "готов";
+
+        public SwExecutionModule(DZ_SW_Hub_S021 h) { hub = h; }
+
+        /// <summary>Разбор метки вида STEP3. Ноль означает «не ступень».</summary>
+        private static int ParseStepTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag)) return 0;
+            int i = tag.IndexOf("STEP", StringComparison.Ordinal);
+            if (i < 0) return 0;
+            int num;
+            return int.TryParse(tag.Substring(i + 4), out num) ? num : 0;
+        }
+
+        /// <summary>Фактический стоп. Все прочие копии обязаны читать его отсюда.</summary>
+        public double CurrentStop { get { return lastStop; } }
+
+        public string SummaryText
+        {
+            get
+            {
+                return "входов " + EntriesSent + ", выходов " + ExitsSent
+                     + ", переносов стопа " + StopMoves + ", отклонено " + Rejected
+                     + ", блокировок арбитража " + ArbitrationBlocks;
+            }
+        }
+
+        /// <summary>Запрос входа от ядра.</summary>
+        public int StopEntriesArmed, StopEntryRefreshes;
+
+        /// <summary>Вызывается ядром при исполнении виртуального стоп-входа.</summary>
+        /// <summary>
+        /// v1.4. Вход исполнен в бою: стоп выставлен платформой в тиках от средней цены
+        /// входа, и фактический уровень известен только теперь. Единственный источник
+        /// текущего стопа — исполнитель (Д-11), поэтому он обновляется здесь.
+        /// </summary>
+        private bool desyncExitTraced;
+
+        /// <summary>
+        /// v1.6. Аварийный выход с пульта: вся позиция рыночной заявкой сразу, без арбитража
+        /// «минимум баров» и «один выход на бар» — но не поверх уже работающего выхода и не
+        /// при рассинхроне, где выход стратегии перевернул бы счёт.
+        /// </summary>
+        public void EmergencyFlatten(string reason, int bar)
+        {
+            int pos = hub.HubPositionSide, qty = hub.HubPositionQty;
+            if (pos == 0 || qty <= 0) { hub.HubTrace("EXEC", "REMOTE_FLAT_NOOP", "позиции нет"); return; }
+            if (!hub.HubExitsSafe)
+            {
+                hub.HubTrace("EXEC", "REMOTE_FLAT_REFUSED", "позиция стратегии не совпадает со счётом: закрывайте вручную или аварийной кнопкой");
+                return;
+            }
+            if (hub.HubExitPending) { hub.HubTrace("EXEC", "REMOTE_FLAT_PENDING", "выход уже работает"); return; }
+            if (hub.HubDryRun)
+            {
+                ExitsSent++; lastExitBar = bar;
+                hub.HubVirtualQueueExit(true, qty, 0, reason, bar);
+                StatusText = "DRY " + reason + " — по открытию следующего бара";
+                hub.HubTrace("EXEC", "DRY_REMOTE_EXIT", StatusText);
+                return;

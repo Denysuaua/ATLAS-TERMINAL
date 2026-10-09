@@ -1,0 +1,300 @@
+﻿        /// вероятная причина неправдоподобных 93% прибыльных сделок в
+        /// исследовании, на котором построен модуль пробоя. Режим без ордеров
+        /// не повторяет эту ошибку.
+        /// </summary>
+        private void CheckVirtualEntry()
+        {
+            if (!DryRunMode || virtEntryArmedBar < 0 || virtSide != 0) return;
+
+            int bar = CurrentBars[execBip];
+            if (bar != virtEntryArmedBar + 1)
+            {
+                // Ордер не был подтверждён сигналом на прошлом баре — снят.
+                if (bar > virtEntryArmedBar + 1) virtEntryArmedBar = -1;
+                return;
+            }
+
+            double hi = Highs[execBip][0], lo = Lows[execBip][0], op = Opens[execBip][0];
+            bool touched = virtEntryDir > 0 ? hi >= virtEntryStop : lo <= virtEntryStop;
+            if (!touched) return;
+
+            // Разрыв через уровень: исполнение по открытию, хуже уровня.
+            double fill = virtEntryStop;
+            if (virtEntryDir > 0 && op > virtEntryStop) fill = op;
+            if (virtEntryDir < 0 && op < virtEntryStop) fill = op;
+            fill = SlipFill(fill, virtEntryDir > 0);   // v1.4: проскальзывание стоп-заявки
+
+            virtEntryArmedBar = -1;
+
+            double stopDist = HubInitialStopTicks * TickSize;
+            double stopPx = HubRoundTick(virtEntryDir > 0 ? fill - stopDist : fill + stopDist);
+
+            HubVirtualOpen(virtEntryDir, virtEntryQty, fill, bar);
+            HubVirtualSetStop(stopPx);
+            if (exec != null) exec.OnVirtualStopEntryFilled(virtEntryDir, stopPx, bar);
+            HubTrace("EXEC", "DRY_STOP_ENTRY_FILLED", (virtEntryDir > 0 ? "LONG" : "SHORT")
+                + " @ " + fill.ToString("F2") + (fill != virtEntryStop ? " (разрыв)" : "")
+                + ", стоп " + stopPx.ToString("F2"));
+
+            // Пессимизм: если тот же бар дошёл и до стопа — позиция выбита.
+            bool stopSameBar = virtEntryDir > 0 ? lo <= stopPx : hi >= stopPx;
+            if (stopSameBar)
+                HubVirtualClose("стоп на баре входа — принят худший порядок событий внутри бара",
+                    SlipFill(stopPx, virtEntryDir < 0));
+        }
+
+        private void CheckVirtualStop()
+        {
+            if (!DryRunMode || virtSide == 0 || double.IsNaN(virtStop)) return;
+
+            bool hit = virtSide > 0 ? Lows[execBip][0] <= virtStop
+                                    : Highs[execBip][0] >= virtStop;
+            if (!hit) return;
+
+            // РАЗРЫВ ЧЕРЕЗ СТОП. Если бар открылся уже за стопом, реальное
+            // исполнение произошло бы по открытию, а не по уровню стопа.
+            // Оценка по уровню стопа на разрыве завысила бы результат.
+            double open = Opens[execBip][0];
+            double fill = virtStop;
+            if (virtSide > 0 && open < virtStop) fill = open;
+            if (virtSide < 0 && open > virtStop) fill = open;
+
+            HubVirtualClose("виртуальный стоп " + virtStop.ToString("F2")
+                + (fill != virtStop ? ", разрыв, исполнение по открытию " + fill.ToString("F2") : ""),
+                SlipFill(fill, virtSide < 0));
+        }
+
+        /// <summary>
+        /// v1.4. Проскальзывание режима без ордеров [E05]: против позиции и не дальше
+        /// экстремума бара исполнения — правило NinjaTrader (Historical Fill Processing, с. 1076).
+        /// </summary>
+        private double SlipFill(double price, bool buy)
+        {
+            double s = Math.Max(0, DryRunSlippageTicks) * TickSize;
+            return buy ? Math.Min(price + s, Highs[execBip][0]) : Math.Max(price - s, Lows[execBip][0]);
+        }
+
+        /// <summary>v1.4. Цена рыночного исполнения: открытие бара; при [E06] — худшая цена бара.</summary>
+        private double VirtualMarketFill(bool buy)
+        {
+            double basePx = DryRunStressFill ? (buy ? Highs[execBip][0] : Lows[execBip][0]) : Opens[execBip][0];
+            return HubRoundTick(SlipFill(basePx, buy));
+        }
+
+        internal void HubVirtualQueueEntry(int dir, int qty, int bar) { vmEntryDir = dir; vmEntryQty = qty; vmEntryBar = bar; }
+
+        internal void HubVirtualQueueExit(bool full, int qty, int stepNum, string reason, int bar)
+        {
+            vmExitFull = full; vmExitQty = qty; vmExitStep = stepNum; vmExitReason = reason ?? string.Empty; vmExitBar = bar;
+        }
+
+        /// <summary>
+        /// v1.4. Исполнение рыночных заявок режима без ордеров по открытию бара, следующего
+        /// за баром решения. Выход — раньше входа: он ставился против уже открытой позиции.
+        /// Стоп нового входа считается от цены исполнения с проскальзыванием, как у эталона;
+        /// касание стопа на баре входа — худший порядок событий внутри бара.
+        /// </summary>
+        private void CheckVirtualMarket()
+        {
+            int bar = CurrentBars[execBip];
+            if (vmExitBar >= 0 && bar > vmExitBar)
+            {
+                vmExitBar = -1;
+                if (virtSide != 0)
+                {
+                    double fill = VirtualMarketFill(virtSide < 0);
+                    if (vmExitFull || vmExitQty >= virtQty) HubVirtualClose(vmExitReason, fill);
+                    else HubVirtualPartial(vmExitStep, vmExitQty, fill);
+                    HubTrace("EXEC", "DRY_MKT_EXIT_FILLED", vmExitReason + " @ " + fill.ToString("F2"));
+                }
+            }
+            if (vmEntryBar >= 0 && bar > vmEntryBar)
+            {
+                int dir = vmEntryDir, qty = vmEntryQty;
+                vmEntryBar = -1;
+                if (virtSide != 0 || dir == 0 || qty <= 0) return;
+                double fill = VirtualMarketFill(dir > 0);
+                double dist = Math.Round(HubInitialStopTicks) * TickSize;
+                double stopPx = HubRoundTick(dir > 0 ? fill - dist : fill + dist);
+                HubVirtualOpen(dir, qty, fill, bar);
+                HubVirtualSetStop(stopPx);
+                if (exec != null) exec.OnVirtualStopEntryFilled(dir, stopPx, bar);
+                HubTrace("EXEC", "DRY_MKT_ENTRY_FILLED", (dir > 0 ? "LONG" : "SHORT") + " x" + qty
+                    + " @ " + fill.ToString("F2") + ", стоп " + stopPx.ToString("F2"));
+                bool stopSameBar = dir > 0 ? Lows[execBip][0] <= stopPx : Highs[execBip][0] >= stopPx;
+                if (stopSameBar)
+                    HubVirtualClose("стоп на баре входа — принят худший порядок событий внутри бара", SlipFill(stopPx, dir < 0));
+            }
+        }
+
+        /// <summary>
+        /// v1.4 [T17]. Строка журнала виртуальных сделок на каждое исполнение выхода — в формате
+        /// выгрузки сделок Strategy Analyzer: её читает команда parity движка ПК. Время — пояс
+        /// платформы; результат — с издержками круга [F..] на вышедший объём.
+        /// </summary>
+        private void WriteVirtualTrade(int qty, double exitPx, string why)
+        {
+            // Э12: результат виртуального исполнения — в итоги по годам, с издержками круга.
+            if (qty > 0 && virtSide != 0)
+            {
+                int y;
+                try { y = Times[execBip][0].Year; } catch { y = DateTime.Now.Year; }
+                double pnl = (virtSide > 0 ? exitPx - virtAvg : virtAvg - exitPx) * qty * HubPointValue
+                           - Math.Max(0, RoundTurnCostPerContract) * qty;
+                double[] a;
+                if (!virtYearPnl.TryGetValue(y, out a)) { a = new double[3]; virtYearPnl[y] = a; }
+                if (pnl > 0) a[0] += pnl; else a[1] += -pnl;
+                a[2] += 1;
+            }
+            if (!DryTradeJournal || qty <= 0 || virtSide == 0) return;
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                if (dryJournalPath.Length == 0)
+                {
+                    string folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        "NinjaTrader 8", "dz_export", "dry_trades");
+                    System.IO.Directory.CreateDirectory(folder);
+                    dryJournalPath = System.IO.Path.Combine(folder, "dry_trades_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", inv) + ".csv");
+                    System.IO.File.WriteAllText(dryJournalPath, "Trade number;Instrument;Strategy;Market pos.;Quantity;Entry price;Exit price;"
+                        + "Entry time;Exit time;Exit name;Profit;Commission;Votes;"
+                        + "EntryUtc;ExitUtc;EntryBar;ExitBar;DurationSec;DurationBars;Phase;Mask\n", new UTF8Encoding(false));   // v1.18
+                }
+                double commission = Math.Max(0, RoundTurnCostPerContract) * qty;
+                double profit = (virtSide > 0 ? exitPx - virtAvg : virtAvg - exitPx) * qty * HubPointValue - commission;
+                DateTime exitTime;
+                try { exitTime = Times[execBip][0]; } catch { exitTime = DateTime.MinValue; }
+                dryTradeNo++;
+                var sb = new StringBuilder(256);
+                sb.Append(dryTradeNo).Append(';').Append(Instrument != null ? Instrument.FullName : "?").Append(';')
+                  .Append(HubVersion).Append(';').Append(virtSide > 0 ? "Long" : "Short").Append(';').Append(qty).Append(';')
+                  .Append(virtAvg.ToString("R", inv)).Append(';').Append(exitPx.ToString("R", inv)).Append(';')
+                  .Append(virtEntryTime.ToString("dd.MM.yyyy HH:mm:ss", inv)).Append(';')
+                  .Append(exitTime.ToString("dd.MM.yyyy HH:mm:ss", inv)).Append(';')
+                  .Append((why ?? string.Empty).Replace(';', ',')).Append(';')
+                  .Append(profit.ToString("F2", inv)).Append(';').Append(commission.ToString("F2", inv)).Append(';')
+                  .Append(DryTradeVotes ? virtEntryVotes : string.Empty);
+                // v1.18 — директива учёта: ISO UTC, бары, длительность, фаза сессии, маска схождения
+                int exitBar = CurrentBars[execBip];
+                double durSec = (virtEntryTime == DateTime.MinValue || exitTime == DateTime.MinValue) ? 0 : (exitTime - virtEntryTime).TotalSeconds;
+                sb.Append(';').Append(ToUtcIso(virtEntryTime)).Append(';').Append(ToUtcIso(exitTime)).Append(';')
+                  .Append(virtEntryBar).Append(';').Append(exitBar).Append(';').Append(durSec.ToString("F0", inv)).Append(';')
+                  .Append(virtEntryBar >= 0 ? exitBar - virtEntryBar : 0).Append(';').Append(SessionPhase(virtEntryTime)).Append(';')
+                  .Append(virtEntryMask).Append('\n');
+                System.IO.File.AppendAllText(dryJournalPath, sb.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception ex) { HubTrace("EXEC", "DRY_JOURNAL_FAULT", ex.Message); }
+        }
+
+        internal void HubTrace(string module, string ev, string detail)
+        {
+            if (!EnableTracing) return;
+
+            SwTraceEntry e = new SwTraceEntry();
+            e.Bar = CurrentBars[execBip];
+            try { e.Time = Times[execBip][0]; } catch { e.Time = DateTime.MinValue; }
+            e.Module = module; e.Event = ev; e.Detail = detail;
+
+            trace.Add(e);
+            while (trace.Count > Math.Max(10, TraceBufferSize)) trace.RemoveAt(0);
+
+            if (PrintTraceToOutput)
+                Print("[HUB] бар " + e.Bar + "  " + module + "  " + ev
+                    + (string.IsNullOrEmpty(detail) ? "" : "  | " + detail));
+        }
+
+        #endregion
+
+        protected override void OnStateChange()
+        {
+            if (State == State.SetDefaults)
+            {
+                Name = "DZ_SW_Hub_S021";
+                Description = "Коммутатор торговой системы. Подключаемые вычислительные модули, "
+                            + "трассировка сигналов, обнаружение потерь, единственная точка ордеров.";
+
+                Calculate = Calculate.OnBarClose;
+                EntriesPerDirection = 1;
+                EntryHandling = EntryHandling.AllEntries;
+                IsExitOnSessionCloseStrategy = true;
+                ExitOnSessionCloseSeconds = 30;
+                BarsRequiredToTrade = 20;
+                // v1.5: значение NinjaTrader по умолчанию (с. 2264). При false экземпляр
+                // переиспользуется, и всё состояние ядра пришлось бы сбрасывать вручную.
+                IsInstantiatedOnEachOptimizationIteration = true;
+
+                // --- слоты ---
+                Slot1Enabled = true;
+                Slot2Enabled = true;
+                Slot3Enabled = true;
+                Slot4Enabled = false;
+                Slot5Enabled = true;
+                Slot6Enabled = false;
+                Slot7Enabled = false;
+
+                PacLowerSlot = 1; PacHigherSlot = 2; PacUseHigher = true;
+                PacInternalStrength = 3; PacSwingStrength = 10;
+                PacBreakBy = SwPacBreakBy.BarClose;
+
+                TrfpLine1Slot = 1; TrfpLine2Slot = 2; TrfpLine3Slot = 3;
+                TrfpUseLine3 = false; TrfpPeriod = 100; TrfpMultiplier = 3.0;
+
+                RegimeSlot = 1; RegimeWindow = 60; RegimeAllow = SwRegimeAllow.Any;
+
+                GuardDailyLoss = 0; GuardDailyProfit = 0;
+                GuardBreachAction = SwGuardBreachAction.BlockNewEntries;
+                GuardRestartPolicy = SwGuardRestartPolicy.BlockUntilNextSession;
+
+                AStopSlot = 1; AStopAtrPeriod = 10;
+                AStopWidthMode = SwAdaptiveWidth.VolatilityBuckets;
+                AStopFixedMultiplier = 3.0;
+
+                EscortLineNumber = 2;
+                EscortTrigger = SwEscortExitTrigger.LineFlip;
+                EscortConfirmBars = 1;
+
+                // --- решение ---
+                RequireAllSignalsAgree = false;
+                MinConfidence = 0.0;
+                FilterMissingBlocksEntry = false;
+
+                // --- исполнение ---
+                DryRunMode = true;
+                VisualsEnabled = false;
+                VisualDebugEnabled = false;
+                WsEnabled = false;
+                WsPort = 8088;
+                WsAllowCommands = false;
+                ExportSchema = false;
+                PresetFile = "";
+                Slot13Enabled = false; Slot14Enabled = false; Slot15Enabled = false;
+                KalRole = SwKalmanRole.Filter; KalLowerSlot = 1; KalCurrentSlot = 0; KalHigherSlot = 3; KalPeriod = 20; KalBandSigma = 2.0; KalPolicy = SwKalmanFilterPolicy.TrendDirection;
+                LevRole = SwLeverRole.Filter; LevAnalysisSlot = 0; LevClusterSlot = 1; LevClusters = 10; LevVoteZ = 0.5; LevPolicy = SwLeverPolicy.DirectionOnly;
+                HmSlot = 0; HmWindow = 15; HmWeight5 = 1.0; HmWeight15 = 1.5; HmSignalMode = false; HmPercentile = 0.85; HmBiasThreshold = 2.0;
+                HmExpSqueeze = false; HmExpSqueezeRatio = 0.6; HmExpPersist = 0;
+                PacLowInternalBos = true;    // v1.12: догма — все шесть событий на младшем ТФ
+                PacLowInternalChoch = true;
+                PacLowInternalChochPlus = true;
+                PacLowSwingBos = true;
+                PacLowSwingChoch = true;
+                PacLowSwingChochPlus = true;
+                PacHighInternalBos = false;
+                PacHighInternalChoch = false;
+                PacHighInternalChochPlus = false;
+                PacHighSwingBos = true;
+                PacHighSwingChoch = true;
+                PacHighSwingChochPlus = true;
+                PacConfidenceBos = 0.40;
+                PacConfidenceChoch = 0.65;
+                PacConfidenceChochPlus = 0.85;
+                PacHigherTimeframeBonus = 0.10;
+                DboM1BarMinutes = 1;
+                KerAdaptMin = 0.5;
+                KerAdaptMax = 2.0;
+                KerSkillWindow = 100;
+                KalBands = SwKalmanBands.GaussianSemiDeviation;
+                KalEntryWindowMin = 10;
+                KalEntryWindowMax = 40;
+                KalEscortWindowMin = 30;
+                KalEscortWindowMax = 120;
+                KalFlatTilt = 0.4;

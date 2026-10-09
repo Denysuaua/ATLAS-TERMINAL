@@ -1,0 +1,300 @@
+﻿                s.SignalId = pendingSignalId;
+                s.ShortDescription = pendingShort;
+                lastSignalBar = bar;
+            }
+
+            Health = SwHealth.Ok;
+            Emit(s);
+
+            // Наблюдение — после отправки: его сбой не может помешать сигналу.
+            AfterEmit(s);
+
+            // Событие живёт один такт решения. Без сброса один пробой
+            // порождал бы вход на каждом последующем баре.
+            ClearPending();
+        }
+
+        private bool Ready()
+        {
+            int needLow = cfg.SwingStrength * 2 + 2;
+            if (!Host.SlotReady(cfg.LowerSlot, needLow)) return false;
+
+            if (cfg.UseHigherTimeframe)
+            {
+                int needHigh = cfg.SwingStrength * 2 + 2;
+                if (!Host.SlotReady(cfg.HigherSlot, needHigh)) return false;
+            }
+            return true;
+        }
+
+        private void ClearPending()
+        {
+            pendingEvent = SwPacEvent.None;
+            pendingDir = 0;
+            pendingConfidence = 0;
+            pendingText = string.Empty;
+            pendingRank = 0;
+            pendingSignalId = string.Empty;
+            pendingShort = string.Empty;
+            labelsThisTick = 0;
+            tickCandidates.Clear();
+            tickEventVis.Clear();
+        }
+
+        #region Обработка серии
+
+        private void ProcessSeries(int slot, SwPacState internalState, SwPacState swingState, bool isHigher)
+        {
+            DetectPivots(slot, internalState, isHigher, SwPacScope.Internal);
+            DetectPivots(slot, swingState, isHigher, SwPacScope.Swing);
+
+            DetectEvents(slot, internalState, isHigher, SwPacScope.Internal);
+            DetectEvents(slot, swingState, isHigher, SwPacScope.Swing);
+
+            // v1.2: наблюдение, на состояние не влияет.
+            VisualCandidates(slot, internalState, isHigher, SwPacScope.Internal);
+            VisualCandidates(slot, swingState, isHigher, SwPacScope.Swing);
+        }
+
+        /// <summary>
+        /// Обнаружение опорной точки.
+        ///
+        /// Кандидат находится на баре, отстоящем на strength баров назад:
+        /// именно столько баров должно закрыться СПРАВА от него, чтобы
+        /// экстремум подтвердился. Раньше этого момента точка не существует.
+        /// Отсюда неустранимое запаздывание в strength баров — плата за то,
+        /// что уровень реален, а не подогнан задним числом.
+        /// </summary>
+        private void DetectPivots(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            int k = st.Strength;
+            int need = k * 2 + 1;
+            if (!Host.SlotReady(slot, need)) return;
+
+            int centre = k;   // barsAgo центрального бара
+
+            double hC = Host.HighOf(slot, centre);
+            double lC = Host.LowOf(slot, centre);
+            if (double.IsNaN(hC) || double.IsNaN(lC)) return;
+
+            bool isHigh = true, isLow = true;
+
+            for (int i = 1; i <= k; i++)
+            {
+                double hL = Host.HighOf(slot, centre + i);
+                double hR = Host.HighOf(slot, centre - i);
+                double lL = Host.LowOf(slot, centre + i);
+                double lR = Host.LowOf(slot, centre - i);
+
+                if (double.IsNaN(hL) || double.IsNaN(hR) || double.IsNaN(lL) || double.IsNaN(lR))
+                    return;
+
+                // Строгое сравнение слева и нестрогое справа: при равенстве
+                // экстремум относится к более раннему бару. Иначе плато
+                // порождало бы несколько опорных точек подряд.
+                if (hC <= hL || hC < hR) isHigh = false;
+                if (lC >= lL || lC > lR) isLow = false;
+            }
+
+            int barOfCentre = Host.BarOf(slot) - centre;
+            if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.AccumulateVolume(Host.VolumeOf(slot, 0));   // Э77
+
+            if (isHigh && barOfCentre != st.LastHighBar)
+            {
+                st.PushHigh(hC, barOfCentre);
+                if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.LastHighStrong = st.Classify(true, cfg.ExpStrongWeak);   // Э77
+                VisualPivot(slot, centre, hC, true, isHigher, scope);
+            }
+            if (isLow && barOfCentre != st.LastLowBar)
+            {
+                st.PushLow(lC, barOfCentre);
+                if (cfg.ExpStrongWeak != SwPacStrongWeak.Off) st.LastLowStrong = st.Classify(false, cfg.ExpStrongWeak);   // Э77
+                VisualPivot(slot, centre, lC, false, isHigher, scope);
+            }
+        }
+
+        /// <summary>
+        /// Обнаружение структурных событий по подтверждённым экстремумам.
+        /// </summary>
+        /// <summary>
+        /// v1.3, Э37 и Э38: подтверждение пробоя глубиной в долях ATR и объёмом бара пробоя.
+        /// Без экспериментов — всегда «да», как прежде.
+        /// </summary>
+        private int lastSignalBar = -1;   // Э42
+
+        private bool BreakConfirmed(int slot, double depth)
+        {
+            int n = Math.Max(2, cfg.ExpBreakWindow);
+            if (cfg.ExpBreakAtr > 0)
+            {
+                double sum = 0; int k = 0;
+                for (int i = 0; i < n; i++)
+                {
+                    double h = Host.HighOf(slot, i), l = Host.LowOf(slot, i), pc = Host.CloseOf(slot, i + 1);
+                    if (double.IsNaN(h) || double.IsNaN(l)) break;
+                    double tr = h - l;
+                    if (!double.IsNaN(pc)) tr = Math.Max(tr, Math.Max(Math.Abs(h - pc), Math.Abs(l - pc)));
+                    sum += tr; k++;
+                }
+                if (k < n || !(depth >= cfg.ExpBreakAtr * sum / k)) return false;
+            }
+            if (cfg.ExpBreakVolMult > 0)
+            {
+                double v0 = Host.VolumeOf(slot, 0), sum = 0; int k = 0;
+                for (int i = 1; i <= n; i++)
+                {
+                    double v = Host.VolumeOf(slot, i);
+                    if (double.IsNaN(v)) break;
+                    sum += v; k++;
+                }
+                if (k < n || !(sum > 0) || !(v0 >= cfg.ExpBreakVolMult * sum / k)) return false;
+            }
+            return true;
+        }
+
+        private void DetectEvents(int slot, SwPacState st, bool isHigher, SwPacScope scope)
+        {
+            double probeUp = cfg.BreakBy == SwPacBreakBy.BarExtreme
+                ? Host.HighOf(slot, 0) : Host.CloseOf(slot, 0);
+            double probeDn = cfg.BreakBy == SwPacBreakBy.BarExtreme
+                ? Host.LowOf(slot, 0) : Host.CloseOf(slot, 0);
+
+            if (double.IsNaN(probeUp) || double.IsNaN(probeDn)) return;
+
+            bool upHit = !double.IsNaN(st.LastHigh) && !st.HighBroken && probeUp > st.LastHigh
+                         && BreakConfirmed(slot, probeUp - st.LastHigh);
+            bool dnHit = !double.IsNaN(st.LastLow) && !st.LowBroken && probeDn < st.LastLow
+                         && BreakConfirmed(slot, st.LastLow - probeDn);
+
+            // v1.3: оба экстремума одним баром — порядок внутри бара неизвестен (Книга, раздел 10).
+            if (upHit && dnHit)
+            {
+                st.HighBroken = true; st.LowBroken = true;
+                Host.Trace(Id, "PAC_AMBIGUOUS_BAR", (isHigher ? "СТ " : "МЛ ") + scope
+                    + ": пробиты оба экстремума одним баром — порядок неизвестен, события нет");
+                return;
+            }
+
+            // ----- пробой верхнего экстремума -----
+            if (upHit)
+            {
+                st.HighBroken = true;
+
+                // ПЕРВЫЙ ПРОБОЙ УСТАНАВЛИВАЕТ ТРЕНД, А НЕ МЕНЯЕТ ЕГО. Пока тренд
+                // не определён, разворачивать нечего. Прежде первый пробой
+                // уходил в ветку смены характера и порождал ложный сигнал
+                // разворота с уверенностью 0.65 или 0.85 — по одному на каждое
+                // из четырёх состояний структуры сразу после прогрева.
+                if (st.Trend == 0)
+                {
+                    st.Trend = 1;
+                    Host.Trace(Id, "PAC_TREND_INIT",
+                        (isHigher ? "СТ " : "МЛ ") + scope + ": тренд установлен вверх, сигнала нет");
+                    return;
+                }
+
+                SwPacEvent ev;
+                if (st.Trend > 0)
+                {
+                    ev = SwPacEvent.Bos;            // продолжение бычьего
+                    if (cfg.ExpChochPlusFailedExtreme && !st.PriorEventConfirmed) return;   // Э76: BOS лишь после первого CHoCH
+                }
+                else if (cfg.ExpChochPlusFailedExtreme)
+                {
+                    ev = st.HadFailedLow ? SwPacEvent.ChochPlus : SwPacEvent.Choch;   // Э76: несостоявшийся LL перед пробоем вверх
+                    st.HadFailedLow = false; st.PriorEventConfirmed = true;
+                }
+                else
+                {
+                    // Смена характера вверх. Усиленной считается, когда
+                    // пробит и предыдущий верхний экстремум: слом глубже.
+                    ev = (!double.IsNaN(st.PrevHigh) && probeUp > st.PrevHigh)
+                        ? SwPacEvent.ChochPlus : SwPacEvent.Choch;
+                }
+
+                st.Trend = 1;
+                Register(ev, 1, isHigher, scope, st, st.LastHigh, slot, st.LastHighStrong);
+            }
+
+            // ----- пробой нижнего экстремума -----
+            if (dnHit)
+            {
+                st.LowBroken = true;
+
+                if (st.Trend == 0)
+                {
+                    st.Trend = -1;
+                    Host.Trace(Id, "PAC_TREND_INIT",
+                        (isHigher ? "СТ " : "МЛ ") + scope + ": тренд установлен вниз, сигнала нет");
+                    return;
+                }
+
+                SwPacEvent ev;
+                if (st.Trend < 0)
+                {
+                    ev = SwPacEvent.Bos;            // продолжение медвежьего
+                    if (cfg.ExpChochPlusFailedExtreme && !st.PriorEventConfirmed) return;   // Э76
+                }
+                else if (cfg.ExpChochPlusFailedExtreme)
+                {
+                    ev = st.HadFailedHigh ? SwPacEvent.ChochPlus : SwPacEvent.Choch;   // Э76: несостоявшийся HH перед пробоем вниз
+                    st.HadFailedHigh = false; st.PriorEventConfirmed = true;
+                }
+                else
+                {
+                    ev = (!double.IsNaN(st.PrevLow) && probeDn < st.PrevLow)
+                        ? SwPacEvent.ChochPlus : SwPacEvent.Choch;
+                }
+
+                st.Trend = -1;
+                Register(ev, -1, isHigher, scope, st, st.LastLow, slot, st.LastLowStrong);
+            }
+        }
+
+        /// <summary>
+        /// Регистрация события и отбор сильнейшего за такт.
+        ///
+        /// За один такт может сработать несколько событий: на двух сериях и
+        /// в двух масштабах. Отправляется ОДНО — с наибольшим приоритетом.
+        /// Порядок приоритета: тип события, затем старший таймфрейм,
+        /// затем свинговый масштаб.
+        /// </summary>
+        private void Register(SwPacEvent ev, int dir, bool isHigher, SwPacScope scope,
+                              SwPacState st, double level, int slot, int levelStrength)
+        {
+            if (ev == SwPacEvent.Bos) st.BosCount++;
+            else if (ev == SwPacEvent.Choch) st.ChochCount++;
+            else if (ev == SwPacEvent.ChochPlus) st.ChochPlusCount++;
+
+            // Чистые вычисления: описание, уверенность, идентификатор. Прежде
+            // уверенность считалась после проверки ранга — значение то же.
+            string desc = Describe(ev, dir, isHigher, scope);
+            double conf = ev == SwPacEvent.ChochPlus ? cfg.ConfidenceChochPlus
+                        : ev == SwPacEvent.Choch ? cfg.ConfidenceChoch
+                        : cfg.ConfidenceBos;
+            if (isHigher) conf += cfg.HigherTimeframeBonus;
+            if (cfg.ExpStrongWeak != SwPacStrongWeak.Off && levelStrength >= 0)                      // Э77
+            {
+                conf = Math.Max(0.05, Math.Min(1.0, conf + (levelStrength == 1 ? cfg.ExpStrongBonus : -cfg.ExpStrongBonus)));
+                desc += levelStrength == 1 ? " (уровень сильный)" : " (уровень слабый)";
+            }
+            DateTime evTime = Host.TimeOf(slot, 0);
+            string sid = MakeSignalId(evTime, ev, dir, isHigher, scope);
+
+            if (!IsPermitted(ev, isHigher, scope))
+            {
+                Host.Trace(Id, "PAC_EVENT_SKIPPED", desc + " — тип выключен настройкой");
+                int flag = FlagIndex(ev, isHigher, scope);
+                PrepareEventVisual(slot, st, ev, dir, isHigher, scope, level, true, flag, sid, conf);
+                JournalNotSent(evTime, sid, dir, conf, desc, "флаг [M" + flag + "] выключен");
+                return;
+            }
+
+            PrepareEventVisual(slot, st, ev, dir, isHigher, scope, level, false, 0, sid, conf);
+
+            int rank = (ev == SwPacEvent.ChochPlus ? 300 : ev == SwPacEvent.Choch ? 200 : 100)
+                     + (isHigher ? 40 : 0)
+                     + (scope == SwPacScope.Swing ? 20 : 0);
+
+            if (rank <= pendingRank)
+            {

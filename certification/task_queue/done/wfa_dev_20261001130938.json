@@ -1,0 +1,122 @@
+{
+  "plan": "DZ-WFA-v1",
+  "plan_id": "wfa_dev_20261001130938",
+  "task": {
+    "task_id": "dev_20261001130938",
+    "target_module": "8 · Пробой: окна и фильтры",
+    "data": "MGC",
+    "profile": "chicago",
+    "mode": "dev",
+    "objective": "SharpeDaily",
+    "max_trials": 500,
+    "select": "plateau",
+    "base": {
+      "stop_ticks": 40,
+      "be_offset_ticks": 2,
+      "trail_morning_ticks": 15,
+      "trail_evening_ticks": 10,
+      "min_range_ticks": 15,
+      "max_range_ticks": 45,
+      "min_base_bars": 50,
+      "flat_threshold": 0.85,
+      "trend_bars": 10,
+      "max_entries_per_session": 0
+    },
+    "constraints": [
+      "be_offset_ticks < stop_ticks",
+      "be_trigger_ticks < stop_ticks",
+      "min_range_ticks < max_range_ticks",
+      "atr_fast < atr_slow"
+    ],
+    "optimize": {
+      "atr_fast": [
+        10,
+        15,
+        20,
+        25,
+        30
+      ],
+      "atr_slow": [
+        30,
+        40,
+        50,
+        60,
+        70,
+        80
+      ]
+    },
+    "instrument": "MGC"
+  },
+  "windows": [
+    {
+      "train": [
+        "2016-01-01",
+        "2019-01-01"
+      ],
+      "test": [
+        "2019-01-01",
+        "2020-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2017-01-01",
+        "2020-01-01"
+      ],
+      "test": [
+        "2020-01-01",
+        "2021-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2018-01-01",
+        "2021-01-01"
+      ],
+      "test": [
+        "2021-01-01",
+        "2022-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2019-01-01",
+        "2022-01-01"
+      ],
+      "test": [
+        "2022-01-01",
+        "2023-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2020-01-01",
+        "2023-01-01"
+      ],
+      "test": [
+        "2023-01-01",
+        "2024-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2021-01-01",
+        "2024-01-01"
+      ],
+      "test": [
+        "2024-01-01",
+        "2025-01-01"
+      ]
+    },
+    {
+      "train": [
+        "2022-01-01",
+        "2025-01-01"
+      ],
+      "test": [
+        "2025-01-01",
+        "2026-01-01"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "task_id": "dev_evening_gold_win",
+  "target_module": "8 · Пробой: окна и фильтры",
+  "data": "MGC",
+  "profile": "chicago",
+  "mode": "dev",
+  "objective": "SharpeDaily",
+  "max_trials": 50,
+  "select": "plateau",
+  "base": {
+    "stop_ticks": 250.0,
+    "be_offset_ticks": 1,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 15.0,
+    "min_range_ticks": 35.0,
+    "max_range_ticks": 65.0,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 20,
+    "atr_slow": 40,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "usd_per_tick": 1.0,
+    "be_trigger_ticks": 40.0
+  },
+  "constraints": [
+    "be_offset_ticks < stop_ticks",
+    "be_trigger_ticks < stop_ticks",
+    "min_range_ticks < max_range_ticks"
+  ],
+  "optimize": {
+    "trail_evening_ticks": [
+      10.0,
+      15.0,
+      20.0,
+      25.0
+    ],
+    "flat_threshold": [
+      0.8,
+      0.85,
+      0.9
+    ]
+  },
+  "cache": "C:\\Atlas_terminal\\certification\\MGC_cache.npz"
+}

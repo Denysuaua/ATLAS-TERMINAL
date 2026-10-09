@@ -1,0 +1,300 @@
+﻿//    роль Signal — пробой границы боковика ТФ входа; ТФ входа — младший,
+//                  при его отсутствии — текущий;
+//    в обеих ролях, по выбору — сопровождение стопом по границе канала ТФ
+//                  сопровождения [C21] и выход при развороте середины и
+//                  коридора против позиции.
+//  Младший ТФ отвечает за вход, текущий или старший — за сопровождение.
+//
+//  МОДЕЛЬ. Состояние x = [уровень, наклон за бар], переход F = [[1,1],[0,1]],
+//  измерение — цена закрытия. Шум процесса — модель дискретного белого
+//  ускорения: Q = λ²·R·[[1/4,1/2],[1/2,1]]. Индекс слежения λ выводится из
+//  эквивалентного периода N [C05] по формулам Калаты: α = 2/(N+1),
+//  β = 2(2−α) − 4√(1−α), λ = β/√(1−α). Установившиеся коэффициенты фильтра
+//  тогда равны α и β, как у альфа-бета фильтра с тем же периодом; численно
+//  проверено на случайном блуждании: при N = 20 коэффициент уровня 0.099
+//  против расчётных 0.095.
+//
+//  ШУМ ИЗМЕРЕНИЯ R — адаптивный, по Сейджу–Хьюзу с забыванием 0.97:
+//  R ← (1−d)·R + d·(ν² − P⁻₀₀). Поскольку Q пропорционален R, коэффициенты
+//  от масштаба цены не зависят: одни настройки годятся для золота и серебра.
+//
+//  ГРАНИЦЫ КАНАЛА — ОТДЕЛЬНЫЙ БЛОК [C08]:
+//    GaussianSemiDeviation — полуотклонения остатков цены от середины с
+//      гауссовыми весами по плавающему окну; верхняя граница по остаткам
+//      выше середины, нижняя — по остаткам ниже. Канал асимметричен, и его
+//      асимметрия — это и есть дисбаланс, мера импульса;
+//    KalmanInnovation — середина ± k·√S, где S — дисперсия обновления
+//      фильтра: интервал прогноза на один бар. Симметричен; дисбаланс в этом
+//      режиме всё равно считается по полуотклонениям.
+//
+//  ДВА ПЛАВАЮЩИХ ОКНА. Окно входа [C09]-[C10] — гибкое, для ТФ входа.
+//  Окно сопровождения [C11]-[C12] — жёсткое, для текущего и старшего ТФ.
+//  Длина окна плавает между минимумом и максимумом по коэффициенту
+//  эффективности Кауфмана: в направленном движении окно короче, в боковике
+//  длиннее, и границы боковика оцениваются по большей выборке.
+//
+//  НА КАКОЙ СВЕЧЕ ОБЪЯВЛЯЕТСЯ БОКОВИК. Условия «горизонтально, параллельно,
+//  симметрично» проверяются на каждом баре по сглаженным мерам; боковик
+//  объявляется на [C15]-й подряд свече, где все они выполнены (0 — авто:
+//  половина минимума окна входа, от 3 до 12; по умолчанию 5). Выход из
+//  боковика — пробой границы предыдущего бара или появление тренда, а не
+//  первый же «неплоский» бар: одиночный шум состояние не сбрасывает.
+//  Число 5 взято из проверки на синтетических рядах и требует калибровки на
+//  ваших данных: модуль печатает для каждого m долю случаев, когда цена
+//  после m плоских свечей удержалась в канале [C30] баров.
+//
+//  ЭКСПЕРИМЕНТАЛЬНЫЙ БЛОК [C28]. Взаимодействие канала младшего ТФ с каналом
+//  старшего: пересечения середин, выход границ и середины младшего за
+//  границы старшего, смена согласия наклонов, боковик младшего внутри тренда
+//  старшего. И взаимодействие цены с линиями ТФ входа. Для каждого события —
+//  доходность через [C29] баров в ширинах канала и доля движений в сторону
+//  события; рядом — база по всем барам. В торговлю блок не вмешивается.
+//
+//  ПРЕДВАРИТЕЛЬНОЕ СОСТОЯНИЕ СТАРШИХ ТФ. На закрытии бара младшего ТФ
+//  модуль считает, где была бы середина старшего ТФ, если бы его бар закрылся
+//  сейчас по текущей цене: шаг фильтра без сохранения. Только для окраски
+//  линии (наблюдение [V01]) и для экспериментального блока; вердикт, вход, стоп и выход —
+//  по закрытым барам.
+//
+//  ЧЕГО ЗДЕСЬ НЕТ. Взгляда в будущее: каждое значение опирается только на
+//  закрытые бары своей серии и, для предварительного состояния, на последнюю
+//  известную цену. Проверка «удержался ли боковик» и доходности событий
+//  используют будущие бары только для статистики отчёта, не для решений.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Роль модуля Кальмана в решении.</summary>
+    public enum SwKalmanRole
+    {
+        Filter,     // вердикт по состоянию канала ТФ направления
+        Signal      // пробой границы боковика ТФ входа
+    }
+
+    /// <summary>Как считаются границы канала.</summary>
+    public enum SwKalmanBands
+    {
+        GaussianSemiDeviation,  // полуотклонения остатков, гауссовы веса; асимметричный канал
+        KalmanInnovation        // середина ± k·√S; симметричный канал
+    }
+
+    /// <summary>Вердикт модуля в роли Filter.</summary>
+    public enum SwKalmanFilterPolicy
+    {
+        TrendDirection,     // в тренде — только по направлению; в остальном не мешает
+        TrendOnly,          // вход только в тренде и только по направлению
+        NoRange             // запрет входа в боковике; направления не задаёт
+    }
+
+    /// <summary>Выбор таймфрейма для направления и сопровождения.</summary>
+    public enum SwKalmanTfChoice
+    {
+        Current,
+        Higher
+    }
+
+    /// <summary>Состояние канала одного ТФ.</summary>
+    public enum SwKalmanState
+    {
+        Warmup,
+        Undefined,
+        Range,
+        TrendUp,
+        TrendDown
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwKalmanConfig
+    {
+        public SwKalmanRole Role = SwKalmanRole.Filter;
+
+        // --- таймфреймы: слоты пула; 0 — серия графика ---
+        public int LowerSlot = 1;
+        public int CurrentSlot = 0;
+        public int HigherSlot = 3;
+
+        // --- фильтр и границы ---
+        public int Period = 20;                 // эквивалентный период, баров своего ТФ
+        public SwKalmanBands Bands = SwKalmanBands.GaussianSemiDeviation;
+        public double BandSigma = 2.0;          // ширина канала в сигмах
+
+        // --- два плавающих окна ---
+        public int EntryWindowMin = 10, EntryWindowMax = 40;
+        public int EscortWindowMin = 30, EscortWindowMax = 120;
+
+        // --- геометрия и состояния ---
+        public double FlatTilt = 0.4;           // горизонталь: смещение за окно, доля ширины
+        public double SymmetryMax = 0.3;        // симметрия: |дисбаланс| меньше порога
+        public int RangeConfirmBars = 0;        // свечей подряд до объявления боковика; 0 — авто
+        public double TrendZ = 3.0;             // значимость наклона середины
+        public double TrendTilt = 0.6;          // смещение середины за окно, доля ширины
+        public double CompressionRatio = 0.75;  // ширина к своей средней: ниже — сжатие
+        public double ExpansionRatio = 1.35;    // выше — расширение
+
+        // --- решение ---
+        public SwKalmanFilterPolicy Policy = SwKalmanFilterPolicy.TrendDirection;
+        public SwKalmanTfChoice DirectionTf = SwKalmanTfChoice.Higher;
+        public SwKalmanTfChoice EscortTf = SwKalmanTfChoice.Current;
+        public bool RequireHigherAgreement = true;
+        public int SignalBars = 1;
+
+        // --- сопровождение и выход ---
+        public bool EscortStop = true;
+        public int StopOffsetTicks = 2;
+        public bool ExitOnSlopeFlip = true;
+        public int ExitConfirmBars = 2;
+
+        // --- исследование ---
+        public bool Research = true;
+        public int ResearchHorizon = 20;
+        public int RangeHoldBars = 10;
+
+        // --- прочее ---
+        public int WarmupPeriods = 3;
+        public bool ProvisionalDisplay = true;
+        public double ExpNisGate = 0;          // Э21: порог среднего ν²/f; 0 — выключено
+        public int ExpMinStateBars = 0;
+        public double ExpEscortOffsetSigma = 0;   // Э72: отступ стопа в долях полуширины канала; 0 — тики [C1x]        // Э49: выдержка состояния, баров
+    }
+
+    /// <summary>Кольцо последних значений. Get(0) — последнее.</summary>
+    public class SwRing
+    {
+        private readonly double[] a;
+        private int head, count;
+
+        public SwRing(int capacity) { a = new double[Math.Max(2, capacity)]; }
+
+        public int Count { get { return count; } }
+
+        public void Push(double v)
+        {
+            head = (head + 1) % a.Length;
+            a[head] = v;
+            if (count < a.Length) count++;
+        }
+
+        public double Get(int ago)
+        {
+            if (ago < 0 || ago >= count) return double.NaN;
+            int i = head - ago;
+            if (i < 0) i += a.Length;
+            return a[i];
+        }
+    }
+
+    /// <summary>
+    /// ПЛАВАЮЩЕЕ ОКНО. Длина — между Min и Max по коэффициенту эффективности
+    /// Кауфмана за Max баров: ER = |чистый ход| / сумма |шагов|. ER близко к
+    /// единице — направленное движение, окно короче; близко к нулю — пила,
+    /// окно длиннее. Длина сглажена, чтобы окно не дёргалось с бара на бар.
+    /// </summary>
+    public class SwFloatingWindow
+    {
+        public readonly int Min, Max;
+        private double lf;
+        private int length;
+        private double er;
+
+        public SwFloatingWindow(int min, int max)
+        {
+            int lo = Math.Max(3, Math.Min(min, max));
+            int hi = Math.Max(lo, Math.Max(min, max));
+            Min = lo; Max = hi;
+            lf = hi; length = hi;
+        }
+
+        public int Length { get { return length; } }
+        public double Efficiency { get { return er; } }
+
+        public void Update(SwRing closes)
+        {
+            if (closes.Count <= Max)
+            {
+                length = Math.Max(Min, Math.Min(Max, closes.Count - 1));
+                return;
+            }
+            double net = Math.Abs(closes.Get(0) - closes.Get(Max));
+            double path = 0;
+            for (int i = 0; i < Max; i++) path += Math.Abs(closes.Get(i) - closes.Get(i + 1));
+            er = path > 0 ? net / path : 0;
+
+            double target = Min + (Max - Min) * (1.0 - er);
+            lf += 0.2 * (target - lf);
+            length = Math.Max(Min, Math.Min(Max, (int)Math.Round(lf)));
+        }
+    }
+
+    /// <summary>
+    /// ОДИН ТАЙМФРЕЙМ: фильтр Калмана, канал, геометрия, состояние. Чистое
+    /// вычисление: данные получает аргументами, к Host не обращается, поэтому
+    /// проверяется отдельно от платформы. Update вызывается ровно один раз на
+    /// закрытии бара своей серии.
+    /// </summary>
+    public class SwKalmanTrack
+    {
+        public readonly int Tf;          // 0 младший, 1 текущий, 2 старший
+        public readonly string Name;     // МЛ, ТК, СТ
+        public readonly int Slot;
+        public readonly SwFloatingWindow Window;
+
+        // --- параметры ---
+        private readonly double lam2, forget, tick, k, rMin;
+        private readonly SwKalmanBands method;
+        private readonly double flatTilt, symMax, trendZ, trendTilt, compRatio, expRatio;
+        private readonly int warmupBars, confirmBars;
+
+        // --- фильтр ---
+        private int n, steps;
+        private readonly double[] boot = new double[5];
+        private double x0, x1, p00, p01, p11, r, s;
+        public double NisAvg = double.NaN;     // Э21: скользящее среднее ν²/f
+        private double nisA;
+
+        // --- кольца ---
+        private readonly SwRing closes, resid, uppers, lowers, widths;
+
+        // --- сглаженные меры геометрии ---
+        private bool smoothed;
+        private double zS, tiltS, tuS, tlS, imbS;
+        private const double SmoothA = 0.3;
+
+        public SwKalmanTrack(int tf, string name, int slot, SwKalmanConfig c, SwFloatingWindow window,
+                             double tickSize, int confirm)
+        {
+            Tf = tf; Name = name; Slot = slot; Window = window;
+
+            int per = Math.Max(2, c.Period);
+            double a = 2.0 / (per + 1.0);
+            double b = 2.0 * (2.0 - a) - 4.0 * Math.Sqrt(1.0 - a);
+            double lam = b / Math.Sqrt(1.0 - a);
+            lam2 = lam * lam;
+            nisA = 2.0 / (per + 1.0);
+            forget = 0.97;
+            tick = tickSize > 0 ? tickSize : 1e-6;
+            rMin = (0.25 * tick) * (0.25 * tick);
+            k = Math.Max(0.1, c.BandSigma);
+            method = c.Bands;
+
+            flatTilt = Math.Max(0.01, c.FlatTilt);
+            symMax = Math.Max(0.01, c.SymmetryMax);
+            trendZ = Math.Max(0.5, c.TrendZ);
+            trendTilt = Math.Max(0.01, c.TrendTilt);
+            compRatio = c.CompressionRatio;
+            expRatio = c.ExpansionRatio;
+            warmupBars = Math.Max(10, Math.Max(1, c.WarmupPeriods) * per);
+            confirmBars = Math.Max(1, confirm);
+
+            int cap = window.Max + 8;
+            closes = new SwRing(cap); resid = new SwRing(cap);
+            uppers = new SwRing(cap); lowers = new SwRing(cap); widths = new SwRing(cap);
+
+            Level = Upper = Lower = PrevLevel = PrevUpper = PrevLower = double.NaN;
+            State = SwKalmanState.Warmup;
+        }
+
+        // ---------------- результаты последнего бара ----------------
+        public DateTime Time;
+        public double Close, High, Low;

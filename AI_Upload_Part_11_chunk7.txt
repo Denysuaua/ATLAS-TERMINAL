@@ -1,0 +1,300 @@
+﻿                gc.ProfitLockArmAt = GuardProfitLockArmAt;
+                gc.ProfitLockGiveBackPct = GuardProfitLockGiveBackPct;
+                gc.UseNewsFilter = GuardUseNewsFilter;
+                gc.MinutesBefore = GuardMinutesBefore;
+                gc.MinutesAfter = GuardMinutesAfter;
+                gc.MinImpact = GuardMinImpact;
+                gc.MissingCalendarBlocks = GuardMissingCalendarBlocks;
+                gc.DailyLossLimit = GuardDailyLoss;
+                gc.DailyProfitLimit = GuardDailyProfit;
+                gc.BreachAction = GuardBreachAction;
+                gc.RestartPolicy = GuardRestartPolicy;
+                gc.NewsCsvPath = GuardNewsFile ?? string.Empty;   // v1.2: прежде не передавался
+                gc.ExpLossStreakPause = GuardLossStreakPause;
+                gc.ExpShockMultiplier = GuardShockMultiplier;
+                gc.ExpShockPauseBars = GuardShockPauseBars;
+
+                // Риск-модуль получает часы: второй независимый расчёт
+                // берлинского времени разошёлся бы с первым молча.
+                refGuard = new SwRiskGuardModule("RSK-Лимиты", gc, refTime);
+                modules.Add(refGuard);
+            }
+
+            // ---------- СОПРОВОЖДЕНИЕ ----------
+            if (Slot6Enabled)
+            {
+                SwAdaptiveStopConfig ac = new SwAdaptiveStopConfig();
+                ac.MultiplierLowVol = AStopMultiplierLowVol;
+                ac.MultiplierMidVol = AStopMultiplierMidVol;
+                ac.MultiplierHighVol = AStopMultiplierHighVol;
+                ac.VolRankLookback = AStopVolRankLookback;
+                ac.LowVolPercentile = AStopLowVolPercentile;
+                ac.HighVolPercentile = AStopHighVolPercentile;
+                ac.WarmupBars = AStopWarmupBars;
+                ac.RequireProtectiveSide = AStopRequireProtectiveSide;
+                ac.MinBarsBetweenRequests = AStopMinBarsBetweenRequests;
+                ac.Slot = AStopSlot;
+                ac.AtrPeriod = AStopAtrPeriod;
+                ac.WidthMode = AStopWidthMode;
+                ac.FixedMultiplier = AStopFixedMultiplier;
+
+                ac.ExpEwmaVol = AStopExpEwma; ac.ExpEwmaSpan = AStopExpEwmaSpan;   // Э43
+                refAStop = new SwAdaptiveStopModule("ESC-Стоп", ac);
+                modules.Add(refAStop);
+            }
+
+            // ---------- ВЫХОД ----------
+            if (Slot7Enabled)
+            {
+                if (refTrfp == null)
+                {
+                    // Зависимость не удовлетворена. Модуль не создаётся вовсе:
+                    // создать его и позволить читать пустые значения хуже,
+                    // чем честно сообщить о невозможности.
+                    Print("[HUB-ВНИМАНИЕ] [S71] выход по линии требует модуля линий [MOD2]. "
+                        + "Слот не подключён.");
+                }
+                else
+                {
+                    SwEscortLineConfig ec = new SwEscortLineConfig();
+                    ec.FullExit = EscortFullExit;
+                    ec.PartialQuantity = EscortPartialQuantity;
+                    ec.MinBarsInTrade = EscortMinBarsInTrade;
+                    ec.StaleAfterBars = EscortStaleAfterBars;
+                    ec.LineNumber = EscortLineNumber;
+                    ec.Trigger = EscortTrigger;
+                    ec.ConfirmBars = EscortConfirmBars;
+                    ec.ExpVerticalBars = EscortExpVerticalBars;   // Э44
+
+                    refEscort = new SwEscortLineExitModule("EXT-ЛинияВыход", refTrfp, ec);
+                    modules.Add(refEscort);
+                }
+            }
+
+            foreach (SwModule m in modules)
+                if (m.Health == SwHealth.NotAttached) m.Health = SwHealth.Warmup;
+        }
+
+        protected override void OnBarUpdate()
+        {
+            // ---------- 0. v1.4: ВИРТУАЛЬНЫЕ ИСПОЛНЕНИЯ — ДО ОПРОСА МОДУЛЕЙ ----------
+            // В бою заявка исполняется внутри бара, и к его закрытию позиция уже другая.
+            // Режим без ордеров повторяет это: рыночные заявки — по открытию бара, стоп-вход
+            // и стоп — по его экстремумам; модули видят итог на этом же баре.
+            if (DryRunMode && BarsInProgress == execBip && CurrentBars[execBip] >= 1)
+            {
+                CheckVirtualMarket();
+                CheckVirtualEntry();
+                CheckVirtualStop();
+            }
+
+            // ---------- 1. Опрос модулей НА КАЖДОЙ СЕРИИ ----------
+            //
+            // Опрос идёт до проверки серии исполнения намеренно. Модуль на
+            // старшем таймфрейме обязан увидеть закрытие СВОЕГО бара, иначе
+            // он не сможет обновить состояние вовремя. Какой такт ему нужен,
+            // модуль решает сам по аргументу bip: именно для этого он и
+            // передаётся.
+            foreach (SwModule m in modules)
+            {
+                if (m.Health == SwHealth.Disabled) continue;
+
+                long before = m.EmitCount;
+                try
+                {
+                    m.Compute(BarsInProgress);
+                }
+                catch (Exception ex)
+                {
+                    m.MarkFault(ex.Message);
+                    HubTrace(m.Id, "FAULT", ex.GetType().Name + ": " + ex.Message);
+                    continue;   // упавший модуль исключён, система работает
+                }
+
+                if (BarsInProgress == execBip && m.EmitCount == before && m.Health == SwHealth.Ok)
+                    HubTrace(m.Id, "NO_EMIT", "модуль отработал, но ничего не отправил");
+            }
+
+            // Разбор ящиков, решение и исполнение — только в такте серии
+            // исполнения. Заявки отправляются из одного места и в одном такте.
+            if (BarsInProgress != execBip) return;
+            if (CurrentBars[execBip] < BarsRequiredToTrade) return;
+
+            int bar = CurrentBars[execBip];
+
+            CheckAccountSync();   // v1.6 [E07]
+            MetaResolve(bar);     // Э32: метки прошлых сигналов структуры
+            TrackBetsHub();       // Э13/Э14: ставки, стоп-кран, риск-строка
+
+            // ---------- 2. Разбор ящиков и обнаружение потерь ----------
+            bufSignals.Clear(); bufFilters.Clear(); bufActions.Clear(); bufIgnored.Clear();
+
+            foreach (SwModule m in modules)
+            {
+                if (m.Health == SwHealth.Disabled || m.Health == SwHealth.Faulted) continue;
+
+                // Разбираются ОБА ящика любого модуля, независимо от роли.
+                //
+                // Роль определяет, куда идут СИГНАЛЫ: в голосование либо в вето.
+                // Но требование закрыть позицию может прийти от модуля любой
+                // роли. Фильтр времени требует закрытия на жёсткой границе дня,
+                // риск-модуль — при пробитии дневного лимита. Прежде у фильтров
+                // разбирался только ящик сигналов, и их требования застревали
+                // навсегда: принудительное закрытие не срабатывало никогда.
+                int got = 0;
+                // Догма [D00]: голосует только структура [MOD1]; прочие сигналы принимаются без голоса.
+                if (m.Role == SwRole.Signal) got += m.DrainSignals(EntryFromStructureOnly && m != refPac ? bufIgnored : bufSignals);
+                else if (m.Role == SwRole.Filter) got += m.DrainSignals(bufFilters);
+                else got += m.DrainSignals(bufIgnored);   // Escort/Exit/Sizing не голосуют и не вето
+
+                got += m.DrainActions(bufActions);
+
+                // ПОТЕРЯ ПЕРВОГО РОДА: в ящике осталось непринятое.
+                if (m.PendingInOutbox > 0)
+                {
+                    m.LostCount += m.PendingInOutbox;
+                    lossesDetected += m.PendingInOutbox;
+                    HubTrace(m.Id, "SIGNAL_LOST",
+                        "в ящике осталось " + m.PendingInOutbox + " непринятых");
+                }
+
+                // ПОТЕРЯ ВТОРОГО РОДА: расхождение счётчиков.
+                if (m.EmitCount != m.CollectCount)
+                {
+                    long diff = m.EmitCount - m.CollectCount;
+                    if (diff > m.LostCount)
+                    {
+                        lossesDetected++;
+                        HubTrace(m.Id, "COUNTER_MISMATCH",
+                            "отправлено " + m.EmitCount + ", принято " + m.CollectCount);
+                    }
+                }
+
+                // ЗАСТОЙ: сигнал приходит, но с номером старого бара.
+                if (got > 0 && m.LastSignal.ProducedAtBar > 0
+                    && m.LastSignal.ProducedAtBar < bar - 1)
+                {
+                    m.Health = SwHealth.Stale;
+                    HubTrace(m.Id, "STALE", "бар сигнала " + m.LastSignal.ProducedAtBar
+                        + ", текущий " + bar);
+                }
+
+                // МОЛЧАНИЕ: ничего не приходит дольше допустимого.
+                if (m.LastEmitBar >= 0 && bar - m.LastEmitBar > Math.Max(1, SilentAfterBars))
+                {
+                    if (m.Health != SwHealth.Silent)
+                    {
+                        m.Health = SwHealth.Silent;
+                        HubTrace(m.Id, "SILENT", "молчит " + (bar - m.LastEmitBar) + " баров");
+                    }
+                }
+                else if (got > 0 && m.Health == SwHealth.Silent)
+                {
+                    m.Health = SwHealth.Ok;
+                    HubTrace(m.Id, "RECOVERED", "сигналы возобновились");
+                }
+            }
+
+            ProcessRemote(bar);   // команды пульта: до исполнения требований
+
+            // ---------- 3. Сопровождение ----------
+            // v1.4: виртуальные исполнения перенесены в шаг 0 — в начало бара.
+
+            if (EnablePositionManager && fin != null)
+            {
+                try { fin.Evaluate(bar, bufActions); }
+                catch (Exception ex) { HubTrace("FIN", "FAULT", ex.Message); }
+            }
+
+            // ---------- 4. Исполнение требований ----------
+            foreach (SwAction a in bufActions)
+            {
+                if (a.Kind == SwActionKind.None) continue;
+                exec.Handle(a, bar);
+            }
+
+            // ---------- 5. Решение о входе ----------
+            int entriesBefore = entriesRequested;   // Э32: был ли вход на этом баре
+            if (HubPositionSide == 0) EvaluateEntry(bar);
+
+            PublishSnapshot(bar); // снимок пульту: очередь, сеть поток стратегии не держит
+
+            MetaRecord(bar, entriesRequested > entriesBefore);   // Э32
+
+            // ---------- 6. Панель ----------
+            if (ShowHubPanel) RenderPanel(bar);
+        }
+
+        /// <summary>
+        /// ПРОВЕРКА ССЫЛОК МОДУЛЕЙ НА СЛОТЫ ПУЛА.
+        ///
+        /// Невключённый слот молча уводится на серию графика. Без этой
+        /// проверки конфигурация по умолчанию — где все слоты пула выключены,
+        /// а модули ссылаются на слоты 1, 2 и 3 — дала бы вырожденный расчёт:
+        /// младший и старший таймфрейм структуры оказались бы одной серией,
+        /// и события старшего дублировали бы события младшего. Ошибки при
+        /// этом нет, результат просто неверен.
+        /// </summary>
+        private int ValidateSlotReferences()
+        {
+            int problems = 0;
+
+            if (Slot1Enabled)
+            {
+                problems += CheckSlot("[M01] структура, младший ТФ", PacLowerSlot);
+                if (PacUseHigher)
+                {
+                    problems += CheckSlot("[M02] структура, старший ТФ", PacHigherSlot);
+                    if (ResolveSlot(PacLowerSlot) == ResolveSlot(PacHigherSlot))
+                    {
+                        problems++;
+                        Print("[HUB-ВНИМАНИЕ] [M01][M02] младший и старший таймфрейм структуры "
+                            + "указывают на ОДНУ серию bip=" + ResolveSlot(PacLowerSlot)
+                            + ". События старшего будут дублировать младший. Включите слоты пула "
+                            + "[S50]-[S80] либо выключите [M03].");
+                    }
+                }
+            }
+
+            if (Slot2Enabled)
+            {
+                problems += CheckSlot("[M11] линия 1", TrfpLine1Slot);
+                problems += CheckSlot("[M12] линия 2", TrfpLine2Slot);
+                if (TrfpUseLine3) problems += CheckSlot("[M13] линия 3", TrfpLine3Slot);
+            }
+
+            if (Slot4Enabled) problems += CheckSlot("[M21] режим рынка", RegimeSlot);
+
+            if (Slot8Enabled)
+            {
+                problems += CheckSlot("[M84] пробой, минутная серия", DboM1Slot);
+                problems += CheckSlot("[M85] пробой, серия 15M", DboM15Slot);
+                problems += CheckSlot("[M86] пробой, серия 4H", DboH4Slot);
+
+                // У модуля пробоя собственные окна. Фильтр времени с другими
+                // окнами молча срезал бы большую часть его входов: при окнах по
+                // умолчанию теряется половина утреннего окна сигналов (пауза
+                // 08:00–09:30) и три четверти вечернего (запрет входов с 18:30).
+                if (Slot3Enabled)
+                {
+                    problems++;
+                    Print("[HUB-ВНИМАНИЕ] [MOD8][MOD3] модуль пробоя работает по собственным окнам, "
+                        + "а фильтр времени накладывает свои. Входы вне пересечения окон будут "
+                        + "запрещены без явной причины в логике пробоя. Для пробоя выключите [MOD3].");
+                }
+
+                // Минутная серия пробоя обязана быть серией исполнения. Иначе на одной
+                // метке времени серия исполнения может быть обработана раньше, и ордер
+                // встанет на минуту позже — пропуская вход на первой минуте окна.
+                if (ResolveSlot(DboM1Slot) != execBip)
+                {
+                    problems++;
+                    Print("[HUB-ВНИМАНИЕ] [M84][S90] минутная серия пробоя (bip=" + ResolveSlot(DboM1Slot)
+                        + ") не совпадает с серией исполнения (bip=" + execBip + "). Установите [S90] равным [M84].");
+                }
+
+                problems += CheckWindows("[W11]-[W15] утро", DboUseMorning, DboMorningBaseStart, DboMorningBaseEnd,
+                                         DboMorningSignalStart, DboMorningSignalEnd, DboMorningSessionEnd);
+                problems += CheckWindows("[W21]-[W25] вечер", DboUseEvening, DboEveningBaseStart, DboEveningBaseEnd,
+                                         DboEveningSignalStart, DboEveningSignalEnd, DboEveningSessionEnd);
+

@@ -1,0 +1,300 @@
+﻿        [Range(0, 1000)]
+        [Display(Name = "[F08] Резерв на проскальзывание, тиков", Order = 8, GroupName = "05 · Финансовый модуль",
+            Description = "Добавляется к риску контракта при расчёте объёма. Без него объём систематически завышается.")]
+        public int SlippageReserveTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F11] Режим стартового стопа", Order = 9, GroupName = "05 · Финансовый модуль",
+            Description = "FixedTicks — в тиках. PriceDollars — в долларах ДВИЖЕНИЯ ЦЕНЫ, не результата: для микрозолота с шагом 0.10 значение 25 даёт 250 тиков. AtrMultiple — множитель ATR.")]
+        public SwStopMode StopMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100000.0)]
+        [Display(Name = "[F12] Стоп, долларов движения цены", Order = 10, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме PriceDollars. Путаница этой величины с денежным результатом даёт ошибку на порядок.")]
+        public double StopPriceDollars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 50.0)]
+        [Display(Name = "[F13] Множитель ATR для стопа", Order = 11, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме AtrMultiple.")]
+        public double StopAtrMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 500)]
+        [Display(Name = "[F14] Период ATR", Order = 12, GroupName = "05 · Финансовый модуль",
+            Description = "Общий для стопа и трейлинга. Индикатор создаётся один раз при загрузке данных.")]
+        public int AtrPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F21] Включить ступенчатую фиксацию", Order = 13, GroupName = "05 · Финансовый модуль",
+            Description = "Частичное закрытие позиции по мере движения цены.")]
+        public bool UseScaleOut { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 10)]
+        [Display(Name = "[F22] Количество ступеней", Order = 14, GroupName = "05 · Финансовый модуль",
+            Description = "Сколько раз позиция фиксируется частично.")]
+        public int ScaleSteps { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F23] Мера расстояния ступеней", Order = 15, GroupName = "05 · Финансовый модуль",
+            Description = "FixedTicks и PriceDollars задают абсолютное расстояние. RMultiple задаёт его в долях начального риска: ступень при 1R означает, что заработано столько же, сколько поставлено. Это финансово корректная мера, не зависящая от инструмента.")]
+        public SwStepDistanceMode StepDistanceMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100000)]
+        [Display(Name = "[F24] Шаг ступени, тиков", Order = 16, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме FixedTicks.")]
+        public int StepFixedTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 100000.0)]
+        [Display(Name = "[F25] Шаг ступени, долларов цены", Order = 17, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме PriceDollars.")]
+        public double StepPriceDollars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 20.0)]
+        [Display(Name = "[F26] Шаг ступени, долей R", Order = 18, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме RMultiple. Значение 1.0 ставит первую ступень на расстоянии начального риска.")]
+        public double StepRMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "[F27] Контрактов на первой ступени", Order = 19, GroupName = "05 · Финансовый модуль",
+            Description = "Объём первой фиксации, независимый от деления остальной позиции. Ноль возвращает первую ступень под общее правило [F28].")]
+        public int ContractsOnStep1 { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "[F28] Контрактов на ступень", Order = 20, GroupName = "05 · Финансовый модуль",
+            Description = "Ноль означает автоматическое деление объёма с учётом остатка под линию.")]
+        public int ContractsPerStep { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F29] Оставлять остаток", Order = 21, GroupName = "05 · Финансовый модуль",
+            Description = "Последний контракт не закрывается ступенями и ведётся трейлингом.")]
+        public bool KeepRunner { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F31] Режим безубытка", Order = 22, GroupName = "05 · Финансовый модуль",
+            Description = "Off, AfterStep1, AfterStep2 или AtRMultiple. Учитываются ПОДТВЕРЖДЁННЫЕ ступени: отправленная, но не исполненная заявка безубыток не включает.")]
+        public SwBreakevenMode BreakevenMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 10000)]
+        [Display(Name = "[F32] Отступ безубытка, тиков", Order = 23, GroupName = "05 · Финансовый модуль",
+            Description = "Смещение в сторону прибыли. Модуль автоматически поднимает его до величины, покрывающей издержки круга: при меньшем значении срабатывание безубыточного стопа даёт убыток. Предупреждение печатается при загрузке.")]
+        public int BreakevenOffsetTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.01, 20.0)]
+        [Display(Name = "[F33] Безубыток при R", Order = 24, GroupName = "05 · Финансовый модуль",
+            Description = "Порог в долях начального риска при режиме AtRMultiple.")]
+        public double BreakevenAtR { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F41] Режим трейлинга", Order = 26, GroupName = "05 · Финансовый модуль",
+            Description = "Off. FixedDistance — фиксированное расстояние от экстремума. AtrMultiple — множитель ATR от экстремума. StepLock — после ступени k стоп встаёт на уровень ступени k минус один; при первой ступени это цена входа.")]
+        public SwTrailMode TrailMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 20.0)]
+        [Display(Name = "[F42] Включать трейлинг при R", Order = 27, GroupName = "05 · Финансовый модуль",
+            Description = "Порог в долях начального риска, ниже которого трейлинг не работает.")]
+        public double TrailActivateAtR { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.1, 50.0)]
+        [Display(Name = "[F43] Множитель ATR для трейлинга", Order = 28, GroupName = "05 · Финансовый модуль",
+            Description = "Действует при режиме AtrMultiple.")]
+        public double TrailAtrMultiple { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F51] Запретить перенос стопа после первой фиксации", Order = 30, GroupName = "05 · Финансовый модуль",
+            Description = "Подавляет ОБЕ ветви: и безубыток, и трейлинг. Подавление одной делало бы запрет формальным, потому что защиту продолжает двигать вторая.")]
+        public bool DisableStopMoveAfterStep1 { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[F53] Таймаут подтверждения ступени, баров", Order = 32, GroupName = "05 · Финансовый модуль",
+            Description = "Сколько баров ждать подтверждения запрошенной ступени. По истечении запрос считается потерянным и очередь снимается с блокировки. Без таймаута ступень, отклонённая арбитражем, блокировала бы все следующие ступени до конца сделки.")]
+        public int StepConfirmTimeoutBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 1000)]
+        [Display(Name = "[F52] Минимум баров между переносами стопа", Order = 31, GroupName = "05 · Финансовый модуль",
+            Description = "Антидребезг. Ноль разрешает перенос на каждом баре.")]
+        public int MinBarsBetweenStopMoves { get; set; }
+
+        #endregion
+
+        #region Свойства — управление позицией
+
+        [NinjaScriptProperty] [Display(Name = "[F00] Включить сопровождение позиции", Order = 0, GroupName = "05 · Финансовый модуль",
+            Description = "Главный выключатель сопровождения: финансовый модуль на каждом баре считает безубыток, трейлинг и ступени и переносит стоп. Выключен — стоп остаётся стартовым; расчёт объёма работает. Прежде P01.")]
+        public bool EnablePositionManager { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 10000)] [Browsable(false)]
+        [Display(Name = "[P02] Безубыток после, тиков (скрыто)", Order = 2, GroupName = "06 · Управление позицией (устаревшее)",
+            Description = "Не используется: безубыток — [F31] и [F33]. Скрыто из окна, имя сохранено для старых шаблонов и пресетов.")]
+        public int BreakevenAfterTicks { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 10000)] [Browsable(false)]
+        [Display(Name = "[P04] Трейлинг после, тиков (скрыто)", Order = 3, GroupName = "06 · Управление позицией (устаревшее)",
+            Description = "Не используется: трейлинг — [F41] и [F42]. Скрыто из окна, имя сохранено для старых шаблонов и пресетов.")]
+        public int TrailAfterTicks { get; set; }
+
+        [NinjaScriptProperty] [Range(1, 10000)]
+        [Display(Name = "[F44] Дистанция трейлинга, тиков", Order = 29, GroupName = "05 · Финансовый модуль",
+            Description = "Расстояние трейлинга от экстремума в тиках при [F41] FixedDistance. Модуль пробоя задаёт своё по сессии. Прежде P05.")]
+        public int TrailDistanceTicks { get; set; }
+
+        #endregion
+
+        #region Свойства — диагностика
+
+        [NinjaScriptProperty] [Display(Name = "[T01] Включить трассировку", Order = 1, GroupName = "07 · Диагностика",
+            Description = "Кольцевой буфер событий: отправка, приём, потеря, отказ, решение. Основной инструмент разбора чёрного ящика.")]
+        public bool EnableTracing { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[T02] Печатать трассировку в Output", Order = 2, GroupName = "07 · Диагностика",
+            Description = "Дублирование каждой записи в окно Output. На длинных прогонах сильно замедляет — включать для разбора.")]
+        public bool PrintTraceToOutput { get; set; }
+
+        [NinjaScriptProperty] [Range(10, 5000)]
+        [Display(Name = "[T03] Размер буфера трассировки", Order = 3, GroupName = "07 · Диагностика",
+            Description = "Сколько последних событий хранить в памяти.")]
+        public int TraceBufferSize { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 40)]
+        [Display(Name = "[T04] Строк трассировки на панели", Order = 4, GroupName = "07 · Диагностика",
+            Description = "Сколько последних событий показывать на панели.")]
+        public int PanelTraceLines { get; set; }
+
+        [NinjaScriptProperty] [Range(1, 1000)]
+        [Display(Name = "[T05] Считать молчанием после, баров", Order = 5, GroupName = "07 · Диагностика",
+            Description = "Сколько баров без отправки считать отказом модуля выдавать сигнал.")]
+        public int SilentAfterBars { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[T10] Показывать панель", Order = 6, GroupName = "07 · Диагностика",
+            Description = "Панель состояния: модули, здоровье, счётчики, решение, исполнение, трассировка.")]
+        public bool ShowHubPanel { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[T11] Положение панели", Order = 7, GroupName = "07 · Диагностика",
+            Description = "Угол графика.")]
+        public TextPosition PanelPosition { get; set; }
+
+        [NinjaScriptProperty] [Range(6, 24)]
+        [Display(Name = "[T12] Размер шрифта", Order = 8, GroupName = "07 · Диагностика",
+            Description = "Кегль моноширинного шрифта панели.")]
+        public int PanelFontSize { get; set; }
+
+        [XmlIgnore] [Display(Name = "[T21] Цвет исправного состояния", Order = 9, GroupName = "07 · Диагностика",
+            Description = "Все модули работают.")]
+        public Brush OkBrush { get; set; }
+        [Browsable(false)] public string OkBrushSerialize
+        { get { return new BrushConverter().ConvertToString(OkBrush); } set { OkBrush = (Brush)new BrushConverter().ConvertFromString(value); } }
+
+        [XmlIgnore] [Display(Name = "[T22] Цвет предупреждения", Order = 10, GroupName = "07 · Диагностика",
+            Description = "Прогрев, молчание или застой хотя бы одного модуля.")]
+        public Brush WarnBrush { get; set; }
+        [Browsable(false)] public string WarnBrushSerialize
+        { get { return new BrushConverter().ConvertToString(WarnBrush); } set { WarnBrush = (Brush)new BrushConverter().ConvertFromString(value); } }
+
+        [XmlIgnore] [Display(Name = "[T23] Цвет отказа", Order = 11, GroupName = "07 · Диагностика",
+            Description = "Хотя бы один модуль бросил исключение.")]
+        public Brush FaultBrush { get; set; }
+        [Browsable(false)] public string FaultBrushSerialize
+        { get { return new BrushConverter().ConvertToString(FaultBrush); } set { FaultBrush = (Brush)new BrushConverter().ConvertFromString(value); } }
+
+        [XmlIgnore] [Display(Name = "[T24] Цвет простоя", Order = 12, GroupName = "07 · Диагностика",
+            Description = "Модули выключены или не подключены.")]
+        public Brush IdleBrush { get; set; }
+        [Browsable(false)] public string IdleBrushSerialize
+        { get { return new BrushConverter().ConvertToString(IdleBrush); } set { IdleBrush = (Brush)new BrushConverter().ConvertFromString(value); } }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T13] Журнал решений (эксперимент)", Order = 13, GroupName = "07 · Диагностика",
+            Description = "Строка на каждое решение с направлением: вход или причина отказа и голоса всех модулей. Пишется только в реальном времени в dz_export\\decisions. Сырьё для оценки фильтров мета-разметкой.")]
+        public bool DecisionJournal { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T14] Проскальзывание стоп-заявок (эксперимент)", Order = 14, GroupName = "07 · Диагностика",
+            Description = "Измеряет исполнение стоп-входа и защитного стопа против их уровня, в тиках; итог в [HUB-ИТОГ]. Калибрует проскальзывание стенда ПК.")]
+        public bool MeasureSlippage { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T15] Отпечаток схемы меню (эксперимент)", Order = 15, GroupName = "07 · Диагностика",
+            Description = "Печатает при запуске отпечаток схемы меню. Он должен совпасть с отпечатком в справочнике DZ_SW_S021_03: иначе справочник описывает другую сборку.")]
+        public bool MenuFingerprint { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T16] Отличия от умолчаний на старте (эксперимент)", Order = 16, GroupName = "07 · Диагностика",
+            Description = "Печатает при запуске все настройки, чьё значение отличается от умолчания: молча изменённый режим становится виден.")]
+        public bool ReportNonDefaults { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T17] Журнал виртуальных сделок", Order = 17, GroupName = "07 · Диагностика",
+            Description = "Режим без ордеров пишет каждое исполнение выхода в dz_export\\dry_trades в формате выгрузки Strategy Analyzer: его сверяет с эталоном команда parity движка ПК.")]
+        public bool DryTradeJournal { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T18] Голоса модулей в журнале сделок (эксперимент)", Order = 18, GroupName = "07 · Диагностика",
+            Description = "К каждой виртуальной сделке приписываются голоса модулей на момент входа: готовая разметка для оценки фильтров мета-разметкой.")]
+        public bool DryTradeVotes { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T19] Журнал итераций анализатора (эксперимент)", Order = 19, GroupName = "07 · Диагностика",
+            Description = "В Strategy Analyzer каждая итерация пишет дневной результат и свои настройки в dz_export\\sa_runs. DZ_SA_Audit_S021.py считает по ним DSR и PBO: оптимизация в анализаторе становится проверяемой.")]
+        public bool AnalyzerJournal { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T20] Итоги по годам в сводке (эксперимент)", Order = 20, GroupName = "07 · Диагностика",
+            Description = "В [HUB-ИТОГ] — результат, число сделок и PF каждого года: виден эффект, меняющий знак от года к году.")]
+        public bool YearlySummary { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T25] Риск-строка ставок (эксперимент)", Order = 21, GroupName = "07 · Диагностика",
+            Description = "На панели и в сводке: ставок, точность, порог p*, вероятность провала, просадка по ставкам и ставок без нового максимума (AFML гл. 14–15).")]
+        public bool RiskLineEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T26] PSR и концентрация ставок (эксперимент)", Order = 22, GroupName = "07 · Диагностика",
+            Description = "В сводке и на панели: вероятностный Шарп ставок PSR[0] — доверять при ≥ 0,95 — и концентрация выигрышей и проигрышей: близко к 1 — результат держится на немногих ставках (AFML гл. 14).")]
+        public bool BetStatsEnabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[T27] Мета-разметка сигналов структуры (эксперимент)", Order = 23, GroupName = "07 · Диагностика",
+            Description = "Каждый сигнал структуры, принятый или отвергнутый, размечается тройным барьером (AFML 3.4); в сводке — точность и полнота каждого фильтра, строки — в dz_export\\meta_labels.")]
+        public bool MetaLabels { get; set; }
+
+        [NinjaScriptProperty] [Range(0.2, 10)]
+        [Display(Name = "[T28] Мета-разметка: цель, долей стопа", Order = 24, GroupName = "07 · Диагностика",
+            Description = "Верхний барьер тройного барьера в долях стартового стопа: 1 — цель равна стопу.")]
+        public double MetaTargetR { get; set; }
+
+        [NinjaScriptProperty] [Range(5, 5000)]
+        [Display(Name = "[T29] Мета-разметка: вертикальный барьер, баров", Order = 25, GroupName = "07 · Диагностика",
+            Description = "Сколько баров серии исполнения ждать касания цели или стопа; дальше метка — по знаку результата.")]
+        public int MetaVerticalBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[W43] Пробой: вход на ретесте (эксперимент)", Order = 24, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Вместо стоп-входа на пробое: пробой признаётся после [W44] минуток с закрытием за границей базы, вход — по рынку, когда бар коснулся границы и закрылся снаружи. По Volume Profile (Trader Dale): пробитое сопротивление становится поддержкой.")]
+        public bool DboExpRetest { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "[W44] Пробой: удержание за границей, минуток", Order = 25, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Сколько минуток подряд закрытие должно быть за границей базы, чтобы пробой был признан для ретеста [W43].")]
+        public int DboExpRetestBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[W45] Пробой: ширина базы в ATR 15M (эксперимент)", Order = 26, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Ширина базы проверяется в долях медленного ATR 15M [W46]–[W47] вместо тиков [W31]–[W32]: порог следует за волатильностью (AFML 3.3).")]
+        public bool DboExpAtrWidth { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.05, 20)]

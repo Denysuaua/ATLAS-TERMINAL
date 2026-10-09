@@ -1,0 +1,36 @@
+{
+  "portion": "Атлас — порция 01: порядок и служба v2",
+  "date": "2026-10-05",
+  "install_to": "C:\\Atlas_terminal\\",
+  "tests": "54 из 54 на копии архива от 05.10 (Linux, Python 3.12, numpy 2.4, pandas 3.0)",
+  "files": {
+    "certification/DZ_ATLAS_Service_v2.py": {
+      "sha256": "68c2c4d98a57ee246afb181769a7802ad46859c01ac94274ee63d73963cd4b05",
+      "bytes": 97185
+    },
+    "certification/DZ_ATLAS_Service_v2.config.json": {
+      "sha256": "761dc789ea757f6d6bc45f1014b6bc7e42c0ba1e88547cf52cd242c1b2366d85",
+      "bytes": 908
+    },
+    "certification/START_ATLAS_SERVICE_v2.bat": {
+      "sha256": "7451d56c00bca2bf072b513c70ed1e609f4bf975f10c2cdf5d586526aaaf6a33",
+      "bytes": 280
+    },
+    "certification/DZ_ATLAS_Ctl_v2.py": {
+      "sha256": "653f24fb8df9c3326a28dc18774d32582701cc4313c3e1b57f9e68cc92d20048",
+      "bytes": 7434
+    },
+    "certification/DZ_HOUSE_Order_S021.py": {
+      "sha256": "deff924d3f28913268a2b0132657b173c1df03ba38a5d0d8ae52db826379d0ee",
+      "bytes": 18575
+    },
+    "certification/tests/test_portion01.py": {
+      "sha256": "433bdedc76832a382216f897a8b72c921ddaee73f6b41bb12b20bd173c1e249c",
+      "bytes": 22067
+    },
+    "certification/DZ_ATLAS_Порция_01_Служба_v2.md": {
+      "sha256": "a4d03216e8f039632f9e6784a8deef9008aec11c7978d87b00e3905f051cbafa",
+      "bytes": 18543
+    }
+  }
+}

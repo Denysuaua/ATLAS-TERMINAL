@@ -1,0 +1,300 @@
+﻿
+        /// <summary>
+        /// Бар ТФ входа: закрываются созревшие оценки, проверяются боковики,
+        /// регистрируются события цены и линий. Будущие бары используются только
+        /// для статистики отчёта.
+        /// </summary>
+        private void ResearchEntryBar(SwKalmanTrack t)
+        {
+            int now = t.BarsSeen;
+            double z = t.Close;
+
+            for (int k = pend.Count - 1; k >= 0; k--)
+            {
+                PendingEval e = pend[k];
+                if (e.Due > now) continue;
+                stats[e.Type].Add(e.Dir * (z - e.Start) / e.Norm);
+                stDirSum[e.Type] += e.Dir;
+                pend.RemoveAt(k);
+            }
+
+            // --- удержание боковика: цена не закрылась за границами m-й свечи ---
+            for (int k = checks.Count - 1; k >= 0; k--)
+            {
+                RangeCheck c = checks[k];
+                if (z > c.Up || z < c.Lo) { checks.RemoveAt(k); continue; }
+                if (now >= c.Due) { held[c.M]++; checks.RemoveAt(k); }
+            }
+            if (t.FlatStreak >= 1 && t.FlatStreak <= MaxM && checks.Count < 5000)
+            {
+                reached[t.FlatStreak]++;
+                RangeCheck c = new RangeCheck();
+                c.M = t.FlatStreak; c.Up = t.Upper; c.Lo = t.Lower;
+                c.Due = now + Math.Max(1, cfg.RangeHoldBars);
+                checks.Add(c);
+            }
+
+            // --- события цены и линий ---
+            double norm = Math.Max(t.Width, 2 * Host.TickSize);
+            AddEval(0, 1, z, norm, now);
+            if (t.CrossMidUp) AddEval(1, 1, z, norm, now);
+            if (t.CrossMidDown) AddEval(2, -1, z, norm, now);
+            if (t.TouchUpper) AddEval(3, -1, z, norm, now);
+            if (t.TouchLower) AddEval(4, 1, z, norm, now);
+            if (t.CloseAbove && !t.BreakUp && t.State != SwKalmanState.Range) AddEval(5, 1, z, norm, now);
+            if (t.CloseBelow && !t.BreakDown && t.State != SwKalmanState.Range) AddEval(6, -1, z, norm, now);
+            if (t.BreakUp) AddEval(7, 1, z, norm, now);
+            if (t.BreakDown) AddEval(8, -1, z, norm, now);
+            if (t.CompressionStarted) AddEval(9, Math.Sign(t.SmoothImbalance), z, norm, now);
+            if (t.ExpansionStarted) AddEval(10, Math.Sign(t.Slope), z, norm, now);
+        }
+
+        /// <summary>
+        /// Закрытие бара младшего ТФ: предварительные состояния текущего и
+        /// старшего ТФ для окраски и события пары «младший — старший».
+        /// </summary>
+        private void OnLowerClose()
+        {
+            SwKalmanTrack l = tr[0];
+            double zL = l.Close;
+            if (double.IsNaN(zL)) return;
+
+            bool hValid = false;
+            double hMid = double.NaN, hUp = double.NaN, hLo = double.NaN;
+            int hVar = 0;
+
+            for (int i = 1; i < 3; i++)
+            {
+                if (!tfOn[i] || !tr[i].Ready) continue;
+                double lv, up, lo;
+                int pv;
+                if (!tr[i].Peek(zL, out lv, out up, out lo, out pv)) continue;
+                if (i == 2) { hMid = lv; hUp = up; hLo = lo; hVar = pv; hValid = true; }
+                if (cfg.ProvisionalDisplay)
+                {
+                    Host.SetChannelPlot(i, 0, lv, pv);
+                    Host.SetChannelPlot(i, 1, up, tr[i].UpperVariant);
+                    Host.SetChannelPlot(i, 2, lo, tr[i].LowerVariant);
+                }
+            }
+
+            if (!cfg.Research || !l.Ready || !hValid || entryTf != 0)
+            {
+                prevPairValid = false;
+                return;
+            }
+
+            int now = l.BarsSeen;
+            double norm = Math.Max(l.Width, 2 * Host.TickSize);
+            bool vis = Host.VisualOn(SwVisualRole.KalmanInteraction) && Host.VisualDebugOn;
+
+            if (prevPairValid)
+            {
+                if (pLMid <= pHMid && l.Level > hMid) { AddEval(11, 1, zL, norm, now); Mark(vis, l, l.Level, 1, false); }
+                if (pLMid >= pHMid && l.Level < hMid) { AddEval(12, -1, zL, norm, now); Mark(vis, l, l.Level, -1, false); }
+                if (pLUp <= pHUp && l.Upper > hUp) { AddEval(13, 1, zL, norm, now); Mark(vis, l, l.Upper, 1, true); }
+                if (pLLo >= pHLo && l.Lower < hLo) { AddEval(14, -1, zL, norm, now); Mark(vis, l, l.Lower, -1, true); }
+                if (pLMid <= pHUp && l.Level > hUp) { AddEval(15, 1, zL, norm, now); Mark(vis, l, l.Level, 1, true); }
+                if (pLMid >= pHLo && l.Level < hLo) { AddEval(16, -1, zL, norm, now); Mark(vis, l, l.Level, -1, true); }
+
+                if (l.MidVariant != pLVar && l.MidVariant != 0 && hVar != 0)
+                {
+                    if (l.MidVariant == hVar) AddEval(17, hVar, zL, norm, now);
+                    else AddEval(18, l.MidVariant, zL, norm, now);
+                }
+
+                SwKalmanState hs = tr[2].State;
+                if (l.RangeDeclared && (hs == SwKalmanState.TrendUp || hs == SwKalmanState.TrendDown))
+                    AddEval(19, hs == SwKalmanState.TrendUp ? 1 : -1, zL, norm, now);
+            }
+
+            pLMid = l.Level; pLUp = l.Upper; pLLo = l.Lower;
+            pHMid = hMid; pHUp = hUp; pHLo = hLo;
+            pLVar = l.MidVariant;
+            prevPairValid = true;
+        }
+
+        private void Mark(bool vis, SwKalmanTrack l, double price, int dir, bool boundary)
+        {
+            if (!vis) return;
+            EmitVisual(SwVisualEvent.Marker(boundary ? SwVisualKind.Diamond : SwVisualKind.Dot,
+                    SwVisualRole.KalmanInteraction, l.Time, price)
+                .WithVariant(dir).AsDebug().InRing("TFX"));
+        }
+
+        #endregion
+
+        #region Отчёт и панель
+
+        /// <summary>Итог для [HUB-ИТОГ]: счётчики, таблица событий, калибровка боковика.</summary>
+        public string ResearchReport(string pad)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(pad + "Кальман: боковиков на ТФ входа " + rangesDeclared + ", пробоев ↑" + breakoutsUp + " ↓" + breakoutsDown
+                + ", не отправлено — старший ТФ против " + suppressedHigher + ", возврат в диапазон " + cancelledInside
+                + "; требований выхода " + exitsRequested + ", просьб о стопе " + stopRequests);
+            if (!cfg.Research) return sb.ToString();
+
+            SwKalmanStat b = stats[0];
+            double baseMean = b.Mean;
+            sb.AppendLine(pad + "Кальман, исследование: ТФ входа " + tr[entryTf].Name + ", горизонт " + Math.Max(1, cfg.ResearchHorizon)
+                + " баров, доходность в ширинах канала ТФ входа, знак — в сторону события. События пары МЛ–СТ — только при обоих ТФ.");
+            sb.AppendLine(pad + "  событие; n; средняя; ст. ошибка; в сторону, %; средняя минус база");
+            for (int i = 0; i < stats.Length; i++)
+            {
+                SwKalmanStat s = stats[i];
+                if (s.N == 0) continue;
+                double avgDir = s.N > 0 ? (double)stDirSum[i] / Math.Max(1, s.N) : 0;
+                double excess = i == 0 || double.IsNaN(baseMean) ? double.NaN : s.Mean - avgDir * baseMean;
+                sb.AppendLine(pad + "  " + EventNames[i] + "; " + s.N + "; " + F3(s.Mean) + "; " + F3(s.StdErr) + "; "
+                    + (double.IsNaN(s.HitRate) ? "—" : (100 * s.HitRate).ToString("F1")) + "; " + F3(excess));
+            }
+
+            sb.AppendLine(pad + "Кальман, боковик ТФ входа: m-я плоская свеча подряд; достигнуто; удержалось в канале "
+                + Math.Max(1, cfg.RangeHoldBars) + " баров; доля, %");
+            for (int m = 1; m <= MaxM; m++)
+            {
+                if (reached[m] == 0) continue;
+                sb.AppendLine(pad + "  m=" + m + "; " + reached[m] + "; " + held[m] + "; "
+                    + (100.0 * held[m] / reached[m]).ToString("F1"));
+            }
+            sb.AppendLine(pad + "  " + SuggestM());
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Наименьшее m, после которого доля удержания растёт меньше чем на два
+        /// пункта за свечу два шага подряд: дальше ждать — терять время без
+        /// выигрыша в надёжности. Считается только по m, где случаев не меньше 30.
+        /// </summary>
+        private string SuggestM()
+        {
+            double[] rate = new double[MaxM + 1];
+            for (int m = 1; m <= MaxM; m++) rate[m] = reached[m] >= 30 ? (double)held[m] / reached[m] : double.NaN;
+            for (int m = 1; m <= MaxM - 2; m++)
+            {
+                if (double.IsNaN(rate[m]) || double.IsNaN(rate[m + 1]) || double.IsNaN(rate[m + 2])) continue;
+                if (rate[m + 1] - rate[m] < 0.02 && rate[m + 2] - rate[m + 1] < 0.02)
+                    return "по этим данным боковик разумно объявлять на " + m + "-й свече [C15]; сейчас — на "
+                         + confirmBars + "-й. Гипотеза: проверьте на другом участке истории";
+            }
+            return "данных для выбора m мало: нужно не меньше 30 случаев на каждое m";
+        }
+
+        private static string F3(double v)
+        {
+            return double.IsNaN(v) ? "—" : v.ToString("+0.000;-0.000;0.000");
+        }
+
+        /// <summary>Строка дашборда модулей.</summary>
+        public string StatusLine
+        {
+            get
+            {
+                StringBuilder sb = new StringBuilder("Кальман:");
+                for (int i = 0; i < 3; i++)
+                {
+                    if (!tfOn[i] || tr[i] == null) continue;
+                    SwKalmanTrack t = tr[i];
+                    sb.Append(' ').Append(t.Name).Append(' ').Append(SwKalmanTrack.StateText(t.State));
+                    if (t.Ready && t.State != SwKalmanState.Range && t.FlatStreak > 0)
+                        sb.Append(" (плоско ").Append(t.FlatStreak).Append('/').Append(t.ConfirmBars).Append(')');
+                    if (t.Compression) sb.Append(" сжатие");
+                    else if (t.Expansion) sb.Append(" расширение");
+                    sb.Append(" ·");
+                }
+                SwKalmanTrack d = tr[dirTf];
+                if (d != null)
+                    sb.Append(" дисб ").Append(d.SmoothImbalance.ToString("+0.00;-0.00;0.00"))
+                      .Append(" · окна ").Append(tr[entryTf].Window.Length).Append('/').Append(tr[escortTf].Window.Length);
+                return sb.ToString();
+            }
+        }
+
+        private string StatusShort()
+        {
+            SwKalmanTrack t = tr[entryTf];
+            return t.Name + " " + SwKalmanTrack.StateText(t.State)
+                 + (t.State != SwKalmanState.Range && t.FlatStreak > 0 ? " плоско " + t.FlatStreak + "/" + t.ConfirmBars : "");
+        }
+
+        #endregion
+    }
+}
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_SW_Mod_Lever_S021.cs.txt
+--------------------------------------------------------------------------------
+
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using System.Text;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_Lever_S021 — РЫЧАГ СВЕЧИ: ВЗВЕШИВАНИЕ КЛАСТЕРОВ ОТНОСИТЕЛЬНО ОПОРЫ
+//  Роль Filter или Signal по настройке [B01], v1.4 (2026-10-05)
+//
+//  v1.4 — РЕВИЗИЯ ВЕТКИ ИССЛЕДОВАНИЙ. Расчёт умолчаний не изменён. Эксперимент Э69, выключен: две
+//    классические меры свечи как дополнительные условия согласия в роли Filter — CLR = |закрытие − открытие| /
+//    диапазон не ниже ExpClrMin и z массы свечи относительно последних 20 свечей не ниже ExpVolZMin
+//    (спецификация каскада от 2026-10-05; Volume Profile: тяжёлый объём = агрессивная инициация). Ниже порога —
+//    вердикт Neutral вместо Agree.
+//
+//  v1.3 — ЭКСПЕРИМЕНТ Э22 [B21], выключен: мера POC. Volume Profile (Trader Dale,
+//    с. 52–54): точка контроля — цена с наибольшим объёмом, «самое значимое место профиля»,
+//    на неё цена реагирует сильнее всего. Баланс свечи — смещение POC от опоры в долях
+//    плеча вместо медианы массы и рычага кластеров. Медиана устойчивее к хвостам, POC —
+//    ближе к тому, что видит участник рынка; какая мера несёт информацию, покажет [B19].
+//
+//  v1.2 — ПОРЦИЯ 3 ОТЛАДКИ: РАСЧЁТ НЕ ИЗМЕНЁН. Индексы настроек в комментариях и
+//    текстах приведены к меню: прежние [Lxx] совпадали с настройками классификатора
+//    Лоренца — [L10] здесь был порогом голоса, а в меню [L10] — шум процесса Калмана.
+//
+//  v1.1 — РАСЧЁТ, ГОЛОС И СИГНАЛ НЕ ИЗМЕНЕНЫ. Наклон Тейла–Сена считается в
+//  буферах модуля, выделенных один раз: прежде на каждой свече создавались
+//  два списка и их копии для медиан — при окне [B13] = 200 это по 155 КБ в
+//  куче больших объектов, дважды на свечу. Результат тот же: 18 000 сравнений
+//  с v1.0 на прототипе Python без единого расхождения.
+//
+//  ИДЕЯ — ВЕСЫ-КАЧЕЛИ. Опора — геометрический центр закрытой свечи:
+//  середина между экстремумами или середина тела [B08]. Свеча разбивается по
+//  высоте на кластеры, в каждом — объём или число сделок [B07]. Где масса
+//  богаче — туда и перевес:
+//    богатые кластеры выше опоры — голос за продолжение вверх;
+//    ниже опоры                 — голос за продолжение вниз;
+//    масса у опоры              — середина: затухание движения, предпосылка
+//                                 разворота или боковика.
+//
+//  ОТКУДА КЛАСТЕРЫ. Из более мелкой серии пула [B03]:
+//    тиковая серия (1 тик)  — точный профиль: каждая сделка ложится на свою
+//                             цену. Для воспроизведения рынка и реальной
+//                             торговли — основной вариант;
+//    минутная серия         — приближение: объём подбара делится поровну между
+//                             ценами, которые он прошёл; в режиме «сделки» —
+//                             число подбаров на цене, время у цены.
+//  Алгоритм один: у тика высота нулевая, и его вес ложится на одну цену.
+//
+//  ВСЁ НА МЕДИАНАХ.
+//    центр массы свечи   — взвешенная медиана цены по профилю, с интерполяцией
+//                          внутри тика; смещение от опоры в долях плеча — «m»;
+//    богатый кластер     — плотность выше медианной плотности кластеров этой
+//                          свечи; рычаг «T» — момент избытка массы богатых
+//                          кластеров на их плечи: Σ избыток·плечо / Σ избыток·|плечо|;
+//    баланс свечи        — [B09]: среднее m и T, только T или только m;
+//    сглаживание         — взвешенная медиана балансов последних [B10] свечей,
+//                          веса — масса свечей: тяжёлая свеча весит больше;
+//    масштаб             — 1.4826·MAD баланса за [B11] свечей; ноль не
+//                          сдвигается: равновесие рычага — естественный ноль;
+//    тренд для контекста — наклон Тейла–Сена (медиана попарных наклонов) по
+//                          закрытиям [B13] свечей;
+//    нормировка доходностей в исследовании — медианный размах свечи.
+//  Голос: z = сглаженный баланс / масштаб; z ≥ [B05] — вверх, ≤ −[B05] —
+//  вниз, иначе — середина. На случайном блуждании при пороге 0.5 это примерно
+//  четверть свечей вверх, четверть вниз, половина середина (прототип Python).
+//
+//  КОГДА ГОЛОС ГОТОВ. Профиль свечи должен быть полон. Подбар, закрывшийся в

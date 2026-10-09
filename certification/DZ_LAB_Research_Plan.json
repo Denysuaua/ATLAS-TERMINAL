@@ -1,0 +1,84 @@
+{
+  "version": "1.0",
+  "strategy": "DZ_SW_Hub_S021",
+  "created_utc": "2026-10-01T10:42:14Z",
+  "clusters": [
+    {
+      "cluster_id": "C1_Execution_Risk",
+      "name": "?????????? ? ?????????? ????-????????",
+      "parameters": [
+        {
+          "param_name": "StopLossTicks",
+          "type": "int",
+          "default": 60,
+          "bounds_isolated": {
+            "min": 20,
+            "max": 120,
+            "step": 10
+          },
+          "coupled_with": [
+            "ProfitTargetTicks",
+            "TrailingTriggerTicks"
+          ],
+          "status": "READY"
+        },
+        {
+          "param_name": "ProfitTargetTicks",
+          "type": "int",
+          "default": 120,
+          "bounds_isolated": {
+            "min": 40,
+            "max": 300,
+            "step": 20
+          },
+          "coupled_with": [
+            "StopLossTicks",
+            "BreakEvenTriggerTicks"
+          ],
+          "status": "READY"
+        }
+      ]
+    },
+    {
+      "cluster_id": "C2_Signal_DualBreakout",
+      "name": "???? ?????? ????????? DualBreakout",
+      "parameters": [
+        {
+          "param_name": "BreakoutLookback",
+          "type": "int",
+          "default": 20,
+          "bounds_isolated": {
+            "min": 5,
+            "max": 60,
+            "step": 5
+          },
+          "coupled_with": [
+            "HurstFilterMin",
+            "AdaptiveKernelPeriod"
+          ],
+          "status": "PENDING"
+        }
+      ]
+    },
+    {
+      "cluster_id": "C3_Market_Regime_Filters",
+      "name": "??????? ????????? ?????? (Hurst / Lorentz / Volatility)",
+      "parameters": [
+        {
+          "param_name": "HurstFilterMin",
+          "type": "double",
+          "default": 0.55,
+          "bounds_isolated": {
+            "min": 0.5,
+            "max": 0.7,
+            "step": 0.02
+          },
+          "coupled_with": [
+            "BreakoutLookback"
+          ],
+          "status": "PENDING"
+        }
+      ]
+    }
+  ]
+}

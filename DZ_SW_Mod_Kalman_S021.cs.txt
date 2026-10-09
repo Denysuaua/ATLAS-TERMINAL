@@ -1,0 +1,1470 @@
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using System.Text;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_Kalman_S021 — КАНАЛ ФИЛЬТРА КАЛМАНА НА ТРЁХ ТАЙМФРЕЙМАХ
+//  Роль Filter или Signal по настройке [C01], v1.5 (2026-10-05)
+//
+//  v1.5 — РЕВИЗИЯ ВЕТКИ ИССЛЕДОВАНИЙ (отчёт по связкам: стоп по границе с отступом 2 тика выбивал
+//    77–94 % сделок). Расчёт умолчаний не изменён. Эксперимент Э72 ExpEscortOffsetSigma, выключен: отступ
+//    стопа сопровождения в долях полуширины канала (≈ k·σ остатков) вместо тиков — отступ масштабируется
+//    с волатильностью (AFML 3.3, с. 44: пороги в единицах σ).
+//
+//  v1.4 — КОММЕНТАРИЙ, РАСЧЁТ НЕ ИЗМЕНЁН. Ссылка Э49 на фильтр CUSUM снята: [C34] — выдержка по
+//    времени; CUSUM по AFML 2.5.2.1 (с. 39) накапливает величину сдвига и срабатывает по порогу —
+//    кандидат Э50 (документ 15).
+//
+//  v1.3 — ПРОХОД 2 ПОЛНОЙ ПРОВЕРКИ. Расчёт не изменён; ссылка шапки на прежнее меню
+//    наблюдения исправлена на [V01]. По догме проекта в роли Signal модуль не голосует.
+//    Эксперимент Э49 [C34], выключен нулём: ВЫДЕРЖКА СОСТОЯНИЯ. Вердикт фильтра по новому
+//    состоянию канала выдаётся, только когда состояние продержалось [C34] баров серии
+//    исполнения; до того — нейтраль. Это выдержка по времени, не фильтр CUSUM (AFML 2.5.2.1,
+//    с. 39: там событие — после накопленного сдвига, а не на первом пересечении границы).
+//
+//  v1.2 — ЭКСПЕРИМЕНТ Э21 [C33], выключен: согласованность фильтра. Банковская книга
+//    (Blake–Mumtaz, фильтр Калмана, с. pdf 77): ошибка прогноза ν и её дисперсия f — часть
+//    уравнений фильтра; при верной модели ν²/f в среднем равно 1. Скользящее среднее ν²/f
+//    выше [C33] — модель не описывает данные (смена режима, разрыв), и мнение канала
+//    снимается: фильтр — нейтраль, сигнал — нет. Адаптивный шум Сейджа–Хьюза догоняет
+//    такие сдвиги с запаздыванием; проверка закрывает это окно.
+//
+//  v1.1 — ПОРЦИЯ 3 ОТЛАДКИ: РАСЧЁТ НЕ ИЗМЕНЁН. Индексы настроек в комментариях и
+//    текстах приведены к меню: прежние [Kxx] указывали на чужие настройки — группа K
+//    в меню принадлежит адаптивному ядру, канал Калмана — группа C.
+//
+//  ЧТО ДЕЛАЕТ. На младшем, текущем и старшем ТФ ведёт фильтр Калмана с
+//  моделью «уровень + наклон» и строит вокруг его середины канал. По наклону
+//  середины и границ, их параллельности и симметрии классифицирует канал:
+//  боковик, тренд вверх, тренд вниз, неопределённость. Дополнительно видит
+//  сжатие и расширение канала и дисбаланс расстояний от середины до границ.
+//
+//  КАК ИСПОЛЬЗУЕТСЯ В РЕШЕНИИ.
+//    роль Filter — вердикт по ТФ направления [C20]: в тренде — согласие с
+//                  направлением, в боковике — по политике [C07];
+//    роль Signal — пробой границы боковика ТФ входа; ТФ входа — младший,
+//                  при его отсутствии — текущий;
+//    в обеих ролях, по выбору — сопровождение стопом по границе канала ТФ
+//                  сопровождения [C21] и выход при развороте середины и
+//                  коридора против позиции.
+//  Младший ТФ отвечает за вход, текущий или старший — за сопровождение.
+//
+//  МОДЕЛЬ. Состояние x = [уровень, наклон за бар], переход F = [[1,1],[0,1]],
+//  измерение — цена закрытия. Шум процесса — модель дискретного белого
+//  ускорения: Q = λ²·R·[[1/4,1/2],[1/2,1]]. Индекс слежения λ выводится из
+//  эквивалентного периода N [C05] по формулам Калаты: α = 2/(N+1),
+//  β = 2(2−α) − 4√(1−α), λ = β/√(1−α). Установившиеся коэффициенты фильтра
+//  тогда равны α и β, как у альфа-бета фильтра с тем же периодом; численно
+//  проверено на случайном блуждании: при N = 20 коэффициент уровня 0.099
+//  против расчётных 0.095.
+//
+//  ШУМ ИЗМЕРЕНИЯ R — адаптивный, по Сейджу–Хьюзу с забыванием 0.97:
+//  R ← (1−d)·R + d·(ν² − P⁻₀₀). Поскольку Q пропорционален R, коэффициенты
+//  от масштаба цены не зависят: одни настройки годятся для золота и серебра.
+//
+//  ГРАНИЦЫ КАНАЛА — ОТДЕЛЬНЫЙ БЛОК [C08]:
+//    GaussianSemiDeviation — полуотклонения остатков цены от середины с
+//      гауссовыми весами по плавающему окну; верхняя граница по остаткам
+//      выше середины, нижняя — по остаткам ниже. Канал асимметричен, и его
+//      асимметрия — это и есть дисбаланс, мера импульса;
+//    KalmanInnovation — середина ± k·√S, где S — дисперсия обновления
+//      фильтра: интервал прогноза на один бар. Симметричен; дисбаланс в этом
+//      режиме всё равно считается по полуотклонениям.
+//
+//  ДВА ПЛАВАЮЩИХ ОКНА. Окно входа [C09]-[C10] — гибкое, для ТФ входа.
+//  Окно сопровождения [C11]-[C12] — жёсткое, для текущего и старшего ТФ.
+//  Длина окна плавает между минимумом и максимумом по коэффициенту
+//  эффективности Кауфмана: в направленном движении окно короче, в боковике
+//  длиннее, и границы боковика оцениваются по большей выборке.
+//
+//  НА КАКОЙ СВЕЧЕ ОБЪЯВЛЯЕТСЯ БОКОВИК. Условия «горизонтально, параллельно,
+//  симметрично» проверяются на каждом баре по сглаженным мерам; боковик
+//  объявляется на [C15]-й подряд свече, где все они выполнены (0 — авто:
+//  половина минимума окна входа, от 3 до 12; по умолчанию 5). Выход из
+//  боковика — пробой границы предыдущего бара или появление тренда, а не
+//  первый же «неплоский» бар: одиночный шум состояние не сбрасывает.
+//  Число 5 взято из проверки на синтетических рядах и требует калибровки на
+//  ваших данных: модуль печатает для каждого m долю случаев, когда цена
+//  после m плоских свечей удержалась в канале [C30] баров.
+//
+//  ЭКСПЕРИМЕНТАЛЬНЫЙ БЛОК [C28]. Взаимодействие канала младшего ТФ с каналом
+//  старшего: пересечения середин, выход границ и середины младшего за
+//  границы старшего, смена согласия наклонов, боковик младшего внутри тренда
+//  старшего. И взаимодействие цены с линиями ТФ входа. Для каждого события —
+//  доходность через [C29] баров в ширинах канала и доля движений в сторону
+//  события; рядом — база по всем барам. В торговлю блок не вмешивается.
+//
+//  ПРЕДВАРИТЕЛЬНОЕ СОСТОЯНИЕ СТАРШИХ ТФ. На закрытии бара младшего ТФ
+//  модуль считает, где была бы середина старшего ТФ, если бы его бар закрылся
+//  сейчас по текущей цене: шаг фильтра без сохранения. Только для окраски
+//  линии (наблюдение [V01]) и для экспериментального блока; вердикт, вход, стоп и выход —
+//  по закрытым барам.
+//
+//  ЧЕГО ЗДЕСЬ НЕТ. Взгляда в будущее: каждое значение опирается только на
+//  закрытые бары своей серии и, для предварительного состояния, на последнюю
+//  известную цену. Проверка «удержался ли боковик» и доходности событий
+//  используют будущие бары только для статистики отчёта, не для решений.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Роль модуля Кальмана в решении.</summary>
+    public enum SwKalmanRole
+    {
+        Filter,     // вердикт по состоянию канала ТФ направления
+        Signal      // пробой границы боковика ТФ входа
+    }
+
+    /// <summary>Как считаются границы канала.</summary>
+    public enum SwKalmanBands
+    {
+        GaussianSemiDeviation,  // полуотклонения остатков, гауссовы веса; асимметричный канал
+        KalmanInnovation        // середина ± k·√S; симметричный канал
+    }
+
+    /// <summary>Вердикт модуля в роли Filter.</summary>
+    public enum SwKalmanFilterPolicy
+    {
+        TrendDirection,     // в тренде — только по направлению; в остальном не мешает
+        TrendOnly,          // вход только в тренде и только по направлению
+        NoRange             // запрет входа в боковике; направления не задаёт
+    }
+
+    /// <summary>Выбор таймфрейма для направления и сопровождения.</summary>
+    public enum SwKalmanTfChoice
+    {
+        Current,
+        Higher
+    }
+
+    /// <summary>Состояние канала одного ТФ.</summary>
+    public enum SwKalmanState
+    {
+        Warmup,
+        Undefined,
+        Range,
+        TrendUp,
+        TrendDown
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwKalmanConfig
+    {
+        public SwKalmanRole Role = SwKalmanRole.Filter;
+
+        // --- таймфреймы: слоты пула; 0 — серия графика ---
+        public int LowerSlot = 1;
+        public int CurrentSlot = 0;
+        public int HigherSlot = 3;
+
+        // --- фильтр и границы ---
+        public int Period = 20;                 // эквивалентный период, баров своего ТФ
+        public SwKalmanBands Bands = SwKalmanBands.GaussianSemiDeviation;
+        public double BandSigma = 2.0;          // ширина канала в сигмах
+
+        // --- два плавающих окна ---
+        public int EntryWindowMin = 10, EntryWindowMax = 40;
+        public int EscortWindowMin = 30, EscortWindowMax = 120;
+
+        // --- геометрия и состояния ---
+        public double FlatTilt = 0.4;           // горизонталь: смещение за окно, доля ширины
+        public double SymmetryMax = 0.3;        // симметрия: |дисбаланс| меньше порога
+        public int RangeConfirmBars = 0;        // свечей подряд до объявления боковика; 0 — авто
+        public double TrendZ = 3.0;             // значимость наклона середины
+        public double TrendTilt = 0.6;          // смещение середины за окно, доля ширины
+        public double CompressionRatio = 0.75;  // ширина к своей средней: ниже — сжатие
+        public double ExpansionRatio = 1.35;    // выше — расширение
+
+        // --- решение ---
+        public SwKalmanFilterPolicy Policy = SwKalmanFilterPolicy.TrendDirection;
+        public SwKalmanTfChoice DirectionTf = SwKalmanTfChoice.Higher;
+        public SwKalmanTfChoice EscortTf = SwKalmanTfChoice.Current;
+        public bool RequireHigherAgreement = true;
+        public int SignalBars = 1;
+
+        // --- сопровождение и выход ---
+        public bool EscortStop = true;
+        public int StopOffsetTicks = 2;
+        public bool ExitOnSlopeFlip = true;
+        public int ExitConfirmBars = 2;
+
+        // --- исследование ---
+        public bool Research = true;
+        public int ResearchHorizon = 20;
+        public int RangeHoldBars = 10;
+
+        // --- прочее ---
+        public int WarmupPeriods = 3;
+        public bool ProvisionalDisplay = true;
+        public double ExpNisGate = 0;          // Э21: порог среднего ν²/f; 0 — выключено
+        public int ExpMinStateBars = 0;
+        public double ExpEscortOffsetSigma = 0;   // Э72: отступ стопа в долях полуширины канала; 0 — тики [C1x]        // Э49: выдержка состояния, баров
+    }
+
+    /// <summary>Кольцо последних значений. Get(0) — последнее.</summary>
+    public class SwRing
+    {
+        private readonly double[] a;
+        private int head, count;
+
+        public SwRing(int capacity) { a = new double[Math.Max(2, capacity)]; }
+
+        public int Count { get { return count; } }
+
+        public void Push(double v)
+        {
+            head = (head + 1) % a.Length;
+            a[head] = v;
+            if (count < a.Length) count++;
+        }
+
+        public double Get(int ago)
+        {
+            if (ago < 0 || ago >= count) return double.NaN;
+            int i = head - ago;
+            if (i < 0) i += a.Length;
+            return a[i];
+        }
+    }
+
+    /// <summary>
+    /// ПЛАВАЮЩЕЕ ОКНО. Длина — между Min и Max по коэффициенту эффективности
+    /// Кауфмана за Max баров: ER = |чистый ход| / сумма |шагов|. ER близко к
+    /// единице — направленное движение, окно короче; близко к нулю — пила,
+    /// окно длиннее. Длина сглажена, чтобы окно не дёргалось с бара на бар.
+    /// </summary>
+    public class SwFloatingWindow
+    {
+        public readonly int Min, Max;
+        private double lf;
+        private int length;
+        private double er;
+
+        public SwFloatingWindow(int min, int max)
+        {
+            int lo = Math.Max(3, Math.Min(min, max));
+            int hi = Math.Max(lo, Math.Max(min, max));
+            Min = lo; Max = hi;
+            lf = hi; length = hi;
+        }
+
+        public int Length { get { return length; } }
+        public double Efficiency { get { return er; } }
+
+        public void Update(SwRing closes)
+        {
+            if (closes.Count <= Max)
+            {
+                length = Math.Max(Min, Math.Min(Max, closes.Count - 1));
+                return;
+            }
+            double net = Math.Abs(closes.Get(0) - closes.Get(Max));
+            double path = 0;
+            for (int i = 0; i < Max; i++) path += Math.Abs(closes.Get(i) - closes.Get(i + 1));
+            er = path > 0 ? net / path : 0;
+
+            double target = Min + (Max - Min) * (1.0 - er);
+            lf += 0.2 * (target - lf);
+            length = Math.Max(Min, Math.Min(Max, (int)Math.Round(lf)));
+        }
+    }
+
+    /// <summary>
+    /// ОДИН ТАЙМФРЕЙМ: фильтр Калмана, канал, геометрия, состояние. Чистое
+    /// вычисление: данные получает аргументами, к Host не обращается, поэтому
+    /// проверяется отдельно от платформы. Update вызывается ровно один раз на
+    /// закрытии бара своей серии.
+    /// </summary>
+    public class SwKalmanTrack
+    {
+        public readonly int Tf;          // 0 младший, 1 текущий, 2 старший
+        public readonly string Name;     // МЛ, ТК, СТ
+        public readonly int Slot;
+        public readonly SwFloatingWindow Window;
+
+        // --- параметры ---
+        private readonly double lam2, forget, tick, k, rMin;
+        private readonly SwKalmanBands method;
+        private readonly double flatTilt, symMax, trendZ, trendTilt, compRatio, expRatio;
+        private readonly int warmupBars, confirmBars;
+
+        // --- фильтр ---
+        private int n, steps;
+        private readonly double[] boot = new double[5];
+        private double x0, x1, p00, p01, p11, r, s;
+        public double NisAvg = double.NaN;     // Э21: скользящее среднее ν²/f
+        private double nisA;
+
+        // --- кольца ---
+        private readonly SwRing closes, resid, uppers, lowers, widths;
+
+        // --- сглаженные меры геометрии ---
+        private bool smoothed;
+        private double zS, tiltS, tuS, tlS, imbS;
+        private const double SmoothA = 0.3;
+
+        public SwKalmanTrack(int tf, string name, int slot, SwKalmanConfig c, SwFloatingWindow window,
+                             double tickSize, int confirm)
+        {
+            Tf = tf; Name = name; Slot = slot; Window = window;
+
+            int per = Math.Max(2, c.Period);
+            double a = 2.0 / (per + 1.0);
+            double b = 2.0 * (2.0 - a) - 4.0 * Math.Sqrt(1.0 - a);
+            double lam = b / Math.Sqrt(1.0 - a);
+            lam2 = lam * lam;
+            nisA = 2.0 / (per + 1.0);
+            forget = 0.97;
+            tick = tickSize > 0 ? tickSize : 1e-6;
+            rMin = (0.25 * tick) * (0.25 * tick);
+            k = Math.Max(0.1, c.BandSigma);
+            method = c.Bands;
+
+            flatTilt = Math.Max(0.01, c.FlatTilt);
+            symMax = Math.Max(0.01, c.SymmetryMax);
+            trendZ = Math.Max(0.5, c.TrendZ);
+            trendTilt = Math.Max(0.01, c.TrendTilt);
+            compRatio = c.CompressionRatio;
+            expRatio = c.ExpansionRatio;
+            warmupBars = Math.Max(10, Math.Max(1, c.WarmupPeriods) * per);
+            confirmBars = Math.Max(1, confirm);
+
+            int cap = window.Max + 8;
+            closes = new SwRing(cap); resid = new SwRing(cap);
+            uppers = new SwRing(cap); lowers = new SwRing(cap); widths = new SwRing(cap);
+
+            Level = Upper = Lower = PrevLevel = PrevUpper = PrevLower = double.NaN;
+            State = SwKalmanState.Warmup;
+        }
+
+        // ---------------- результаты последнего бара ----------------
+        public DateTime Time;
+        public double Close, High, Low;
+        public int BarsSeen;
+        public bool Ready;
+
+        public double Level, Upper, Lower, Width;
+        public double PrevLevel, PrevUpper, PrevLower;
+        public double Slope;                // наклон середины, цена за бар
+        public double SlopeZ;               // значимость наклона: наклон / его стандартная ошибка
+        public double Tilt;                 // смещение середины за окно, доля ширины канала
+        public double TiltUpper, TiltLower; // то же для границ
+        public double Dup, Ddn;             // полуотклонения выше и ниже середины
+        public double Imbalance;            // (Dup − Ddn) / (Dup + Ddn): + импульс вверх, − вниз
+        public double WidthRatio = 1.0;     // ширина к своей средней: сжатие и расширение
+
+        public double SmoothZ { get { return zS; } }
+        public double SmoothTilt { get { return tiltS; } }
+        public double SmoothImbalance { get { return imbS; } }
+        public double CorridorTilt { get { return (tuS + tlS) / 2.0; } }
+        public int ConfirmBars { get { return confirmBars; } }
+
+        public bool FlatNow, InRange, RangeDeclared, RangeEnded, BreakUp, BreakDown, RangeCompressed;
+        public int FlatStreak, RangeBars, RangeSeq;
+        public DateTime StreakStart, RangeStart;
+        public double RangeUpperAtBreak, RangeLowerAtBreak;
+
+        public bool Compression, Expansion, CompressionStarted, ExpansionStarted;
+        public bool CrossMidUp, CrossMidDown, TouchUpper, TouchLower, CloseAbove, CloseBelow;
+
+        public SwKalmanState State;
+        public int MidVariant, UpperVariant, LowerVariant;   // окраска: +1 рост, −1 падение, 0 горизонталь
+
+        public double ZFlat { get { return trendZ / 2.0; } }
+
+        /// <summary>Один шаг: закрытие бара своей серии.</summary>
+        public void Update(double z, double hi, double lo, DateTime time)
+        {
+            RangeDeclared = RangeEnded = BreakUp = BreakDown = false;
+            CrossMidUp = CrossMidDown = TouchUpper = TouchLower = CloseAbove = CloseBelow = false;
+            CompressionStarted = ExpansionStarted = false;
+
+            if (double.IsNaN(z)) return;
+            if (double.IsNaN(hi)) hi = z;
+            if (double.IsNaN(lo)) lo = z;
+
+            double prevClose = closes.Count > 0 ? closes.Get(0) : double.NaN;
+            closes.Push(z);
+            Window.Update(closes);
+            Time = time; Close = z; High = hi; Low = lo;
+            BarsSeen++;
+
+            // --- затравка: пять баров на начальную оценку шума и наклона ---
+            if (n < 5)
+            {
+                boot[n] = z;
+                n++;
+                if (n == 5)
+                {
+                    double acc = 0;
+                    for (int i = 1; i < 5; i++) { double d = boot[i] - boot[i - 1]; acc += d * d; }
+                    r = Math.Max(acc / 4.0, rMin);
+                    x0 = z; x1 = (boot[4] - boot[0]) / 4.0;
+                    p00 = 10 * r; p01 = 0; p11 = r;
+                    s = p00 + r;
+                }
+                Ready = false;
+                State = SwKalmanState.Warmup;
+                return;
+            }
+
+            // --- прогноз ---
+            double q = lam2 * r;
+            double a00 = p00 + 2 * p01 + p11 + q / 4.0;
+            double a01 = p01 + p11 + q / 2.0;
+            double a11 = p11 + q;
+            double xp0 = x0 + x1, xp1 = x1;
+
+            // --- обновление ---
+            double nu = z - xp0;
+            double sv = a00 + r;
+            double k0 = a00 / sv, k1 = a01 / sv;
+            x0 = xp0 + k0 * nu;
+            x1 = xp1 + k1 * nu;
+            p00 = (1 - k0) * a00;
+            p01 = (1 - k0) * a01;
+            p11 = a11 - k1 * a01;
+            if (p11 < 1e-18) p11 = 1e-18;
+            if (p00 < 1e-18) p00 = 1e-18;
+            s = sv;
+            double nis = sv > 0 ? nu * nu / sv : double.NaN;   // Э21
+            if (!double.IsNaN(nis)) NisAvg = double.IsNaN(NisAvg) ? nis : NisAvg + nisA * (nis - NisAvg);
+
+            // --- шум измерения по Сейджу–Хьюзу ---
+            steps++;
+            double dsh = (1 - forget) / (1 - Math.Pow(forget, steps + 1));
+            r = Math.Max((1 - dsh) * r + dsh * (nu * nu - a00), rMin);
+            n++;
+
+            // --- канал ---
+            resid.Push(z - x0);
+            int L = Math.Min(Window.Length, resid.Count);
+            if (L < 3) { Ready = false; State = SwKalmanState.Warmup; return; }
+
+            double sig = L / 2.0, W = 0, U2 = 0, D2 = 0;
+            for (int i = 0; i < L; i++)
+            {
+                double rr = resid.Get(i);
+                double u = i / sig;
+                double w = Math.Exp(-0.5 * u * u);
+                W += w;
+                if (rr > 0) U2 += w * rr * rr; else D2 += w * rr * rr;
+            }
+            Dup = Math.Sqrt(U2 / W);
+            Ddn = Math.Sqrt(D2 / W);
+            Imbalance = Dup + Ddn > 0 ? (Dup - Ddn) / (Dup + Ddn) : 0;
+
+            double halfUp, halfDn;
+            if (method == SwKalmanBands.KalmanInnovation)
+            {
+                halfUp = halfDn = k * Math.Sqrt(s);
+            }
+            else
+            {
+                // Множитель √2 приводит полуотклонение к сигме: у симметричного
+                // распределения средний квадрат положительной части — σ²/2.
+                halfUp = k * Math.Sqrt(2.0) * Dup;
+                halfDn = k * Math.Sqrt(2.0) * Ddn;
+            }
+            if (halfUp < tick) halfUp = tick;
+            if (halfDn < tick) halfDn = tick;
+
+            PrevLevel = Level; PrevUpper = Upper; PrevLower = Lower;
+            Level = x0; Slope = x1;
+            Upper = x0 + halfUp; Lower = x0 - halfDn;
+            Width = Upper - Lower;
+            uppers.Push(Upper); lowers.Push(Lower); widths.Push(Width);
+
+            // --- ширина к своей средней по окну: сжатие и расширение ---
+            int lw = Math.Min(widths.Count, Window.Max);
+            double sw = Math.Max(1.0, lw / 2.0), ww = 0, swd = 0;
+            for (int i = 0; i < lw; i++)
+            {
+                double u = i / sw;
+                double w = Math.Exp(-0.5 * u * u);
+                ww += w; swd += w * widths.Get(i);
+            }
+            bool wasComp = Compression, wasExp = Expansion;
+            WidthRatio = swd > 0 ? Width / (swd / ww) : 1.0;
+            Compression = WidthRatio < compRatio;
+            Expansion = WidthRatio > expRatio;
+            CompressionStarted = Compression && !wasComp;
+            ExpansionStarted = Expansion && !wasExp;
+
+            // --- геометрия ---
+            int m = Math.Max(5, L / 2);
+            double wd = Math.Max(Width, 2 * tick);
+            Tilt = x1 * L / wd;
+            TiltUpper = OlsSlope(uppers, m) * m / wd;
+            TiltLower = OlsSlope(lowers, m) * m / wd;
+            SlopeZ = x1 / Math.Sqrt(p11);
+
+            if (!smoothed)
+            {
+                zS = SlopeZ; tiltS = Tilt; tuS = TiltUpper; tlS = TiltLower; imbS = Imbalance;
+                smoothed = true;
+            }
+            else
+            {
+                zS += SmoothA * (SlopeZ - zS);
+                tiltS += SmoothA * (Tilt - tiltS);
+                tuS += SmoothA * (TiltUpper - tuS);
+                tlS += SmoothA * (TiltLower - tlS);
+                imbS += SmoothA * (Imbalance - imbS);
+            }
+
+            // --- боковик: горизонтально, параллельно, симметрично ---
+            double zFlat = trendZ / 2.0, tauB = 1.25 * flatTilt;
+            FlatNow = Math.Abs(zS) < zFlat && Math.Abs(tiltS) < flatTilt
+                   && Math.Abs(tuS) < tauB && Math.Abs(tlS) < tauB
+                   && Math.Abs(tuS - tlS) < tauB && Math.Abs(imbS) < symMax;
+
+            if (FlatNow)
+            {
+                if (FlatStreak == 0) StreakStart = time;
+                FlatStreak++;
+            }
+            else FlatStreak = 0;
+
+            bool readyNow = n >= warmupBars && resid.Count >= Window.Min;
+            bool trendNow = Math.Abs(zS) >= trendZ && Math.Abs(tiltS) >= trendTilt;
+
+            if (InRange)
+            {
+                // Выход — пробой границы ПРЕДЫДУЩЕГО бара: собственный остаток
+                // бара пробоя уже расширил текущую границу. Либо появился тренд.
+                bool up = !double.IsNaN(PrevUpper) && z > PrevUpper;
+                bool dn = !double.IsNaN(PrevLower) && z < PrevLower;
+                if (up || dn || trendNow)
+                {
+                    InRange = false;
+                    RangeEnded = true;
+                    BreakUp = up;
+                    BreakDown = dn;
+                    RangeUpperAtBreak = PrevUpper;
+                    RangeLowerAtBreak = PrevLower;
+                    FlatStreak = 0;
+                }
+                else
+                {
+                    RangeBars++;
+                    if (Compression) RangeCompressed = true;
+                }
+            }
+            else if (readyNow && FlatStreak >= confirmBars)
+            {
+                InRange = true;
+                RangeDeclared = true;
+                RangeSeq++;
+                RangeStart = StreakStart;
+                RangeBars = FlatStreak;
+                RangeCompressed = Compression;
+            }
+
+            // --- состояние и окраска ---
+            if (!readyNow) State = SwKalmanState.Warmup;
+            else if (InRange) State = SwKalmanState.Range;
+            else if (trendNow) State = x1 > 0 ? SwKalmanState.TrendUp : SwKalmanState.TrendDown;
+            else State = SwKalmanState.Undefined;
+            Ready = readyNow;
+
+            MidVariant = zS >= zFlat ? 1 : zS <= -zFlat ? -1 : 0;
+            UpperVariant = tuS >= tauB ? 1 : tuS <= -tauB ? -1 : 0;
+            LowerVariant = tlS >= tauB ? 1 : tlS <= -tauB ? -1 : 0;
+
+            // --- цена и линии ---
+            if (!double.IsNaN(PrevLevel) && !double.IsNaN(prevClose))
+            {
+                CrossMidUp = prevClose <= PrevLevel && z > Level;
+                CrossMidDown = prevClose >= PrevLevel && z < Level;
+            }
+            if (!double.IsNaN(PrevUpper))
+            {
+                CloseAbove = z > PrevUpper;
+                TouchUpper = hi >= PrevUpper && !CloseAbove;
+            }
+            if (!double.IsNaN(PrevLower))
+            {
+                CloseBelow = z < PrevLower;
+                TouchLower = lo <= PrevLower && !CloseBelow;
+            }
+        }
+
+        /// <summary>
+        /// Предварительное состояние: где была бы середина, закройся бар сейчас
+        /// по цене z. Шаг фильтра без сохранения; границы — нынешние
+        /// полуширины от новой середины. Для окраски и исследования.
+        /// </summary>
+        public bool Peek(double z, out double level, out double upper, out double lower, out int variant)
+        {
+            level = upper = lower = double.NaN;
+            variant = 0;
+            if (n <= 5 || double.IsNaN(Level) || double.IsNaN(z)) return false;
+
+            double q = lam2 * r;
+            double a00 = p00 + 2 * p01 + p11 + q / 4.0;
+            double a01 = p01 + p11 + q / 2.0;
+            double a11 = p11 + q;
+            double xp0 = x0 + x1, xp1 = x1;
+            double nu = z - xp0;
+            double sv = a00 + r;
+            double k0 = a00 / sv, k1 = a01 / sv;
+
+            level = xp0 + k0 * nu;
+            double slope = xp1 + k1 * nu;
+            double pp11 = Math.Max(a11 - k1 * a01, 1e-18);
+            double zz = slope / Math.Sqrt(pp11);
+
+            upper = level + (Upper - Level);
+            lower = level - (Level - Lower);
+            double zFlat = trendZ / 2.0;
+            variant = zz >= zFlat ? 1 : zz <= -zFlat ? -1 : 0;
+            return true;
+        }
+
+        /// <summary>Наклон по методу наименьших квадратов за m последних значений, за бар.</summary>
+        private static double OlsSlope(SwRing ring, int m)
+        {
+            int mm = Math.Min(m, ring.Count);
+            if (mm < 3) return 0;
+            double xb = (mm - 1) / 2.0, yb = 0;
+            for (int i = 0; i < mm; i++) yb += ring.Get(i);
+            yb /= mm;
+            double num = 0, den = 0;
+            for (int i = 0; i < mm; i++)
+            {
+                double x = (mm - 1 - i) - xb;
+                num += x * (ring.Get(i) - yb);
+                den += x * x;
+            }
+            return den > 0 ? num / den : 0;
+        }
+
+        public static string StateText(SwKalmanState st)
+        {
+            switch (st)
+            {
+                case SwKalmanState.Range: return "боковик";
+                case SwKalmanState.TrendUp: return "тренд ↑";
+                case SwKalmanState.TrendDown: return "тренд ↓";
+                case SwKalmanState.Undefined: return "неопр.";
+                default: return "прогрев";
+            }
+        }
+    }
+
+    /// <summary>Накопитель статистики события: число, средняя, доля в сторону события.</summary>
+    public class SwKalmanStat
+    {
+        public int N, Hits;
+        public double Sum, Sum2;
+
+        public void Add(double v)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v)) return;
+            N++; Sum += v; Sum2 += v * v;
+            if (v > 0) Hits++;
+        }
+
+        public double Mean { get { return N > 0 ? Sum / N : double.NaN; } }
+        public double HitRate { get { return N > 0 ? (double)Hits / N : double.NaN; } }
+
+        /// <summary>Стандартная ошибка средней.</summary>
+        public double StdErr
+        {
+            get
+            {
+                if (N < 2) return double.NaN;
+                double m = Sum / N;
+                double v = (Sum2 - N * m * m) / (N - 1);
+                return v > 0 ? Math.Sqrt(v / N) : 0;
+            }
+        }
+    }
+
+    public class SwKalmanChannelModule : SwModule
+    {
+        private readonly SwKalmanConfig cfg;
+        private readonly SwKalmanTrack[] tr = new SwKalmanTrack[3];
+        private readonly bool[] tfOn = new bool[3];
+        private int entryTf = 1, escortTf = 1, dirTf = 1;
+        private int confirmBars = 5;
+
+        // --- сигнал пробоя, ожидающий такта исполнения ---
+        private int pendDir, pendBarsLeft;
+        private double pendConf, pendLevel;
+        private string pendId = string.Empty, pendText = string.Empty, pendShort = string.Empty;
+
+        // --- выход и сопровождение ---
+        private int exitAgainst;
+        private bool exitArmed;
+        private string exitReason = string.Empty;
+        private int lastPosSide;
+        private double lastAvg = double.NaN;
+        private int exitShownBar = -1;
+
+        // --- счётчики для панели и итога ---
+        private int breakoutsUp, breakoutsDown, suppressedHigher, cancelledInside, exitsRequested, stopRequests;
+        private int rangesDeclared;
+
+        private static readonly string[] TfNames = { "МЛ", "ТК", "СТ" };
+
+        public SwKalmanChannelModule(string id, SwKalmanConfig config)
+        {
+            Id = id;
+            cfg = config ?? new SwKalmanConfig();
+            Role = cfg.Role == SwKalmanRole.Signal ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+
+            confirmBars = cfg.RangeConfirmBars > 0
+                ? cfg.RangeConfirmBars
+                : Math.Max(3, Math.Min(12, (int)Math.Round(Math.Min(cfg.EntryWindowMin, cfg.EntryWindowMax) / 2.0)));
+
+            // Доступность таймфреймов. Невключённый слот пула читался бы с
+            // графика и молча дублировал бы текущий ТФ — такой ТФ выключается.
+            int[] slots = { cfg.LowerSlot, cfg.CurrentSlot, cfg.HigherSlot };
+            tfOn[1] = true;
+            tfOn[0] = Usable(slots[0]) && Host.Bip(slots[0]) != Host.Bip(slots[1]);
+            tfOn[2] = Usable(slots[2]) && Host.Bip(slots[2]) != Host.Bip(slots[1])
+                    && (!tfOn[0] || Host.Bip(slots[2]) != Host.Bip(slots[0]));
+
+            entryTf = tfOn[0] ? 0 : 1;
+            escortTf = cfg.EscortTf == SwKalmanTfChoice.Higher && tfOn[2] ? 2 : 1;
+            dirTf = cfg.DirectionTf == SwKalmanTfChoice.Higher && tfOn[2] ? 2 : 1;
+
+            // Окно входа — у ТФ входа; окно сопровождения — у остальных.
+            for (int i = 0; i < 3; i++)
+            {
+                bool entryWin = i == entryTf;
+                SwFloatingWindow w = entryWin
+                    ? new SwFloatingWindow(cfg.EntryWindowMin, cfg.EntryWindowMax)
+                    : new SwFloatingWindow(cfg.EscortWindowMin, cfg.EscortWindowMax);
+                tr[i] = new SwKalmanTrack(i, TfNames[i], slots[i], cfg, w, Host.TickSize, confirmBars);
+            }
+
+            Host.Trace(Id, "KALMAN_ATTACHED",
+                "роль " + cfg.Role + ", ТФ: МЛ слот " + slots[0] + (tfOn[0] ? "" : " выкл")
+                + ", ТК слот " + slots[1] + ", СТ слот " + slots[2] + (tfOn[2] ? "" : " выкл")
+                + "; вход " + TfNames[entryTf] + ", направление " + TfNames[dirTf] + ", сопровождение " + TfNames[escortTf]
+                + "; период " + cfg.Period + ", границы " + cfg.Bands + " " + cfg.BandSigma.ToString("F1") + "σ"
+                + ", боковик на " + confirmBars + "-й свече");
+
+            if (!tfOn[0])
+                Host.Trace(Id, "KALMAN_TF_OFF", "младший ТФ выключен: слот " + slots[0]
+                    + " не загружен или совпадает с текущим; вход берётся с текущего ТФ");
+            if (!tfOn[2])
+                Host.Trace(Id, "KALMAN_TF_OFF", "старший ТФ выключен: слот " + slots[2]
+                    + " не загружен или совпадает с другим ТФ; направление и сопровождение — по текущему");
+        }
+
+        private bool Usable(int slot)
+        {
+            return slot == 0 || Host.SlotLoaded(slot);
+        }
+
+        public override void Compute(int bip)
+        {
+            // --- 1. Шаг каждого ТФ на закрытии бара его серии ---
+            for (int i = 0; i < 3; i++)
+                if (tfOn[i] && Host.IsBarCloseOf(tr[i].Slot, bip)) StepTrack(i);
+
+            // --- 2. На закрытии младшего: предварительные старшие ТФ и исследование ---
+            if (tfOn[0] && Host.IsBarCloseOf(tr[0].Slot, bip))
+            {
+                try { OnLowerClose(); }
+                catch { }
+            }
+
+            // --- 3. Решение — только в такте серии исполнения ---
+            if (bip != Host.ExecBip) return;
+            ExecTick();
+        }
+
+        #region Шаг таймфрейма
+
+        private void StepTrack(int i)
+        {
+            SwKalmanTrack t = tr[i];
+            double z = Host.CloseOf(t.Slot, 0);
+            if (double.IsNaN(z)) return;
+
+            SwKalmanState before = t.State;
+            t.Update(z, Host.HighOf(t.Slot, 0), Host.LowOf(t.Slot, 0), Host.TimeOf(t.Slot, 0));
+
+            // Смена состояния — только для ТФ, по которым принимаются решения:
+            // младший ТФ меняет состояние слишком часто для трассировки.
+            if (t.Ready && t.State != before && before != SwKalmanState.Warmup && (i == dirTf || i == escortTf))
+                Host.Trace(Id, "KALMAN_STATE", t.Name + ": " + SwKalmanTrack.StateText(before) + " → "
+                    + SwKalmanTrack.StateText(t.State) + ", z " + t.SmoothZ.ToString("F2")
+                    + ", наклон за окно " + t.SmoothTilt.ToString("F2") + " ширины, дисбаланс "
+                    + t.SmoothImbalance.ToString("+0.00;-0.00;0.00"));
+
+            if (t.RangeDeclared)
+            {
+                if (i == entryTf) rangesDeclared++;
+                Host.Trace(Id, "KALMAN_RANGE", t.Name + ": боковик на " + t.FlatStreak + "-й свече, ширина "
+                    + t.Width.ToString("F2") + (t.Compression ? ", сжатие" : ""));
+            }
+
+            // --- вход: пробой боковика ТФ входа ---
+            if (i == entryTf && (t.BreakUp || t.BreakDown)) OnBreakout(t);
+
+            // --- выход: разворот середины и коридора ТФ сопровождения ---
+            if (i == escortTf) StepExit(t);
+
+            try { ObserveTrack(i); }
+            catch { }
+        }
+
+        /// <summary>
+        /// Пробой границы боковика. В роли Signal взводит сигнал до ближайшего
+        /// такта исполнения; в роли Filter только учитывается и рисуется.
+        /// </summary>
+        private void OnBreakout(SwKalmanTrack t)
+        {
+            int dir = t.BreakUp ? 1 : -1;
+            if (dir > 0) breakoutsUp++; else breakoutsDown++;
+
+            string sid = "KLM_" + t.Time.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                       + "_" + t.Name + (dir > 0 ? "_U" : "_D");
+            string desc = "КЛМ " + t.Name + " пробой боковика " + (dir > 0 ? "вверх" : "вниз");
+
+            // Старший ТФ против — пробой не отправляется, но попадает в журнал.
+            SwKalmanTrack h = tfOn[2] && entryTf != 2 ? tr[2] : null;
+            bool hAgainst = h != null && h.Ready
+                && ((dir > 0 && h.State == SwKalmanState.TrendDown) || (dir < 0 && h.State == SwKalmanState.TrendUp));
+            bool hWith = h != null && h.Ready
+                && ((dir > 0 && h.State == SwKalmanState.TrendUp) || (dir < 0 && h.State == SwKalmanState.TrendDown));
+
+            double conf = 0.6 + (t.RangeCompressed ? 0.15 : 0) + (hWith ? 0.15 : 0)
+                        + (Math.Sign(t.SmoothImbalance) == dir ? 0.1 : 0);
+            if (conf > 1.0) conf = 1.0;
+
+            Host.Trace(Id, "KALMAN_BREAKOUT", desc + " @ " + t.Close.ToString("F2") + ", боковик " + t.RangeBars
+                + " св." + (t.RangeCompressed ? ", было сжатие" : "")
+                + (h == null ? "" : ", старший ТФ " + SwKalmanTrack.StateText(h.State))
+                + ", уверенность " + conf.ToString("F2"));
+
+            if (Role != SwRole.Signal) return;
+
+            if (cfg.RequireHigherAgreement && hAgainst)
+            {
+                suppressedHigher++;
+                try
+                {
+                    Host.RequestSignalJournalEntry(Id, t.Time, sid, dir, conf, desc,
+                        "старший ТФ против: " + SwKalmanTrack.StateText(h.State) + " [C22]");
+                }
+                catch { }
+                return;
+            }
+
+            pendDir = dir;
+            pendConf = conf;
+            pendBarsLeft = Math.Max(1, cfg.SignalBars);
+            pendLevel = dir > 0 ? t.RangeUpperAtBreak : t.RangeLowerAtBreak;
+            pendId = sid;
+            pendShort = desc;
+            pendText = desc + " @ " + t.Close.ToString("F2") + ", уверенность " + conf.ToString("F2");
+        }
+
+        /// <summary>
+        /// Против позиции на закрытии бара ТФ сопровождения: середина значимо
+        /// повернула против и коридор — среднее смещение границ — тоже.
+        /// Подтверждение [C27] баров подряд; затем требование закрытия повторяется
+        /// каждый такт, пока позиция открыта: исполнитель пропускает не больше
+        /// одного выхода на бар и мог отклонить первое.
+        /// </summary>
+        private void StepExit(SwKalmanTrack t)
+        {
+            int pos = Host.PositionSide;
+            if (!cfg.ExitOnSlopeFlip || pos == 0 || !t.Ready)
+            {
+                exitAgainst = 0;
+                return;
+            }
+
+            bool against = pos > 0
+                ? t.SmoothZ <= -t.ZFlat && t.CorridorTilt < 0
+                : t.SmoothZ >= t.ZFlat && t.CorridorTilt > 0;
+
+            if (against)
+            {
+                exitAgainst++;
+                if (exitAgainst >= Math.Max(1, cfg.ExitConfirmBars) && !exitArmed)
+                {
+                    exitArmed = true;
+                    exitReason = "Кальман " + t.Name + ": середина и коридор против позиции "
+                               + exitAgainst + " бар., z " + t.SmoothZ.ToString("F2");
+                    Host.Trace(Id, "KALMAN_EXIT_REQUESTED", exitReason);
+                }
+            }
+            else
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+        }
+
+        #endregion
+
+        #region Такт исполнения
+
+        private void ExecTick()
+        {
+            int bar = Host.CurrentBar;
+            int pos = Host.PositionSide;
+
+            // Новая сделка — счёт выхода заново: разворот, накопленный в прошлой
+            // сделке, не должен закрыть новую.
+            double avg = Host.PositionAvgPrice;
+            bool newTrade = pos != lastPosSide
+                || (pos != 0 && !double.IsNaN(lastAvg) && Math.Abs(avg - lastAvg) > 1e-9);
+            if (newTrade)
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+            lastPosSide = pos;
+            lastAvg = pos != 0 ? avg : double.NaN;
+
+            if (pos != 0)
+            {
+                EmitEscort(bar, pos);
+                if (exitArmed) EmitExit(bar);
+            }
+
+            if (Role == SwRole.Signal) EmitSignalRole(bar);
+            else EmitFilterRole(bar);
+        }
+
+        private void EmitEscort(int bar, int pos)
+        {
+            if (!cfg.EscortStop) return;
+            SwKalmanTrack t = tr[escortTf];
+            if (!t.Ready) return;
+
+            double off = Math.Max(0, cfg.StopOffsetTicks) * Host.TickSize;
+            if (cfg.ExpEscortOffsetSigma > 0 && !double.IsNaN(t.Upper) && !double.IsNaN(t.Lower))        // Э72
+                off = cfg.ExpEscortOffsetSigma * Math.Max(Host.TickSize, 0.5 * (t.Upper - t.Lower));
+            double stop = pos > 0 ? t.Lower - off : t.Upper + off;
+            double px = Host.Close(0);
+            if (double.IsNaN(stop) || double.IsNaN(px)) return;
+
+            // Только по защитную сторону: иначе перенос увеличил бы риск.
+            if (pos > 0 ? stop >= px : stop <= px) return;
+
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.MoveStop;
+            a.Price = stop;
+            a.Reason = "Кальман " + t.Name + ": стоп по " + (pos > 0 ? "нижней" : "верхней") + " границе канала "
+                     + stop.ToString("F2");
+            stopRequests++;
+            Emit(a);
+        }
+
+        private void EmitExit(int bar)
+        {
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.FullExit;
+            a.Reason = exitReason;
+            Emit(a);
+            exitsRequested++;
+
+            try
+            {
+                if (exitShownBar != bar && Host.VisualOn(SwVisualRole.KalmanExit))
+                {
+                    exitShownBar = bar;
+                    int pos = Host.PositionSide;
+                    double y = pos > 0 ? Host.High(0) + 5 * Host.TickSize : Host.Low(0) - 5 * Host.TickSize;
+                    EmitVisual(SwVisualEvent.Label(SwVisualRole.KalmanExit, Host.Time, y, "KLM EXIT")
+                        .WithVariant(-pos));
+                }
+            }
+            catch { }
+        }
+
+        private void EmitSignalRole(int bar)
+        {
+            SwKalmanTrack t = tr[entryTf];
+            if (!t.Ready)
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            if (pendBarsLeft > 0 && cfg.ExpNisGate > 0 && !double.IsNaN(t.NisAvg) && t.NisAvg > cfg.ExpNisGate)
+            {
+                nisGated++;                       // Э21: сигнал при несогласованном фильтре снимается
+                pendBarsLeft = 0;
+            }
+
+            if (pendBarsLeft > 0)
+            {
+                pendBarsLeft--;
+
+                // Цена успела вернуться в диапазон — пробой не подтверждён.
+                double px = t.Close;
+                bool inside = !double.IsNaN(pendLevel) && (pendDir > 0 ? px <= pendLevel : px >= pendLevel);
+                if (inside)
+                {
+                    cancelledInside++;
+                    try { Host.RequestSignalJournalEntry(Id, t.Time, pendId, pendDir, pendConf, pendShort, "цена вернулась в диапазон"); }
+                    catch { }
+                    pendBarsLeft = 0;
+                    s.Direction = 0;
+                    s.Text = "пробой отменён: цена в диапазоне";
+                }
+                else
+                {
+                    s.Direction = pendDir;
+                    s.Confidence = pendConf;
+                    s.SignalId = pendId;
+                    s.ShortDescription = pendShort;
+                    s.Text = pendText;
+                }
+            }
+            else
+            {
+                s.Direction = 0;
+                s.Text = StatusShort();
+            }
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private int nisGated;   // Э21
+        private SwKalmanState expLastState; private int expStateBars;   // Э49
+
+        private void EmitFilterRole(int bar)
+        {
+            SwKalmanTrack t = tr[dirTf];
+            if (!t.Ready)
+            {
+                Health = SwHealth.Warmup;
+                SwSignal w = SwSignal.Empty(bar);
+                w.Text = "прогрев " + t.Name + ": " + t.BarsSeen + " баров";
+                Emit(w);
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.Direction = 0;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            // Уверенность — качество тренда: чем круче наклон относительно
+            // ширины канала, тем спокойнее тренд.
+            s.Confidence = Math.Min(1.0, Math.Abs(t.SmoothTilt) / Math.Max(0.01, 2 * cfg.TrendTilt));
+
+            bool trend = t.State == SwKalmanState.TrendUp || t.State == SwKalmanState.TrendDown;
+            int dir = t.State == SwKalmanState.TrendUp ? 1 : t.State == SwKalmanState.TrendDown ? -1 : 0;
+
+            switch (cfg.Policy)
+            {
+                case SwKalmanFilterPolicy.TrendOnly:
+                    if (trend) { s.Verdict = SwVerdict.Agree; s.Direction = dir; }
+                    else s.Verdict = SwVerdict.Veto;
+                    break;
+                case SwKalmanFilterPolicy.NoRange:
+                    s.Verdict = t.State == SwKalmanState.Range ? SwVerdict.Veto : SwVerdict.Neutral;
+                    break;
+                default:   // TrendDirection
+                    if (trend) { s.Verdict = SwVerdict.Agree; s.Direction = dir; }
+                    else s.Verdict = SwVerdict.Neutral;
+                    break;
+            }
+
+            if (t.State != expLastState) { expLastState = t.State; expStateBars = 0; } else expStateBars++;
+            if (cfg.ExpMinStateBars > 0 && expStateBars < cfg.ExpMinStateBars)
+            {
+                // Э49: новое состояние ещё не выдержано — мнение не выдаётся.
+                s.Verdict = SwVerdict.Neutral; s.Direction = 0;
+                s.Text = t.Name + ": состояние " + SwKalmanTrack.StateText(t.State) + " держится " + expStateBars + " из " + cfg.ExpMinStateBars;
+                Health = SwHealth.Ok;
+                Emit(s);
+                return;
+            }
+
+            if (cfg.ExpNisGate > 0 && !double.IsNaN(t.NisAvg) && t.NisAvg > cfg.ExpNisGate)
+            {
+                // Э21: модель фильтра не согласуется с данными — мнение канала снимается.
+                nisGated++;
+                s.Verdict = SwVerdict.Neutral; s.Direction = 0;
+                s.Text = t.Name + ": фильтр не согласован с данными, ν²/f " + t.NisAvg.ToString("F1");
+                Health = SwHealth.Ok;
+                Emit(s);
+                return;
+            }
+
+            s.Text = (s.Verdict == SwVerdict.Veto ? "вето: " : "") + t.Name + " " + SwKalmanTrack.StateText(t.State)
+                   + ", z " + t.SmoothZ.ToString("F1") + ", наклон " + t.SmoothTilt.ToString("F2")
+                   + ", дисб " + t.SmoothImbalance.ToString("+0.00;-0.00;0.00");
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        #endregion
+
+        #region Наблюдение: графики, боковики, пробои
+
+        /// <summary>
+        /// Линии канала отдаются ядру значениями для графиков стратегии: на
+        /// каждом баре графика одна точка на линию, без объектов рисования.
+        /// Боковик ТФ входа — прямоугольник, пока длится; пробой — стрелка.
+        /// </summary>
+        private void ObserveTrack(int i)
+        {
+            SwKalmanTrack t = tr[i];
+
+            if (t.Ready)
+            {
+                Host.SetChannelPlot(i, 0, t.Level, t.MidVariant);
+                Host.SetChannelPlot(i, 1, t.Upper, t.UpperVariant);
+                Host.SetChannelPlot(i, 2, t.Lower, t.LowerVariant);
+            }
+            else
+            {
+                for (int line = 0; line < 3; line++) Host.SetChannelPlot(i, line, double.NaN, 0);
+            }
+
+            if (i != entryTf) return;
+
+            string g = "RNG" + i;
+            if (Host.VisualOn(SwVisualRole.KalmanRange))
+            {
+                if (t.InRange && t.RangeStart != DateTime.MinValue)
+                    EmitVisual(SwVisualEvent.Rect(SwVisualRole.KalmanRange, t.RangeStart, t.Lower, t.Time, t.Upper)
+                        .AsState(g + "_" + t.RangeSeq, g));
+                else if (t.RangeEnded)
+                    EmitVisual(SwVisualEvent.RetireGroup(g));
+            }
+
+            if ((t.BreakUp || t.BreakDown) && Host.VisualOn(SwVisualRole.KalmanBreakout))
+            {
+                double pad = 3 * Host.TickSize;
+                EmitVisual(SwVisualEvent.Marker(t.BreakUp ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown,
+                        SwVisualRole.KalmanBreakout, t.Time, t.BreakUp ? t.Low - pad : t.High + pad)
+                    .WithVariant(t.BreakUp ? 1 : -1));
+            }
+
+            if (cfg.Research && t.Ready) ResearchEntryBar(t);
+        }
+
+        #endregion
+
+        #region Экспериментальный блок
+
+        private sealed class PendingEval
+        {
+            public int Type;
+            public int Dir;
+            public double Start;
+            public double Norm;
+            public int Due;
+        }
+
+        private sealed class RangeCheck
+        {
+            public int M;
+            public double Up, Lo;
+            public int Due;
+        }
+
+        private static readonly string[] EventNames =
+        {
+            "база: каждый бар, в сторону роста",                     // 0
+            "цена пересекла середину вверх",                         // 1
+            "цена пересекла середину вниз",                          // 2
+            "касание верхней границы без закрытия за ней",           // 3
+            "касание нижней границы без закрытия за ней",            // 4
+            "закрытие выше верхней границы вне боковика",            // 5
+            "закрытие ниже нижней границы вне боковика",             // 6
+            "пробой боковика вверх",                                 // 7
+            "пробой боковика вниз",                                  // 8
+            "начало сжатия, по знаку дисбаланса",                    // 9
+            "начало расширения, по знаку наклона",                   // 10
+            "середина МЛ пересекла середину СТ вверх",               // 11
+            "середина МЛ пересекла середину СТ вниз",                // 12
+            "верхняя граница МЛ вышла над верхней СТ",               // 13
+            "нижняя граница МЛ вышла под нижнюю СТ",                 // 14
+            "середина МЛ вышла над верхней границей СТ",             // 15
+            "середина МЛ вышла под нижнюю границу СТ",               // 16
+            "наклон МЛ повернул по наклону СТ",                      // 17
+            "наклон МЛ повернул против наклона СТ",                  // 18
+            "боковик МЛ внутри тренда СТ, по тренду СТ"              // 19
+        };
+
+        private readonly SwKalmanStat[] stats = CreateStats(20);
+        private readonly int[] stDirSum = new int[20];
+        private readonly List<PendingEval> pend = new List<PendingEval>();
+        private readonly List<RangeCheck> checks = new List<RangeCheck>();
+        private const int MaxM = 30;
+        private readonly int[] reached = new int[MaxM + 1];
+        private readonly int[] held = new int[MaxM + 1];
+
+        // предыдущие значения пары МЛ/СТ
+        private bool prevPairValid;
+        private double pLMid, pLUp, pLLo, pHMid, pHUp, pHLo;
+        private int pLVar;
+
+        private static SwKalmanStat[] CreateStats(int n)
+        {
+            SwKalmanStat[] a = new SwKalmanStat[n];
+            for (int i = 0; i < n; i++) a[i] = new SwKalmanStat();
+            return a;
+        }
+
+        private void AddEval(int type, int dir, double start, double norm, int nowBar)
+        {
+            if (dir == 0 || double.IsNaN(start) || !(norm > 0)) return;
+            if (pend.Count >= 20000) return;   // предохранитель памяти
+            PendingEval e = new PendingEval();
+            e.Type = type; e.Dir = dir; e.Start = start; e.Norm = norm;
+            e.Due = nowBar + Math.Max(1, cfg.ResearchHorizon);
+            pend.Add(e);
+        }
+
+        /// <summary>
+        /// Бар ТФ входа: закрываются созревшие оценки, проверяются боковики,
+        /// регистрируются события цены и линий. Будущие бары используются только
+        /// для статистики отчёта.
+        /// </summary>
+        private void ResearchEntryBar(SwKalmanTrack t)
+        {
+            int now = t.BarsSeen;
+            double z = t.Close;
+
+            for (int k = pend.Count - 1; k >= 0; k--)
+            {
+                PendingEval e = pend[k];
+                if (e.Due > now) continue;
+                stats[e.Type].Add(e.Dir * (z - e.Start) / e.Norm);
+                stDirSum[e.Type] += e.Dir;
+                pend.RemoveAt(k);
+            }
+
+            // --- удержание боковика: цена не закрылась за границами m-й свечи ---
+            for (int k = checks.Count - 1; k >= 0; k--)
+            {
+                RangeCheck c = checks[k];
+                if (z > c.Up || z < c.Lo) { checks.RemoveAt(k); continue; }
+                if (now >= c.Due) { held[c.M]++; checks.RemoveAt(k); }
+            }
+            if (t.FlatStreak >= 1 && t.FlatStreak <= MaxM && checks.Count < 5000)
+            {
+                reached[t.FlatStreak]++;
+                RangeCheck c = new RangeCheck();
+                c.M = t.FlatStreak; c.Up = t.Upper; c.Lo = t.Lower;
+                c.Due = now + Math.Max(1, cfg.RangeHoldBars);
+                checks.Add(c);
+            }
+
+            // --- события цены и линий ---
+            double norm = Math.Max(t.Width, 2 * Host.TickSize);
+            AddEval(0, 1, z, norm, now);
+            if (t.CrossMidUp) AddEval(1, 1, z, norm, now);
+            if (t.CrossMidDown) AddEval(2, -1, z, norm, now);
+            if (t.TouchUpper) AddEval(3, -1, z, norm, now);
+            if (t.TouchLower) AddEval(4, 1, z, norm, now);
+            if (t.CloseAbove && !t.BreakUp && t.State != SwKalmanState.Range) AddEval(5, 1, z, norm, now);
+            if (t.CloseBelow && !t.BreakDown && t.State != SwKalmanState.Range) AddEval(6, -1, z, norm, now);
+            if (t.BreakUp) AddEval(7, 1, z, norm, now);
+            if (t.BreakDown) AddEval(8, -1, z, norm, now);
+            if (t.CompressionStarted) AddEval(9, Math.Sign(t.SmoothImbalance), z, norm, now);
+            if (t.ExpansionStarted) AddEval(10, Math.Sign(t.Slope), z, norm, now);
+        }
+
+        /// <summary>
+        /// Закрытие бара младшего ТФ: предварительные состояния текущего и
+        /// старшего ТФ для окраски и события пары «младший — старший».
+        /// </summary>
+        private void OnLowerClose()
+        {
+            SwKalmanTrack l = tr[0];
+            double zL = l.Close;
+            if (double.IsNaN(zL)) return;
+
+            bool hValid = false;
+            double hMid = double.NaN, hUp = double.NaN, hLo = double.NaN;
+            int hVar = 0;
+
+            for (int i = 1; i < 3; i++)
+            {
+                if (!tfOn[i] || !tr[i].Ready) continue;
+                double lv, up, lo;
+                int pv;
+                if (!tr[i].Peek(zL, out lv, out up, out lo, out pv)) continue;
+                if (i == 2) { hMid = lv; hUp = up; hLo = lo; hVar = pv; hValid = true; }
+                if (cfg.ProvisionalDisplay)
+                {
+                    Host.SetChannelPlot(i, 0, lv, pv);
+                    Host.SetChannelPlot(i, 1, up, tr[i].UpperVariant);
+                    Host.SetChannelPlot(i, 2, lo, tr[i].LowerVariant);
+                }
+            }
+
+            if (!cfg.Research || !l.Ready || !hValid || entryTf != 0)
+            {
+                prevPairValid = false;
+                return;
+            }
+
+            int now = l.BarsSeen;
+            double norm = Math.Max(l.Width, 2 * Host.TickSize);
+            bool vis = Host.VisualOn(SwVisualRole.KalmanInteraction) && Host.VisualDebugOn;
+
+            if (prevPairValid)
+            {
+                if (pLMid <= pHMid && l.Level > hMid) { AddEval(11, 1, zL, norm, now); Mark(vis, l, l.Level, 1, false); }
+                if (pLMid >= pHMid && l.Level < hMid) { AddEval(12, -1, zL, norm, now); Mark(vis, l, l.Level, -1, false); }
+                if (pLUp <= pHUp && l.Upper > hUp) { AddEval(13, 1, zL, norm, now); Mark(vis, l, l.Upper, 1, true); }
+                if (pLLo >= pHLo && l.Lower < hLo) { AddEval(14, -1, zL, norm, now); Mark(vis, l, l.Lower, -1, true); }
+                if (pLMid <= pHUp && l.Level > hUp) { AddEval(15, 1, zL, norm, now); Mark(vis, l, l.Level, 1, true); }
+                if (pLMid >= pHLo && l.Level < hLo) { AddEval(16, -1, zL, norm, now); Mark(vis, l, l.Level, -1, true); }
+
+                if (l.MidVariant != pLVar && l.MidVariant != 0 && hVar != 0)
+                {
+                    if (l.MidVariant == hVar) AddEval(17, hVar, zL, norm, now);
+                    else AddEval(18, l.MidVariant, zL, norm, now);
+                }
+
+                SwKalmanState hs = tr[2].State;
+                if (l.RangeDeclared && (hs == SwKalmanState.TrendUp || hs == SwKalmanState.TrendDown))
+                    AddEval(19, hs == SwKalmanState.TrendUp ? 1 : -1, zL, norm, now);
+            }
+
+            pLMid = l.Level; pLUp = l.Upper; pLLo = l.Lower;
+            pHMid = hMid; pHUp = hUp; pHLo = hLo;
+            pLVar = l.MidVariant;
+            prevPairValid = true;
+        }
+
+        private void Mark(bool vis, SwKalmanTrack l, double price, int dir, bool boundary)
+        {
+            if (!vis) return;
+            EmitVisual(SwVisualEvent.Marker(boundary ? SwVisualKind.Diamond : SwVisualKind.Dot,
+                    SwVisualRole.KalmanInteraction, l.Time, price)
+                .WithVariant(dir).AsDebug().InRing("TFX"));
+        }
+
+        #endregion
+
+        #region Отчёт и панель
+
+        /// <summary>Итог для [HUB-ИТОГ]: счётчики, таблица событий, калибровка боковика.</summary>
+        public string ResearchReport(string pad)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(pad + "Кальман: боковиков на ТФ входа " + rangesDeclared + ", пробоев ↑" + breakoutsUp + " ↓" + breakoutsDown
+                + ", не отправлено — старший ТФ против " + suppressedHigher + ", возврат в диапазон " + cancelledInside
+                + "; требований выхода " + exitsRequested + ", просьб о стопе " + stopRequests);
+            if (!cfg.Research) return sb.ToString();
+
+            SwKalmanStat b = stats[0];
+            double baseMean = b.Mean;
+            sb.AppendLine(pad + "Кальман, исследование: ТФ входа " + tr[entryTf].Name + ", горизонт " + Math.Max(1, cfg.ResearchHorizon)
+                + " баров, доходность в ширинах канала ТФ входа, знак — в сторону события. События пары МЛ–СТ — только при обоих ТФ.");
+            sb.AppendLine(pad + "  событие; n; средняя; ст. ошибка; в сторону, %; средняя минус база");
+            for (int i = 0; i < stats.Length; i++)
+            {
+                SwKalmanStat s = stats[i];
+                if (s.N == 0) continue;
+                double avgDir = s.N > 0 ? (double)stDirSum[i] / Math.Max(1, s.N) : 0;
+                double excess = i == 0 || double.IsNaN(baseMean) ? double.NaN : s.Mean - avgDir * baseMean;
+                sb.AppendLine(pad + "  " + EventNames[i] + "; " + s.N + "; " + F3(s.Mean) + "; " + F3(s.StdErr) + "; "
+                    + (double.IsNaN(s.HitRate) ? "—" : (100 * s.HitRate).ToString("F1")) + "; " + F3(excess));
+            }
+
+            sb.AppendLine(pad + "Кальман, боковик ТФ входа: m-я плоская свеча подряд; достигнуто; удержалось в канале "
+                + Math.Max(1, cfg.RangeHoldBars) + " баров; доля, %");
+            for (int m = 1; m <= MaxM; m++)
+            {
+                if (reached[m] == 0) continue;
+                sb.AppendLine(pad + "  m=" + m + "; " + reached[m] + "; " + held[m] + "; "
+                    + (100.0 * held[m] / reached[m]).ToString("F1"));
+            }
+            sb.AppendLine(pad + "  " + SuggestM());
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Наименьшее m, после которого доля удержания растёт меньше чем на два
+        /// пункта за свечу два шага подряд: дальше ждать — терять время без
+        /// выигрыша в надёжности. Считается только по m, где случаев не меньше 30.
+        /// </summary>
+        private string SuggestM()
+        {
+            double[] rate = new double[MaxM + 1];
+            for (int m = 1; m <= MaxM; m++) rate[m] = reached[m] >= 30 ? (double)held[m] / reached[m] : double.NaN;
+            for (int m = 1; m <= MaxM - 2; m++)
+            {
+                if (double.IsNaN(rate[m]) || double.IsNaN(rate[m + 1]) || double.IsNaN(rate[m + 2])) continue;
+                if (rate[m + 1] - rate[m] < 0.02 && rate[m + 2] - rate[m + 1] < 0.02)
+                    return "по этим данным боковик разумно объявлять на " + m + "-й свече [C15]; сейчас — на "
+                         + confirmBars + "-й. Гипотеза: проверьте на другом участке истории";
+            }
+            return "данных для выбора m мало: нужно не меньше 30 случаев на каждое m";
+        }
+
+        private static string F3(double v)
+        {
+            return double.IsNaN(v) ? "—" : v.ToString("+0.000;-0.000;0.000");
+        }
+
+        /// <summary>Строка дашборда модулей.</summary>
+        public string StatusLine
+        {
+            get
+            {
+                StringBuilder sb = new StringBuilder("Кальман:");
+                for (int i = 0; i < 3; i++)
+                {
+                    if (!tfOn[i] || tr[i] == null) continue;
+                    SwKalmanTrack t = tr[i];
+                    sb.Append(' ').Append(t.Name).Append(' ').Append(SwKalmanTrack.StateText(t.State));
+                    if (t.Ready && t.State != SwKalmanState.Range && t.FlatStreak > 0)
+                        sb.Append(" (плоско ").Append(t.FlatStreak).Append('/').Append(t.ConfirmBars).Append(')');
+                    if (t.Compression) sb.Append(" сжатие");
+                    else if (t.Expansion) sb.Append(" расширение");
+                    sb.Append(" ·");
+                }
+                SwKalmanTrack d = tr[dirTf];
+                if (d != null)
+                    sb.Append(" дисб ").Append(d.SmoothImbalance.ToString("+0.00;-0.00;0.00"))
+                      .Append(" · окна ").Append(tr[entryTf].Window.Length).Append('/').Append(tr[escortTf].Window.Length);
+                return sb.ToString();
+            }
+        }
+
+        private string StatusShort()
+        {
+            SwKalmanTrack t = tr[entryTf];
+            return t.Name + " " + SwKalmanTrack.StateText(t.State)
+                 + (t.State != SwKalmanState.Range && t.FlatStreak > 0 ? " плоско " + t.FlatStreak + "/" + t.ConfirmBars : "");
+        }
+
+        #endregion
+    }
+}

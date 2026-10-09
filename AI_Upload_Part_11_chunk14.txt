@@ -1,0 +1,300 @@
+﻿        	err = null;
+        	var d = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.KeyValuePair<string, bool>>();
+        	int i = json.IndexOf("\"params\"", StringComparison.Ordinal);
+        	if (i < 0) { err = "нет раздела params"; return null; }
+        	i = json.IndexOf('{', i);
+        	if (i < 0) { err = "раздел params не объект"; return null; }
+        	i++;
+        	while (true)
+        	{
+        		while (i < json.Length && (char.IsWhiteSpace(json[i]) || json[i] == ',')) i++;
+        		if (i >= json.Length) { err = "файл оборван"; return null; }
+        		if (json[i] == '}') break;
+        		if (json[i] != '"') { err = "ожидался ключ"; return null; }
+        		string key = ReadJsonString(json, ref i);
+        		while (i < json.Length && char.IsWhiteSpace(json[i])) i++;
+        		if (key == null || i >= json.Length || json[i] != ':') { err = "ошибка после ключа " + key; return null; }
+        		i++;
+        		while (i < json.Length && char.IsWhiteSpace(json[i])) i++;
+        		if (i >= json.Length) { err = "файл оборван"; return null; }
+        		if (json[i] == '"') { string sv = ReadJsonString(json, ref i); if (sv == null) { err = "строка оборвана"; return null; } d[key] = new System.Collections.Generic.KeyValuePair<string, bool>(sv, true); }
+        		else if (json[i] == '{' || json[i] == '[') { err = key + ": вложенные значения не принимаются"; return null; }
+        		else
+        		{
+        			int j = i;
+        			while (j < json.Length && json[j] != ',' && json[j] != '}') j++;
+        			d[key] = new System.Collections.Generic.KeyValuePair<string, bool>(json.Substring(i, j - i).Trim(), false);
+        			i = j;
+        		}
+        	}
+        	return d;
+        }
+
+        private static string ReadJsonString(string s, ref int i)
+        {
+        	var sb = new System.Text.StringBuilder();
+        	i++;
+        	while (i < s.Length)
+        	{
+        		char c = s[i++];
+        		if (c == '"') return sb.ToString();
+        		if (c != '\\') { sb.Append(c); continue; }
+        		if (i >= s.Length) return null;
+        		char e = s[i++];
+        		if (e == 'n') sb.Append('\n'); else if (e == 't') sb.Append('\t'); else if (e == 'u') { i += 4; sb.Append('?'); } else sb.Append(e);
+        	}
+        	return null;
+        }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[U04] Выгрузить схему меню", Order = 4, GroupName = "14 · Пульт реального времени",
+        	Description = "При запуске пишет dz_export\\hub_menu_schema.json: все настройки с индексами, типами, пределами и умолчаниями — для конфигуратора задач.")]
+        public bool ExportSchema { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[U05] Файл пресета", Order = 5, GroupName = "14 · Пульт реального времени",
+        	Description = "Имя файла в dz_export\\presets. Применяется при запуске: всё или ничего; режим без ордеров и доступ пульта пресет не меняет. Пусто — без пресета.")]
+        public string PresetFile { get; set; }
+        #endregion
+
+        #region Пульт реального времени — WebSocket
+        // Сервер поднимается при переходе в реальное время: в Strategy Analyzer и на истории
+        // его нет. Поток стратегии только кладёт снимок в очередь и забирает команды.
+        private SwWsBridge ws;
+        private bool remotePauseEntries;
+
+        // v1.6 — таймер команд пульта (руководство NT, TriggerCustomEvent, с. 1990–1992).
+        private System.Windows.Forms.Timer remoteTimer;
+
+        // v1.6 — сторож рассинхрона позиции стратегии и счёта [E07].
+        private bool syncArmed, desyncBlocked;
+        private int desyncBars;
+        private string desyncText = string.Empty;
+
+        // Э13/Э14 — ставки (AFML с. 196), байесовский стоп-кран, риск-строка.
+        private bool betInit, craneBlocked;
+        private double betFlatRealized, betSumWin, betSumLoss, betEquity, betHwm, betMaxDd;
+        private int betWins, betLosses, betsSinceHwm;
+        private DateTime betFirstTime = DateTime.MinValue, betLastTime = DateTime.MinValue;
+        private double cranePhat = double.NaN, craneP = double.NaN, craneProb = double.NaN;
+        // Э24/Э25: суммы степеней результатов ставок — PSR и концентрация без хранения ряда.
+        private double betS1, betS2, betS3, betS4, betPosS1, betPosS2, betNegS1, betNegS2;
+        private readonly System.Text.StringBuilder wsSb = new System.Text.StringBuilder(4096);
+
+        private void StartRemote()
+        {
+        	if (!WsEnabled || ws != null) return;
+        	string tokenFile = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        		"NinjaTrader 8", "dz_export", "atlas_ws_token.txt");
+        	string cmdLog = WsCommandLog ? System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        		"NinjaTrader 8", "dz_export", "ws_commands.csv") : null;   // Э23 [U06]
+        	ws = new SwWsBridge(WsPort, tokenFile, WsAllowCommands, cmdLog);
+        	ws.Start();
+        	if (!ws.IsRunning)
+        		Print("[HUB-ВНИМАНИЕ] [U01] сервер пульта не запущен — причина в трассировке, событие WS.");
+        }
+
+        /// <summary>Команды пульта — в потоке стратегии. «Закрыть» — обычным действием FullExit через единственную точку ордеров.</summary>
+        private void ProcessRemote(int bar) { ProcessRemoteCommands(bar); }   // запасной путь: закрытие бара
+
+        internal bool HubDesyncBlocked { get { return desyncBlocked; } }
+
+        private int StrategySigned()
+        {
+            if (Position == null) return 0;
+            return Position.MarketPosition == MarketPosition.Long ? Position.Quantity
+                 : Position.MarketPosition == MarketPosition.Short ? -Position.Quantity : 0;
+        }
+
+        private bool AccountSigned(out int a)
+        {
+            a = 0;
+            try
+            {
+                if (PositionAccount == null) return false;
+                a = PositionAccount.MarketPosition == MarketPosition.Long ? PositionAccount.Quantity
+                  : PositionAccount.MarketPosition == MarketPosition.Short ? -PositionAccount.Quantity : 0;
+                return true;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>
+        /// v1.6. Выход стратегии безопасен, если счёт держит позицию той же стороны и не меньше:
+        /// тогда выход не перевернёт счёт. Без ордеров, вне реального времени, без сторожа или
+        /// при недоступной позиции счёта — не мешаем.
+        /// </summary>
+        internal bool HubExitsSafe
+        {
+            get
+            {
+                if (DryRunMode || !PositionSyncGuard || State != State.Realtime || !syncArmed) return true;
+                int a;
+                if (!AccountSigned(out a)) return true;
+                int s = StrategySigned();
+                return s == 0 || (Math.Sign(a) == Math.Sign(s) && Math.Abs(a) >= Math.Abs(s));
+            }
+        }
+
+        /// <summary>
+        /// v1.6 [E07]. Позиция стратегии против позиции счёта — руководство NT, с. 475–478:
+        /// синхронизация гарантируется только на старте, ручные сделки и внешнее закрытие её
+        /// ломают. Сторож взводится на первой плоской позиции в реальном времени; расхождение
+        /// два бара подряд запрещает новые входы до перезапуска стратегии.
+        /// </summary>
+        private void CheckAccountSync()
+        {
+            if (!PositionSyncGuard || DryRunMode || State != State.Realtime || desyncBlocked) return;
+            int s = StrategySigned();
+            if (!syncArmed) { if (s == 0) syncArmed = true; return; }
+            int a;
+            if (!AccountSigned(out a)) return;
+            if (s == a) { desyncBars = 0; return; }
+            if (++desyncBars < 2) return;   // один бар — допуск на исполнение «в полёте» (с. 270)
+            desyncBlocked = true;
+            desyncText = "стратегия " + s + ", счёт " + a;
+            Print("[HUB-БЛОК] позиция стратегии не совпадает с позицией счёта (" + desyncText + "; руководство NT, с. 475–478). "
+                + "Новые входы запрещены; выходы и переносы стопа — только если не перевернут счёт. "
+                + "Сверьте вкладки Positions и Orders и выключите стратегию.");
+            HubTrace("HUB", "ACCOUNT_DESYNC", desyncText);
+        }
+
+        /// <summary>
+        /// Э13/Э14. Ставка — весь реализованный результат между двумя плоскими состояниями
+        /// (AFML с. 196): частичные фиксации внутри позиции её не дробят.
+        /// </summary>
+        private void TrackBetsHub()
+        {
+            double rp = HubRealizedPnl;
+            if (!betInit) { betFlatRealized = rp; betInit = true; }
+            if (HubPositionSide != 0) return;
+            double d = rp - betFlatRealized;
+            betFlatRealized = rp;
+            if (Math.Abs(d) < 1e-9) return;
+            DateTime t;
+            try { t = Times[execBip][0]; } catch { t = DateTime.MinValue; }
+            if (d > 0) { betWins++; betSumWin += d; } else { betLosses++; betSumLoss += d; }
+            betS1 += d; betS2 += d * d; betS3 += d * d * d; betS4 += d * d * d * d;
+            if (d > 0) { betPosS1 += d; betPosS2 += d * d; } else { betNegS1 += d; betNegS2 += d * d; }
+            if (betFirstTime == DateTime.MinValue) betFirstTime = t;
+            betLastTime = t;
+            betEquity += d;
+            if (betEquity > betHwm) { betHwm = betEquity; betsSinceHwm = 0; } else betsSinceHwm++;
+            betMaxDd = Math.Max(betMaxDd, betHwm - betEquity);
+            EvaluateCrane();
+        }
+
+        /// <summary>
+        /// Э13. ВЕРОЯТНОСТЬ ПРОВАЛА СТРАТЕГИИ P[p &lt; p*] (AFML гл. 15, с. 216–218): p* — точность,
+        /// ниже которой годовой Шарп ставок не выше цели θ* [E09] при наблюдаемых средних
+        /// выигрыше π+ и проигрыше π− и частоте n (snippet 15.3, с. 214–215). Распределение p —
+        /// апостериорное Beta(1 + выигрыши, 1 + проигрыши): сопряжённое априорное, равномерное
+        /// до данных (банковская книга: Beta — априорное для параметров в (0, 1)). У AFML здесь
+        /// нормальное приближение бутстрепа; Beta точна на малом числе ставок и не выходит за [0, 1].
+        /// Порог [E08] ≥ 0,95 — «с вероятностью 95% стратегия ниже цели»: новые входы
+        /// запрещаются до перезапуска. Для допуска AFML требует обратного: P ≤ 0,05.
+        /// </summary>
+        private void EvaluateCrane()
+        {
+            int n = betWins + betLosses;
+            if (n == 0) return;
+            cranePhat = (double)betWins / n;
+            if (betWins == 0 || betLosses == 0)
+            {
+                craneP = double.NaN;
+                craneProb = betWins == 0 ? 1.0 : 0.0;
+            }
+            else
+            {
+                double piPlus = betSumWin / betWins, piMinus = betSumLoss / betLosses;
+                double years = Math.Max(1.0 / 12.0, (betLastTime - betFirstTime).TotalDays / 365.25);
+                craneP = ImpliedPrecision(piMinus, piPlus, n / years, Math.Max(0, CraneTargetSharpe));
+                craneProb = double.IsNaN(craneP) ? double.NaN
+                          : RegIncBeta(1.0 + betWins, 1.0 + betLosses, Math.Max(0.0, Math.Min(1.0, craneP)));
+            }
+            if (CraneThreshold > 0 && !craneBlocked && n >= CraneMinBets && !double.IsNaN(craneProb) && craneProb >= CraneThreshold)
+            {
+                craneBlocked = true;
+                Print("[HUB-БЛОК] стоп-кран: ставок " + n + ", точность " + cranePhat.ToString("F3") + ", порог p* "
+                    + (double.IsNaN(craneP) ? "—" : craneP.ToString("F3")) + ", P[p < p*] = " + craneProb.ToString("F3")
+                    + " ≥ " + CraneThreshold.ToString("F2") + " — новые входы запрещены до перезапуска (AFML, с. 216–218).");
+                HubTrace("HUB", "CRANE_BLOCK", "P[p < p*] = " + craneProb.ToString("F3"));
+            }
+        }
+
+        /// <summary>AFML, snippet 15.3 binHR (с. 214–215): минимальная точность для годового Шарпа tSR.</summary>
+        private static double ImpliedPrecision(double sl, double pt, double freq, double tSR)
+        {
+            double d = pt - sl;
+            double a = (freq + tSR * tSR) * d * d;
+            double b = (2 * freq * sl - tSR * tSR * d) * d;
+            double c = freq * sl * sl;
+            double disc = b * b - 4 * a * c;
+            if (disc < 0 && disc > -1e-9 * (b * b + 1)) disc = 0;   // при tSR = 0 дискриминант равен нулю точно
+            if (a <= 0 || disc < 0) return double.NaN;
+            return (-b + Math.Sqrt(disc)) / (2 * a);
+        }
+
+        private static readonly double[] lanczos = { 76.18009172947146, -86.50532032941677, 24.01409824083091,
+                                                     -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5 };
+
+        private static double LnGamma(double xx)
+        {
+            double x = xx, y = xx, tmp = x + 5.5;
+            tmp -= (x + 0.5) * Math.Log(tmp);
+            double ser = 1.000000000190015;
+            for (int j = 0; j < 6; j++) ser += lanczos[j] / ++y;
+            return -tmp + Math.Log(2.5066282746310005 * ser / x);
+        }
+
+        /// <summary>Регуляризованная неполная бета-функция I_x(a, b) — функция распределения Beta(a, b).</summary>
+        private static double RegIncBeta(double a, double b, double x)
+        {
+            if (x <= 0) return 0.0;
+            if (x >= 1) return 1.0;
+            double bt = Math.Exp(LnGamma(a + b) - LnGamma(a) - LnGamma(b) + a * Math.Log(x) + b * Math.Log(1.0 - x));
+            return x < (a + 1.0) / (a + b + 2.0) ? bt * BetaCf(a, b, x) / a : 1.0 - bt * BetaCf(b, a, 1.0 - x) / b;
+        }
+
+        /// <summary>Цепная дробь для I_x(a, b), модифицированный метод Ленца.</summary>
+        private static double BetaCf(double a, double b, double x)
+        {
+            const double FPMIN = 1e-300, EPS = 3e-14;
+            double qab = a + b, qap = a + 1.0, qam = a - 1.0, c = 1.0, d = 1.0 - qab * x / qap;
+            if (Math.Abs(d) < FPMIN) d = FPMIN;
+            d = 1.0 / d;
+            double h = d;
+            for (int m = 1; m <= 300; m++)
+            {
+                int m2 = 2 * m;
+                double aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+                d = 1.0 + aa * d; if (Math.Abs(d) < FPMIN) d = FPMIN;
+                c = 1.0 + aa / c; if (Math.Abs(c) < FPMIN) c = FPMIN;
+                d = 1.0 / d; h *= d * c;
+                aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+                d = 1.0 + aa * d; if (Math.Abs(d) < FPMIN) d = FPMIN;
+                c = 1.0 + aa / c; if (Math.Abs(c) < FPMIN) c = FPMIN;
+                d = 1.0 / d;
+                double del = d * c;
+                h *= del;
+                if (Math.Abs(del - 1.0) < EPS) break;
+            }
+            return h;
+        }
+
+        /// <summary>
+        /// Э24. PSR[0] (AFML 14.7.2, с. 203): Φ[ SR·√(T − 1) / √(1 − γ3·SR + (γ4 − 1)/4·SR²) ],
+        /// SR — Шарп одной ставки без годового пересчёта, γ3 — асимметрия, γ4 — эксцесс (3 у
+        /// нормального). Порог AFML для доверия — 0,95 (с. 205).
+        /// </summary>
+        private double BetPsr()
+        {
+            int n = betWins + betLosses;
+            if (n < 3) return double.NaN;
+            double mu = betS1 / n, m2 = betS2 / n - mu * mu;
+            if (!(m2 > 0)) return double.NaN;
+            double m3 = betS3 / n - 3 * mu * betS2 / n + 2 * mu * mu * mu;
+            double m4 = betS4 / n - 4 * mu * betS3 / n + 6 * mu * mu * betS2 / n - 3 * mu * mu * mu * mu;
+            double sd = Math.Sqrt(m2), sr = mu / sd, g3 = m3 / (sd * sd * sd), g4 = m4 / (m2 * m2);
+            double den = 1 - g3 * sr + (g4 - 1) / 4.0 * sr * sr;
+            if (!(den > 0)) return double.NaN;

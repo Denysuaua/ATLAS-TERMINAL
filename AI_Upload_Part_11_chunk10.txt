@@ -1,0 +1,300 @@
+﻿                    if (exec != null) exec.OnLiveEntryFilled(dir, o.AverageFillPrice);   // v1.4: фактический стоп
+                    return;
+                }
+
+                // Подтверждение ступени: метка STEPn зашита в имя заявки.
+                int idx = nm.IndexOf("STEP", StringComparison.Ordinal);
+                if (idx >= 0)
+                {
+                    int num;
+                    if (int.TryParse(nm.Substring(idx + 4), out num))
+                        fin.OnStepExecution(num, price, quantity);
+                }
+            }
+            catch (Exception ex) { HubTrace("FIN", "EXEC_FAULT", ex.Message); }
+        }
+
+        /// <summary>
+        /// Э2 [T14] — ПРОСКАЛЬЗЫВАНИЕ СТОП-ЗАЯВОК, по умолчанию выключено. Для стоп-заявки
+        /// уровень известен точно — Order.StopPrice (руководство NT, Order, с. 2285–2286),
+        /// поэтому её проскальзывание измеряется без допущений: стоп-вход пробоя и защитный
+        /// стоп. Больше нуля — исполнение хуже уровня. Рыночные заявки не учитываются: их
+        /// «правильная» цена — вопрос определения. Итог — в [HUB-ИТОГ]; он калибрует
+        /// проскальзывание стенда ПК (паспорт MGC принимает 1 тик на исполнение).
+        /// </summary>
+        private void MeasureStopSlippage(Order o, double price, int qty)
+        {
+            double tick = TickSize;
+            if (!(tick > 0) || qty <= 0 || o.OrderType != OrderType.StopMarket || !(o.StopPrice > 0)) return;
+            bool buy = o.OrderAction == OrderAction.Buy || o.OrderAction == OrderAction.BuyToCover;
+            double adverse = (buy ? price - o.StopPrice : o.StopPrice - price) / tick;
+            slipStopQty += qty;
+            slipStopSum += adverse * qty;
+            if (adverse > slipStopWorst) slipStopWorst = adverse;
+        }
+
+        protected override void OnPositionUpdate(Position position, double averagePrice,
+            int quantity, MarketPosition marketPosition)
+        {
+            if (fin == null) return;
+            if (marketPosition == MarketPosition.Flat && quantity == 0)
+                fin.OnTradeClosed();
+        }
+
+        #region Панель и сводка
+
+        private Brush HealthBrush(SwHealth h)
+        {
+            switch (h)
+            {
+                case SwHealth.Ok: return OkBrush ?? Brushes.LimeGreen;
+                case SwHealth.Warmup:
+                case SwHealth.Silent:
+                case SwHealth.Stale: return WarnBrush ?? Brushes.Gold;
+                case SwHealth.Faulted: return FaultBrush ?? Brushes.OrangeRed;
+                default: return IdleBrush ?? Brushes.Gray;
+            }
+        }
+
+        private static string HealthText(SwHealth h)
+        {
+            switch (h)
+            {
+                case SwHealth.Ok: return "OK     ";
+                case SwHealth.Warmup: return "ПРОГРЕВ";
+                case SwHealth.Silent: return "МОЛЧИТ ";
+                case SwHealth.Stale: return "ЗАСТОЙ ";
+                case SwHealth.Faulted: return "ОТКАЗ  ";
+                case SwHealth.Disabled: return "ВЫКЛ   ";
+                default: return "НЕТ    ";
+            }
+        }
+
+        private void RenderPanel(int bar)
+        {
+            if (ChartControl == null) return;
+
+            try
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine(HubVersion + (DryRunMode ? "   [БЕЗ ОРДЕРОВ]" : "   [БОЕВОЙ]"));
+                if (configBlocked) sb.AppendLine("!!! НОВЫЕ ВХОДЫ ЗАПРЕЩЕНЫ: " + Cut(configBlockReason, 44));
+                if (desyncBlocked) sb.AppendLine("!!! РАССИНХРОН ПОЗИЦИИ: " + Cut(desyncText, 46));
+                if (craneBlocked) sb.AppendLine("!!! СТОП-КРАН: P[p < p*] = " + craneProb.ToString("F3"));
+                if (RiskLineEnabled) sb.AppendLine("РИСК: " + Cut(RiskLine(), 58));
+                if (BetStatsEnabled) sb.AppendLine("AFML: " + Cut(BetStatsLine(), 58));
+                sb.AppendLine("бар " + bar + "   серия исполнения bip=" + execBip);
+                sb.AppendLine(new string('-', 64));
+                sb.AppendLine("МОДУЛЬ                РОЛЬ     СОСТОЯНИЕ  ОТПР/ПРИН  ПОТЕРИ");
+
+                foreach (SwModule m in modules)
+                {
+                    sb.AppendLine(string.Format("{0,-21} {1,-8} {2}  {3,5}/{4,-5} {5,6}",
+                        Cut(m.Id, 21), m.Role, HealthText(m.Health),
+                        m.EmitCount, m.CollectCount, m.LostCount));
+
+                    string last = m.Role == SwRole.Escort || m.Role == SwRole.Exit
+                        ? (m.LastAction.Kind == SwActionKind.None ? "—" : m.LastAction.Kind + " " + m.LastAction.Reason)
+                        : (m.LastSignal.Text ?? "—");
+                    sb.AppendLine("    " + Cut(last, 58));
+
+                    if (m.Health == SwHealth.Faulted)
+                        sb.AppendLine("    ОТКАЗ: " + Cut(m.LastFaultText, 50));
+                }
+
+                sb.AppendLine(new string('-', 64));
+                sb.AppendLine("РЕШЕНИЕ: " + Cut(lastDecisionText, 54));
+                sb.AppendLine("входов запрошено " + entriesRequested
+                            + "   заблокировано " + entriesBlocked
+                            + "   потерь сигнала " + lossesDetected);
+                sb.AppendLine("ИСПОЛНЕНИЕ: " + Cut(exec != null ? exec.StatusText : "—", 50));
+                sb.AppendLine("ФИНАНСЫ:    " + Cut(fin != null ? fin.StatusLine : "—", 50));
+
+                if (refPac != null) sb.AppendLine("  структура: " + Cut(refPac.StateLine, 52));
+                if (refTrfp != null) sb.AppendLine("  линии:     " + Cut(refTrfp.StateLine, 52));
+                if (refTime != null) sb.AppendLine("  время:     " + Cut(refTime.StateLine, 52));
+                if (refRegime != null) sb.AppendLine("  режим:     " + Cut(refRegime.StateLine, 52));
+                if (refGuard != null) sb.AppendLine("  риск:      " + Cut(refGuard.StateLine, 52));
+                if (refAStop != null) sb.AppendLine("  адапт.стоп:" + Cut(refAStop.StateLine, 52));
+                if (refEscort != null) sb.AppendLine("  выход:     " + Cut(refEscort.StateLine, 52));
+                if (refDbo != null) sb.AppendLine("  пробой:    " + Cut(refDbo.StateLine, 52));
+                if (refKer != null) sb.AppendLine("  ядро:      " + Cut(refKer.StateLine, 52));
+                if (refLor != null) sb.AppendLine("  Лоренц:    " + Cut(refLor.StateLine, 52));
+                if (refHk != null) sb.AppendLine("  Хёрст:     " + Cut(refHk.StateLine, 52));
+                if (refFs != null) sb.AppendLine("  ПК:        " + Cut(refFs.StateLine, 52));
+                if (refHm != null) sb.AppendLine("  Масса:     " + Cut(refHm.StateLine, 52));
+                sb.Append("ПОЗИЦИЯ: " + (HubPositionSide == 0 ? "вне рынка"
+                    : (HubPositionSide > 0 ? "LONG " : "SHORT ") + HubPositionQty
+                      + " @ " + HubPositionAvg.ToString("F2")));
+
+                if (EnableTracing && trace.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendLine(new string('-', 64));
+                    int show = Math.Min(PanelTraceLines, trace.Count);
+                    for (int i = trace.Count - show; i < trace.Count; i++)
+                    {
+                        SwTraceEntry e = trace[i];
+                        sb.AppendLine(string.Format("{0,6} {1,-16} {2,-16} {3}",
+                            e.Bar, Cut(e.Module, 16), Cut(e.Event, 16), Cut(e.Detail, 24)));
+                    }
+                }
+
+                // Цвет панели — худшее состояние среди модулей: неисправность
+                // не должна теряться среди исправных.
+                SwHealth worst = SwHealth.Ok;
+                foreach (SwModule m in modules)
+                {
+                    if (m.Health == SwHealth.Faulted) { worst = SwHealth.Faulted; break; }
+                    if (m.Health == SwHealth.Silent || m.Health == SwHealth.Stale
+                        || m.Health == SwHealth.Warmup) worst = SwHealth.Warmup;
+                }
+
+                Draw.TextFixed(this, PanelTag, sb.ToString(), PanelPosition,
+                               HealthBrush(worst), new SimpleFont("Consolas", Math.Max(6, PanelFontSize)),
+                               Brushes.Transparent, Brushes.Black, 70);
+            }
+            catch { }
+        }
+
+        private static string Cut(string s, int n)
+        {
+            if (string.IsNullOrEmpty(s)) return string.Empty;
+            return s.Length <= n ? s : s.Substring(0, n - 1) + "…";
+        }
+
+        private void PrintSummary()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("[HUB-ИТОГ] " + HubVersion);
+            sb.AppendLine("  решений " + decisionsMade + ", входов запрошено " + entriesRequested
+                + ", заблокировано " + entriesBlocked + ", потерь сигнала " + lossesDetected);
+
+            foreach (SwModule m in modules)
+                sb.AppendLine("  " + m.Id + "  роль " + m.Role + "  состояние " + m.Health
+                    + "  отправлено " + m.EmitCount + "  принято " + m.CollectCount
+                    + "  потеряно " + m.LostCount + "  отказов " + m.FaultCount
+                    + (m.FaultCount > 0 ? "  последний: " + m.LastFaultText : ""));
+
+            if (exec != null) sb.AppendLine("  исполнение: " + exec.SummaryText);
+            if (fin != null) sb.AppendLine("  финансы: " + fin.SummaryLine);
+            sb.AppendLine("  конфигурация: " + (configBlockReason.Length == 0 ? "замечаний нет"
+                : (configBlocked ? "НОВЫЕ ВХОДЫ БЫЛИ ЗАПРЕЩЕНЫ — " : "замечания (без ордеров) — ") + configBlockReason));
+            if (desyncBlocked) sb.AppendLine("  РАССИНХРОН ПОЗИЦИИ: " + desyncText);
+            if (RiskLineEnabled || CraneThreshold > 0) sb.AppendLine("  ставки: " + RiskLine());
+            if (BetStatsEnabled) sb.AppendLine("  ставки, AFML гл. 14: " + BetStatsLine());
+            if (MetaLabels) sb.AppendLine(MetaSummary() + (metaPath.Length > 0 ? "\n    журнал: " + metaPath : ""));
+            if (YearlySummary && !InAnalyzer)
+                sb.AppendLine("  итоги по годам" + (DryRunMode ? " (без ордеров, с издержками круга)" : "") + ":" + YearlyBreakdown());
+            if (DryTradeJournal && dryJournalPath.Length > 0)
+                sb.AppendLine("  журнал виртуальных сделок: " + dryTradeNo + " строк — " + dryJournalPath);
+            if (MeasureSlippage)
+                sb.AppendLine(slipStopQty == 0 ? "  проскальзывание стоп-заявок: исполнений не было"
+                    : "  проскальзывание стоп-заявок: контрактов " + slipStopQty
+                      + ", среднее " + (slipStopSum / slipStopQty).ToString("F2") + " т, худшее " + slipStopWorst.ToString("F1") + " т");
+            Print(sb.ToString());
+        }
+
+        #endregion
+
+        /// <summary>
+        /// Сборка настроек финансового модуля из свойств окна параметров.
+        /// Выполняется один раз при подключении: рантайм-переоценка настроек
+        /// сделала бы поведение невоспроизводимым между прогонами.
+        /// </summary>
+        private SwFinancialConfig BuildFinancialConfig()
+        {
+            SwFinancialConfig c = new SwFinancialConfig();
+
+            c.SizingMode = SizingMode;
+            c.FixedQuantity = DefaultQuantity;
+            c.RiskMoneyPerTrade = RiskMoneyPerTrade;
+            c.AccountEquityReference = AccountEquityReference;
+            c.RiskPercentOfEquity = RiskPercentOfEquity;
+            c.MinQuantity = MinQuantity;
+            c.MaxQuantity = MaxQuantity;
+
+            c.RoundTurnCostPerContract = RoundTurnCostPerContract;
+            c.SlippageReserveTicks = SlippageReserveTicks;
+
+            c.StopMode = StopMode;
+            c.StopFixedTicks = StopLossTicks;
+            c.ExpStopAtrFloor = FinExpStopAtrFloor;   // Э48
+            c.StopPriceDollars = StopPriceDollars;
+            c.StopAtrMultiple = StopAtrMultiple;
+
+            c.UseScaleOut = UseScaleOut;
+            c.ScaleSteps = ScaleSteps;
+            c.StepDistanceMode = StepDistanceMode;
+            c.StepFixedTicks = StepFixedTicks;
+            c.StepPriceDollars = StepPriceDollars;
+            c.StepRMultiple = StepRMultiple;
+            c.ContractsOnStep1 = ContractsOnStep1;
+            c.ContractsPerStep = ContractsPerStep;
+            c.KeepRunner = KeepRunner;
+
+            c.BreakevenMode = BreakevenMode;
+            c.BreakevenAtR = BreakevenAtR;
+            c.BreakevenOffsetTicks = BreakevenOffsetTicks;
+
+            c.TrailMode = TrailMode;
+            c.TrailActivateAtR = TrailActivateAtR;
+            c.TrailFixedTicks = TrailDistanceTicks;
+            c.TrailAtrMultiple = TrailAtrMultiple;
+
+            c.DisableStopMoveAfterStep1 = DisableStopMoveAfterStep1;
+            c.MinBarsBetweenStopMoves = MinBarsBetweenStopMoves;
+            c.StepConfirmTimeoutBars = StepConfirmTimeoutBars;
+            c.BreakevenOnBestPrice = BreakevenOnBestPrice;
+
+            return c;
+        }
+
+
+
+
+        #region Свойства — Калман, рычаг, масса
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD13] Слот 13 — канал Калмана", Order = 13, GroupName = "01 · Слоты модулей",
+        	Description = "Канал Калмана: диапазон, пробой, выход по наклону. Роль — [C01].")]
+        public bool Slot13Enabled { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD14] Слот 14 — рычаг свечи", Order = 14, GroupName = "01 · Слоты модулей",
+        	Description = "Рычаг свечи: голос кластеров объёма. Роль — [B01].")]
+        public bool Slot14Enabled { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD15] Слот 15 — иерархическая масса", Order = 15, GroupName = "01 · Слоты модулей",
+        	Description = "Дрейф взвешенной по объёму цены внутри окна по эшелонам 1, 5 и 15 минут.")]
+        public bool Slot15Enabled { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[C01] Роль", Order = 1, GroupName = "15 · Канал Калмана",
+        	Description = "Роль модуля в конвейере.")]
+        public SwKalmanRole KalRole { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[C02] Младшая серия", Order = 2, GroupName = "15 · Канал Калмана",
+        	Description = "Слот пула 0–4.")]
+        public int KalLowerSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[C03] Текущая серия", Order = 3, GroupName = "15 · Канал Калмана",
+        	Description = "Слот пула 0–4.")]
+        public int KalCurrentSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[C04] Старшая серия", Order = 4, GroupName = "15 · Канал Калмана",
+        	Description = "Слот пула 0–4.")]
+        public int KalHigherSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(2, 500)]
+        [Display(Name = "[C05] Период", Order = 5, GroupName = "15 · Канал Калмана",
+        	Description = "Окно фильтра, баров.")]
+        public int KalPeriod { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.1, 10.0)]
+        [Display(Name = "[C06] Ширина полос, σ", Order = 6, GroupName = "15 · Канал Калмана",
+        	Description = "Множитель полос канала.")]
+        public double KalBandSigma { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[C07] Политика фильтра", Order = 7, GroupName = "15 · Канал Калмана",
+        	Description = "Как канал голосует за направление.")]

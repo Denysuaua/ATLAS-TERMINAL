@@ -1,0 +1,534 @@
+{
+  "plateau": {
+    "15": {
+      "доля точек выше базы": 0.467,
+      "медиана ожидания": 2.53,
+      "wide доля выше базы": 0.619,
+      "wide медиана": -1.99,
+      "по kernel": {
+        "Cosine": 2.52,
+        "Epanechnikov": 2.52,
+        "Gaussian": 2.56,
+        "Triangular": 2.52,
+        "Tricube": 2.54
+      },
+      "по regression": {
+        "LL": 2.52,
+        "NW": 2.55
+      },
+      "по bw": {
+        "3": 2.66,
+        "4": 2.55,
+        "6": 2.23,
+        "8": 2.07,
+        "12": 2.32,
+        "16": 2.27,
+        "24": 2.51,
+        "32": 2.6,
+        "48": 2.71,
+        "64": 2.6,
+        "96": 2.92,
+        "128": 2.72,
+        "160": 2.79
+      },
+      "по adaptive": {
+        "0": 2.56,
+        "1": 2.52
+      },
+      "по thr": {
+        "0.0": 2.63,
+        "0.25": 2.56,
+        "0.5": 2.54,
+        "1.0": 2.53,
+        "2.0": 2.5,
+        "4.0": 2.52,
+        "8.0": 2.45
+      }
+    },
+    "60": {
+      "доля точек выше базы": 0.508,
+      "медиана ожидания": 2.54,
+      "wide доля выше базы": 0.741,
+      "wide медиана": -1.89,
+      "по kernel": {
+        "Cosine": 2.55,
+        "Epanechnikov": 2.57,
+        "Gaussian": 2.49,
+        "Triangular": 2.53,
+        "Tricube": 2.54
+      },
+      "по regression": {
+        "LL": 2.65,
+        "NW": 2.43
+      },
+      "по bw": {
+        "3": 2.27,
+        "4": 2.45,
+        "6": 2.59,
+        "8": 2.68,
+        "12": 2.7,
+        "16": 2.63,
+        "24": 2.67,
+        "32": 2.69,
+        "48": 2.6,
+        "64": 2.55,
+        "96": 2.56,
+        "128": 2.23,
+        "160": 2.37
+      },
+      "по adaptive": {
+        "0": 2.62,
+        "1": 2.5
+      },
+      "по thr": {
+        "0.0": 2.74,
+        "0.25": 2.66,
+        "0.5": 2.55,
+        "1.0": 2.4,
+        "2.0": 2.46,
+        "4.0": 2.48,
+        "8.0": 2.49
+      }
+    },
+    "240": {
+      "доля точек выше базы": 0.616,
+      "медиана ожидания": 2.69,
+      "wide доля выше базы": 0.971,
+      "wide медиана": -1.29,
+      "по kernel": {
+        "Cosine": 2.88,
+        "Epanechnikov": 2.87,
+        "Gaussian": 2.9,
+        "Triangular": 2.89,
+        "Tricube": 2.99
+      },
+      "по regression": {
+        "LL": 2.84,
+        "NW": 2.97
+      },
+      "по bw": {
+        "3": 2.77,
+        "4": 2.52,
+        "6": 2.46,
+        "8": 2.45,
+        "12": 2.49,
+        "16": 2.17,
+        "24": 2.05,
+        "32": 2.71,
+        "48": 3.08,
+        "64": 3.54,
+        "96": 3.94,
+        "128": 3.66,
+        "160": 3.96
+      },
+      "по adaptive": {
+        "0": 2.84,
+        "1": 2.94
+      },
+      "по thr": {
+        "0.0": 3.14,
+        "0.25": 3.09,
+        "0.5": 3.09,
+        "1.0": 3.05,
+        "2.0": 2.91,
+        "4.0": 2.56,
+        "8.0": 2.5
+      }
+    }
+  },
+  "profiles": {
+    "60m": {
+      "approved": {
+        "pass_n": 513,
+        "pass_wr": 0.561,
+        "pass_exp": 4.37,
+        "pass_pf": 1.232,
+        "rej_n": 252,
+        "rej_wr": 0.512,
+        "kept_winners": 0.691,
+        "cut_losers": 0.353,
+        "capture_total": 0.097,
+        "capture_win_med": 0.693,
+        "hold_bars_mean": 3.15,
+        "hold_minutes_mean": 444.4,
+        "time_dir_share": 0.921
+      },
+      "wide": {
+        "pass_n": 2925,
+        "pass_wr": 0.512,
+        "pass_exp": -0.36,
+        "pass_pf": 0.981,
+        "rej_n": 1211,
+        "rej_wr": 0.436,
+        "kept_winners": 0.739,
+        "cut_losers": 0.324,
+        "capture_total": -0.009,
+        "capture_win_med": 0.692,
+        "hold_bars_mean": 3.21,
+        "hold_minutes_mean": 357.1,
+        "time_dir_share": 0.921
+      },
+      "params": {
+        "tf": 60,
+        "kernel": "Epanechnikov",
+        "regression": "LL",
+        "bw": 64,
+        "adaptive": [
+          1,
+          0.5,
+          2.0
+        ],
+        "thr": 0.25
+      }
+    },
+    "240m": {
+      "approved": {
+        "pass_n": 474,
+        "pass_wr": 0.559,
+        "pass_exp": 3.7,
+        "pass_pf": 1.196,
+        "rej_n": 291,
+        "rej_wr": 0.522,
+        "kept_winners": 0.635,
+        "cut_losers": 0.399,
+        "capture_total": 0.084,
+        "capture_win_med": 0.686,
+        "hold_bars_mean": 2.94,
+        "hold_minutes_mean": 392.3,
+        "time_dir_share": 0.951
+      },
+      "wide": {
+        "pass_n": 2369,
+        "pass_wr": 0.509,
+        "pass_exp": -0.88,
+        "pass_pf": 0.953,
+        "rej_n": 1767,
+        "rej_wr": 0.464,
+        "kept_winners": 0.595,
+        "cut_losers": 0.449,
+        "capture_total": -0.023,
+        "capture_win_med": 0.694,
+        "hold_bars_mean": 3.14,
+        "hold_minutes_mean": 333.2,
+        "time_dir_share": 0.951
+      },
+      "params": {
+        "tf": 240,
+        "kernel": "Epanechnikov",
+        "regression": "LL",
+        "bw": 64,
+        "adaptive": [
+          1,
+          0.5,
+          2.0
+        ],
+        "thr": 0.25
+      }
+    },
+    "15m": {
+      "approved": {
+        "pass_n": 734,
+        "pass_wr": 0.55,
+        "pass_exp": 2.86,
+        "pass_pf": 1.155,
+        "rej_n": 31,
+        "rej_wr": 0.419,
+        "kept_winners": 0.969,
+        "cut_losers": 0.052,
+        "capture_total": 0.068,
+        "capture_win_med": 0.696,
+        "hold_bars_mean": 3.15,
+        "hold_minutes_mean": 398.2,
+        "time_dir_share": 0.821
+      },
+      "wide": {
+        "pass_n": 3917,
+        "pass_wr": 0.492,
+        "pass_exp": -1.84,
+        "pass_pf": 0.904,
+        "rej_n": 219,
+        "rej_wr": 0.447,
+        "kept_winners": 0.952,
+        "cut_losers": 0.057,
+        "capture_total": -0.05,
+        "capture_win_med": 0.694,
+        "hold_bars_mean": 3.24,
+        "hold_minutes_mean": 343.2,
+        "time_dir_share": 0.821
+      },
+      "params": {
+        "tf": 15,
+        "kernel": "Epanechnikov",
+        "regression": "LL",
+        "bw": 64,
+        "adaptive": [
+          1,
+          0.5,
+          2.0
+        ],
+        "thr": 0.25
+      }
+    }
+  },
+  "experiments": {
+    "K61 t-порог 1": {
+      "pass_n": 532,
+      "pass_wr": 0.562,
+      "pass_exp": 4.4,
+      "pass_pf": 1.233,
+      "rej_n": 233,
+      "rej_wr": 0.506,
+      "kept_winners": 0.717,
+      "cut_losers": 0.33,
+      "capture_total": 0.097,
+      "capture_win_med": 0.694,
+      "hold_bars_mean": 3.15,
+      "hold_minutes_mean": 439.3,
+      "time_dir_share": 0.905
+    },
+    "K61 t-порог 2": {
+      "pass_n": 588,
+      "pass_wr": 0.553,
+      "pass_exp": 3.62,
+      "pass_pf": 1.19,
+      "rej_n": 177,
+      "rej_wr": 0.52,
+      "kept_winners": 0.779,
+      "cut_losers": 0.244,
+      "capture_total": 0.082,
+      "capture_win_med": 0.698,
+      "hold_bars_mean": 3.15,
+      "hold_minutes_mean": 426.2,
+      "time_dir_share": 0.842
+    },
+    "K61 t-порог 3": {
+      "pass_n": 606,
+      "pass_wr": 0.553,
+      "pass_exp": 3.51,
+      "pass_pf": 1.184,
+      "rej_n": 159,
+      "rej_wr": 0.516,
+      "kept_winners": 0.803,
+      "cut_losers": 0.221,
+      "capture_total": 0.08,
+      "capture_win_med": 0.707,
+      "hold_bars_mean": 3.12,
+      "hold_minutes_mean": 420.5,
+      "time_dir_share": 0.77
+    },
+    "K63 быстрая/медленная": {
+      "pass_n": 543,
+      "pass_wr": 0.527,
+      "pass_exp": 0.55,
+      "pass_pf": 1.028,
+      "rej_n": 222,
+      "rej_wr": 0.59,
+      "kept_winners": 0.686,
+      "cut_losers": 0.261,
+      "capture_total": 0.014,
+      "capture_win_med": 0.719,
+      "hold_bars_mean": 3.17,
+      "hold_minutes_mean": 406.0,
+      "time_dir_share": 0.99
+    },
+    "K64 самопроверка": {
+      "pass_n": 765,
+      "pass_wr": 0.545,
+      "pass_exp": 2.53,
+      "pass_pf": 1.137,
+      "rej_n": 0,
+      "rej_wr": null,
+      "kept_winners": 1.0,
+      "cut_losers": 0.0,
+      "capture_total": 0.06,
+      "capture_win_med": 0.694,
+      "hold_bars_mean": 3.14,
+      "hold_minutes_mean": 391.9,
+      "time_dir_share": 0.001
+    },
+    "Э45 τ 0,25": {
+      "pass_n": 595,
+      "pass_wr": 0.553,
+      "pass_exp": 3.53,
+      "pass_pf": 1.186,
+      "rej_n": 170,
+      "rej_wr": 0.518,
+      "kept_winners": 0.789,
+      "cut_losers": 0.236,
+      "capture_total": 0.081,
+      "capture_win_med": 0.698,
+      "hold_bars_mean": 3.14,
+      "hold_minutes_mean": 423.5,
+      "time_dir_share": 0.817
+    },
+    "Э45 τ 0,5": {
+      "pass_n": 545,
+      "pass_wr": 0.567,
+      "pass_exp": 4.63,
+      "pass_pf": 1.248,
+      "rej_n": 220,
+      "rej_wr": 0.491,
+      "kept_winners": 0.741,
+      "cut_losers": 0.322,
+      "capture_total": 0.103,
+      "capture_win_med": 0.694,
+      "hold_bars_mean": 3.15,
+      "hold_minutes_mean": 436.6,
+      "time_dir_share": 0.895
+    },
+    "Э45 τ 1": {
+      "pass_n": 519,
+      "pass_wr": 0.563,
+      "pass_exp": 4.34,
+      "pass_pf": 1.231,
+      "rej_n": 246,
+      "rej_wr": 0.508,
+      "kept_winners": 0.7,
+      "cut_losers": 0.348,
+      "capture_total": 0.096,
+      "capture_win_med": 0.693,
+      "hold_bars_mean": 3.14,
+      "hold_minutes_mean": 441.6,
+      "time_dir_share": 0.915
+    },
+    "Э45 τ 2": {
+      "pass_n": 513,
+      "pass_wr": 0.561,
+      "pass_exp": 4.37,
+      "pass_pf": 1.232,
+      "rej_n": 252,
+      "rej_wr": 0.512,
+      "kept_winners": 0.691,
+      "cut_losers": 0.353,
+      "capture_total": 0.097,
+      "capture_win_med": 0.693,
+      "hold_bars_mean": 3.15,
+      "hold_minutes_mean": 444.4,
+      "time_dir_share": 0.92
+    },
+    "[K55] веса по объёму γ=1": {
+      "pass_n": 564,
+      "pass_wr": 0.553,
+      "pass_exp": 3.68,
+      "pass_pf": 1.194,
+      "rej_n": 201,
+      "rej_wr": 0.522,
+      "kept_winners": 0.748,
+      "cut_losers": 0.276,
+      "capture_total": 0.084,
+      "capture_win_med": 0.699,
+      "hold_bars_mean": 3.15,
+      "hold_minutes_mean": 436.1,
+      "time_dir_share": 0.919
+    }
+  },
+  "time_exits_passed": {
+    "60": {
+      "base": {
+        "n": 138,
+        "mean": 0.684,
+        "sum": 94.4,
+        "maxdd": 364.0
+      },
+      "1230A": {
+        "n": 138,
+        "mean": 0.235,
+        "sum": 32.5,
+        "maxdd": 434.0
+      },
+      "1230B": {
+        "n": 138,
+        "mean": 0.43,
+        "sum": 59.4,
+        "maxdd": 416.1
+      },
+      "2200A": {
+        "n": 138,
+        "mean": 0.522,
+        "sum": 72.0,
+        "maxdd": 308.2
+      },
+      "2200B": {
+        "n": 138,
+        "mean": 0.69,
+        "sum": 95.2,
+        "maxdd": 373.7
+      }
+    },
+    "120": {
+      "base": {
+        "n": 221,
+        "mean": 6.282,
+        "sum": 1388.2,
+        "maxdd": 881.9
+      },
+      "1230A": {
+        "n": 221,
+        "mean": 5.788,
+        "sum": 1279.1,
+        "maxdd": 688.6
+      },
+      "1230B": {
+        "n": 221,
+        "mean": 6.569,
+        "sum": 1451.7,
+        "maxdd": 641.6
+      },
+      "2200A": {
+        "n": 221,
+        "mean": 2.928,
+        "sum": 647.0,
+        "maxdd": 998.3
+      },
+      "2200B": {
+        "n": 221,
+        "mean": 4.744,
+        "sum": 1048.3,
+        "maxdd": 963.6
+      }
+    },
+    "240": {
+      "base": {
+        "n": 154,
+        "mean": 4.921,
+        "sum": 757.9,
+        "maxdd": 857.1
+      },
+      "1230A": {
+        "n": 154,
+        "mean": 3.801,
+        "sum": 585.4,
+        "maxdd": 878.4
+      },
+      "1230B": {
+        "n": 154,
+        "mean": 4.779,
+        "sum": 735.9,
+        "maxdd": 828.9
+      },
+      "2200A": {
+        "n": 154,
+        "mean": 3.708,
+        "sum": 571.1,
+        "maxdd": 907.6
+      },
+      "2200B": {
+        "n": 154,
+        "mean": 4.163,
+        "sum": 641.2,
+        "maxdd": 857.1
+      }
+    }
+  },
+  "interaction_MOD9_60m_x_MOD10_240m": {
+    "оба определены": 0.825,
+    "согласие направления при обоих": 0.691,
+    "совпадение решений пропуск/вето": 0.676,
+    "пропуск MOD9": 0.671,
+    "пропуск MOD10": 0.626,
+    "пропуск оба": 0.486,
+    "сделок, где решения разошлись": 248,
+    "WinRate где MOD9 пропускает, MOD10 вето": 0.539,
+    "WinRate где MOD10 пропускает, MOD9 вето": 0.505
+  }
+}

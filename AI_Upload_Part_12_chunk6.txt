@@ -1,0 +1,300 @@
+﻿        public static string StateText(SwKalmanState st)
+        {
+            switch (st)
+            {
+                case SwKalmanState.Range: return "боковик";
+                case SwKalmanState.TrendUp: return "тренд ↑";
+                case SwKalmanState.TrendDown: return "тренд ↓";
+                case SwKalmanState.Undefined: return "неопр.";
+                default: return "прогрев";
+            }
+        }
+    }
+
+    /// <summary>Накопитель статистики события: число, средняя, доля в сторону события.</summary>
+    public class SwKalmanStat
+    {
+        public int N, Hits;
+        public double Sum, Sum2;
+
+        public void Add(double v)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v)) return;
+            N++; Sum += v; Sum2 += v * v;
+            if (v > 0) Hits++;
+        }
+
+        public double Mean { get { return N > 0 ? Sum / N : double.NaN; } }
+        public double HitRate { get { return N > 0 ? (double)Hits / N : double.NaN; } }
+
+        /// <summary>Стандартная ошибка средней.</summary>
+        public double StdErr
+        {
+            get
+            {
+                if (N < 2) return double.NaN;
+                double m = Sum / N;
+                double v = (Sum2 - N * m * m) / (N - 1);
+                return v > 0 ? Math.Sqrt(v / N) : 0;
+            }
+        }
+    }
+
+    public class SwKalmanChannelModule : SwModule
+    {
+        private readonly SwKalmanConfig cfg;
+        private readonly SwKalmanTrack[] tr = new SwKalmanTrack[3];
+        private readonly bool[] tfOn = new bool[3];
+        private int entryTf = 1, escortTf = 1, dirTf = 1;
+        private int confirmBars = 5;
+
+        // --- сигнал пробоя, ожидающий такта исполнения ---
+        private int pendDir, pendBarsLeft;
+        private double pendConf, pendLevel;
+        private string pendId = string.Empty, pendText = string.Empty, pendShort = string.Empty;
+
+        // --- выход и сопровождение ---
+        private int exitAgainst;
+        private bool exitArmed;
+        private string exitReason = string.Empty;
+        private int lastPosSide;
+        private double lastAvg = double.NaN;
+        private int exitShownBar = -1;
+
+        // --- счётчики для панели и итога ---
+        private int breakoutsUp, breakoutsDown, suppressedHigher, cancelledInside, exitsRequested, stopRequests;
+        private int rangesDeclared;
+
+        private static readonly string[] TfNames = { "МЛ", "ТК", "СТ" };
+
+        public SwKalmanChannelModule(string id, SwKalmanConfig config)
+        {
+            Id = id;
+            cfg = config ?? new SwKalmanConfig();
+            Role = cfg.Role == SwKalmanRole.Signal ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+
+            confirmBars = cfg.RangeConfirmBars > 0
+                ? cfg.RangeConfirmBars
+                : Math.Max(3, Math.Min(12, (int)Math.Round(Math.Min(cfg.EntryWindowMin, cfg.EntryWindowMax) / 2.0)));
+
+            // Доступность таймфреймов. Невключённый слот пула читался бы с
+            // графика и молча дублировал бы текущий ТФ — такой ТФ выключается.
+            int[] slots = { cfg.LowerSlot, cfg.CurrentSlot, cfg.HigherSlot };
+            tfOn[1] = true;
+            tfOn[0] = Usable(slots[0]) && Host.Bip(slots[0]) != Host.Bip(slots[1]);
+            tfOn[2] = Usable(slots[2]) && Host.Bip(slots[2]) != Host.Bip(slots[1])
+                    && (!tfOn[0] || Host.Bip(slots[2]) != Host.Bip(slots[0]));
+
+            entryTf = tfOn[0] ? 0 : 1;
+            escortTf = cfg.EscortTf == SwKalmanTfChoice.Higher && tfOn[2] ? 2 : 1;
+            dirTf = cfg.DirectionTf == SwKalmanTfChoice.Higher && tfOn[2] ? 2 : 1;
+
+            // Окно входа — у ТФ входа; окно сопровождения — у остальных.
+            for (int i = 0; i < 3; i++)
+            {
+                bool entryWin = i == entryTf;
+                SwFloatingWindow w = entryWin
+                    ? new SwFloatingWindow(cfg.EntryWindowMin, cfg.EntryWindowMax)
+                    : new SwFloatingWindow(cfg.EscortWindowMin, cfg.EscortWindowMax);
+                tr[i] = new SwKalmanTrack(i, TfNames[i], slots[i], cfg, w, Host.TickSize, confirmBars);
+            }
+
+            Host.Trace(Id, "KALMAN_ATTACHED",
+                "роль " + cfg.Role + ", ТФ: МЛ слот " + slots[0] + (tfOn[0] ? "" : " выкл")
+                + ", ТК слот " + slots[1] + ", СТ слот " + slots[2] + (tfOn[2] ? "" : " выкл")
+                + "; вход " + TfNames[entryTf] + ", направление " + TfNames[dirTf] + ", сопровождение " + TfNames[escortTf]
+                + "; период " + cfg.Period + ", границы " + cfg.Bands + " " + cfg.BandSigma.ToString("F1") + "σ"
+                + ", боковик на " + confirmBars + "-й свече");
+
+            if (!tfOn[0])
+                Host.Trace(Id, "KALMAN_TF_OFF", "младший ТФ выключен: слот " + slots[0]
+                    + " не загружен или совпадает с текущим; вход берётся с текущего ТФ");
+            if (!tfOn[2])
+                Host.Trace(Id, "KALMAN_TF_OFF", "старший ТФ выключен: слот " + slots[2]
+                    + " не загружен или совпадает с другим ТФ; направление и сопровождение — по текущему");
+        }
+
+        private bool Usable(int slot)
+        {
+            return slot == 0 || Host.SlotLoaded(slot);
+        }
+
+        public override void Compute(int bip)
+        {
+            // --- 1. Шаг каждого ТФ на закрытии бара его серии ---
+            for (int i = 0; i < 3; i++)
+                if (tfOn[i] && Host.IsBarCloseOf(tr[i].Slot, bip)) StepTrack(i);
+
+            // --- 2. На закрытии младшего: предварительные старшие ТФ и исследование ---
+            if (tfOn[0] && Host.IsBarCloseOf(tr[0].Slot, bip))
+            {
+                try { OnLowerClose(); }
+                catch { }
+            }
+
+            // --- 3. Решение — только в такте серии исполнения ---
+            if (bip != Host.ExecBip) return;
+            ExecTick();
+        }
+
+        #region Шаг таймфрейма
+
+        private void StepTrack(int i)
+        {
+            SwKalmanTrack t = tr[i];
+            double z = Host.CloseOf(t.Slot, 0);
+            if (double.IsNaN(z)) return;
+
+            SwKalmanState before = t.State;
+            t.Update(z, Host.HighOf(t.Slot, 0), Host.LowOf(t.Slot, 0), Host.TimeOf(t.Slot, 0));
+
+            // Смена состояния — только для ТФ, по которым принимаются решения:
+            // младший ТФ меняет состояние слишком часто для трассировки.
+            if (t.Ready && t.State != before && before != SwKalmanState.Warmup && (i == dirTf || i == escortTf))
+                Host.Trace(Id, "KALMAN_STATE", t.Name + ": " + SwKalmanTrack.StateText(before) + " → "
+                    + SwKalmanTrack.StateText(t.State) + ", z " + t.SmoothZ.ToString("F2")
+                    + ", наклон за окно " + t.SmoothTilt.ToString("F2") + " ширины, дисбаланс "
+                    + t.SmoothImbalance.ToString("+0.00;-0.00;0.00"));
+
+            if (t.RangeDeclared)
+            {
+                if (i == entryTf) rangesDeclared++;
+                Host.Trace(Id, "KALMAN_RANGE", t.Name + ": боковик на " + t.FlatStreak + "-й свече, ширина "
+                    + t.Width.ToString("F2") + (t.Compression ? ", сжатие" : ""));
+            }
+
+            // --- вход: пробой боковика ТФ входа ---
+            if (i == entryTf && (t.BreakUp || t.BreakDown)) OnBreakout(t);
+
+            // --- выход: разворот середины и коридора ТФ сопровождения ---
+            if (i == escortTf) StepExit(t);
+
+            try { ObserveTrack(i); }
+            catch { }
+        }
+
+        /// <summary>
+        /// Пробой границы боковика. В роли Signal взводит сигнал до ближайшего
+        /// такта исполнения; в роли Filter только учитывается и рисуется.
+        /// </summary>
+        private void OnBreakout(SwKalmanTrack t)
+        {
+            int dir = t.BreakUp ? 1 : -1;
+            if (dir > 0) breakoutsUp++; else breakoutsDown++;
+
+            string sid = "KLM_" + t.Time.ToString("yyyyMMdd_HHmmss", System.Globalization.CultureInfo.InvariantCulture)
+                       + "_" + t.Name + (dir > 0 ? "_U" : "_D");
+            string desc = "КЛМ " + t.Name + " пробой боковика " + (dir > 0 ? "вверх" : "вниз");
+
+            // Старший ТФ против — пробой не отправляется, но попадает в журнал.
+            SwKalmanTrack h = tfOn[2] && entryTf != 2 ? tr[2] : null;
+            bool hAgainst = h != null && h.Ready
+                && ((dir > 0 && h.State == SwKalmanState.TrendDown) || (dir < 0 && h.State == SwKalmanState.TrendUp));
+            bool hWith = h != null && h.Ready
+                && ((dir > 0 && h.State == SwKalmanState.TrendUp) || (dir < 0 && h.State == SwKalmanState.TrendDown));
+
+            double conf = 0.6 + (t.RangeCompressed ? 0.15 : 0) + (hWith ? 0.15 : 0)
+                        + (Math.Sign(t.SmoothImbalance) == dir ? 0.1 : 0);
+            if (conf > 1.0) conf = 1.0;
+
+            Host.Trace(Id, "KALMAN_BREAKOUT", desc + " @ " + t.Close.ToString("F2") + ", боковик " + t.RangeBars
+                + " св." + (t.RangeCompressed ? ", было сжатие" : "")
+                + (h == null ? "" : ", старший ТФ " + SwKalmanTrack.StateText(h.State))
+                + ", уверенность " + conf.ToString("F2"));
+
+            if (Role != SwRole.Signal) return;
+
+            if (cfg.RequireHigherAgreement && hAgainst)
+            {
+                suppressedHigher++;
+                try
+                {
+                    Host.RequestSignalJournalEntry(Id, t.Time, sid, dir, conf, desc,
+                        "старший ТФ против: " + SwKalmanTrack.StateText(h.State) + " [C22]");
+                }
+                catch { }
+                return;
+            }
+
+            pendDir = dir;
+            pendConf = conf;
+            pendBarsLeft = Math.Max(1, cfg.SignalBars);
+            pendLevel = dir > 0 ? t.RangeUpperAtBreak : t.RangeLowerAtBreak;
+            pendId = sid;
+            pendShort = desc;
+            pendText = desc + " @ " + t.Close.ToString("F2") + ", уверенность " + conf.ToString("F2");
+        }
+
+        /// <summary>
+        /// Против позиции на закрытии бара ТФ сопровождения: середина значимо
+        /// повернула против и коридор — среднее смещение границ — тоже.
+        /// Подтверждение [C27] баров подряд; затем требование закрытия повторяется
+        /// каждый такт, пока позиция открыта: исполнитель пропускает не больше
+        /// одного выхода на бар и мог отклонить первое.
+        /// </summary>
+        private void StepExit(SwKalmanTrack t)
+        {
+            int pos = Host.PositionSide;
+            if (!cfg.ExitOnSlopeFlip || pos == 0 || !t.Ready)
+            {
+                exitAgainst = 0;
+                return;
+            }
+
+            bool against = pos > 0
+                ? t.SmoothZ <= -t.ZFlat && t.CorridorTilt < 0
+                : t.SmoothZ >= t.ZFlat && t.CorridorTilt > 0;
+
+            if (against)
+            {
+                exitAgainst++;
+                if (exitAgainst >= Math.Max(1, cfg.ExitConfirmBars) && !exitArmed)
+                {
+                    exitArmed = true;
+                    exitReason = "Кальман " + t.Name + ": середина и коридор против позиции "
+                               + exitAgainst + " бар., z " + t.SmoothZ.ToString("F2");
+                    Host.Trace(Id, "KALMAN_EXIT_REQUESTED", exitReason);
+                }
+            }
+            else
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+        }
+
+        #endregion
+
+        #region Такт исполнения
+
+        private void ExecTick()
+        {
+            int bar = Host.CurrentBar;
+            int pos = Host.PositionSide;
+
+            // Новая сделка — счёт выхода заново: разворот, накопленный в прошлой
+            // сделке, не должен закрыть новую.
+            double avg = Host.PositionAvgPrice;
+            bool newTrade = pos != lastPosSide
+                || (pos != 0 && !double.IsNaN(lastAvg) && Math.Abs(avg - lastAvg) > 1e-9);
+            if (newTrade)
+            {
+                exitAgainst = 0;
+                exitArmed = false;
+            }
+            lastPosSide = pos;
+            lastAvg = pos != 0 ? avg : double.NaN;
+
+            if (pos != 0)
+            {
+                EmitEscort(bar, pos);
+                if (exitArmed) EmitExit(bar);
+            }
+
+            if (Role == SwRole.Signal) EmitSignalRole(bar);
+            else EmitFilterRole(bar);

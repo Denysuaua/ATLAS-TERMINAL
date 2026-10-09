@@ -1,0 +1,300 @@
+﻿		SwSignal s = new SwSignal();
+		s.Direction = 0; s.Confidence = 0; s.Verdict = SwVerdict.Neutral;
+		s.IsReady = false; s.ProducedAtBar = bar; s.Text = "нет данных";
+		s.EntryStopPrice = double.NaN; s.TrailTicksOverride = double.NaN;
+		return s;
+		}
+		}
+		
+		/// <summary>Требование модуля Escort или Exit. Ордер НЕ создаёт.</summary>
+		public struct SwAction
+		{
+		public string Source;   // источник требования: "FIN" и т. п.
+		public string Code;     // код причины: "STEP", код источника стопа
+		public SwActionKind Kind;
+		public double Price; // уровень стопа для MoveStop
+		public int Quantity; // объём для PartialExit
+		public int ProducedAtBar;
+		public string Reason;
+		public string Tag; // метка ступени: по ней исполнение опознаётся
+		
+		public static SwAction None(int bar)
+		{
+		SwAction a = new SwAction();
+		a.Kind = SwActionKind.None; a.Price = double.NaN;
+		a.Quantity = 0; a.ProducedAtBar = bar; a.Reason = string.Empty; a.Tag = string.Empty;
+		return a;
+		}
+		}
+		
+		/// <summary>Запись трассировки. Кольцевой буфер фиксированного размера.</summary>
+		public sealed class SwTraceEntry
+		{
+		public int Bar;
+		public DateTime Time;
+		public string Module;
+		public string Event;
+		public string Detail;
+		}
+		
+		#endregion
+		
+		#region Базовый класс модуля
+		
+		/// <summary>
+		/// БАЗОВЫЙ КЛАСС ПОДКЛЮЧАЕМОГО МОДУЛЯ.
+		///
+		/// Наследник обязан переопределить Compute. Всё остальное — учёт,
+		/// здоровье, изоляция отказа — берёт на себя коммутатор.
+		///
+		/// ЖЁСТКОЕ ПРАВИЛО. Модуль не имеет доступа к ордерному API. Поле Host
+		/// объявлено как SwHostView — урезанное представление коммутатора,
+		/// через которое видны только бары, время и параметры. Вызвать EnterLong
+		/// из модуля невозможно физически, а не по договорённости.
+		/// </summary>
+		public abstract class SwModule
+		{
+		public string Id = "unnamed";
+		public SwRole Role = SwRole.Signal;
+		public SwHealth Health = SwHealth.NotAttached;
+		
+		protected SwHostView Host;
+		
+		// --- двусторонний учёт ---
+		private readonly Queue<SwSignal> outboxSignal = new Queue<SwSignal>();
+		private readonly Queue<SwAction> outboxAction = new Queue<SwAction>();
+		
+		public long EmitCount; // сколько модуль ОТПРАВИЛ
+		public long CollectCount; // сколько коммутатор ПРИНЯЛ
+		public long LostCount; // расхождение, накопленное
+		public long FaultCount;
+		public int LastEmitBar = -1;
+		public string LastFaultText = string.Empty;
+		
+		public SwSignal LastSignal;
+		public SwAction LastAction;
+		
+		/// <summary>Однократная привязка. Создание тяжёлых объектов — здесь.</summary>
+		public virtual void Attach(SwHostView host)
+		{
+		Host = host;
+		Health = SwHealth.Warmup;
+		}
+		
+		/// <summary>
+		/// Единственный метод, который обязан реализовать наследник.
+		/// Результат НЕ возвращается, а кладётся в ящик вызовом Emit.
+		/// Так коммутатор способен отличить «модуль промолчал» от
+		/// «модуль отдал, но до коммутатора не дошло».
+		/// </summary>
+		public abstract void Compute(int barsInProgress);
+		
+		/// <summary>Отправка сигнала. Только этот путь считается отправкой.</summary>
+		/// <summary>Событие визуального слоя. Этап 0: принимается коммутатором без отрисовки.</summary>
+		/// <summary>Телеметрия модуля для пульта: JSON-объект или null. Вызывается, только когда пульт подключён.</summary>
+		public virtual string TelemetryJson(System.Globalization.CultureInfo inv) { return null; }
+
+		protected void EmitVisual(SwVisualEvent e)
+		{
+			if (Host != null) Host.AcceptVisual(Id, e);
+		}
+
+		protected void Emit(SwSignal s)
+		{
+		outboxSignal.Enqueue(s);
+		EmitCount++;
+		LastEmitBar = s.ProducedAtBar;
+		}
+		
+		/// <summary>Отправка требования. Только этот путь считается отправкой.</summary>
+		protected void Emit(SwAction a)
+		{
+		outboxAction.Enqueue(a);
+		EmitCount++;
+		LastEmitBar = a.ProducedAtBar;
+		}
+		
+		/// <summary>Разбор ящика коммутатором. Возвращает число принятых.</summary>
+		public int DrainSignals(List<SwSignal> into)
+		{
+		int c = 0;
+		while (outboxSignal.Count > 0)
+		{
+		SwSignal s = outboxSignal.Dequeue();
+		into.Add(s);
+		LastSignal = s;
+		CollectCount++; c++;
+		}
+		return c;
+		}
+		
+		public int DrainActions(List<SwAction> into)
+		{
+		int c = 0;
+		while (outboxAction.Count > 0)
+		{
+		SwAction a = outboxAction.Dequeue();
+		into.Add(a);
+		LastAction = a;
+		CollectCount++; c++;
+		}
+		return c;
+		}
+		
+		public int PendingInOutbox { get { return outboxSignal.Count + outboxAction.Count; } }
+		
+		public void MarkFault(string text)
+		{
+		Health = SwHealth.Faulted;
+		FaultCount++;
+		LastFaultText = text ?? "без текста";
+		}
+		}
+		
+		/// <summary>
+		/// УРЕЗАННОЕ ПРЕДСТАВЛЕНИЕ КОММУТАТОРА ДЛЯ МОДУЛЯ.
+		///
+		/// Содержит только то, что модулю нужно для вычисления. Ордерного API
+		/// здесь нет и не появится: это и есть техническая гарантия того, что
+		/// модуль не выставит заявку в обход исполнителя.
+		/// </summary>
+		public sealed class SwHostView
+		{
+		private readonly DZ_SW_Hub_S021 hub;
+		internal SwHostView(DZ_SW_Hub_S021 h) { hub = h; }
+		public double MinConfidence { get { return hub.MinConfidence; } }
+
+		// --- визуальный слой, журнал сигналов, каналы (этап 0: приём без отрисовки) ---
+		public bool VisualOn(SwVisualRole role) { return hub.VisualsEnabled; }
+		public bool VisualDebugOn { get { return hub.VisualsEnabled && hub.VisualDebugEnabled; } }
+		internal void AcceptVisual(string moduleId, SwVisualEvent e) { hub.HubVisual(moduleId, e); }
+		public void RequestSignalJournalEntry(string moduleId, DateTime time, string signalId, int direction,
+			double confidence, string description, string reason)
+		{
+			Trace(moduleId, "SIGNAL_JOURNAL", time.ToString("yyyy-MM-dd HH:mm") + " " + signalId + " " + direction
+				+ " " + confidence.ToString("F2") + " " + description + " | " + reason);
+		}
+		public void SetChannelPlot(int track, int line, double value, int variant) { hub.HubChannelPlot(track, line, value, variant); }
+		
+		public int CurrentBar { get { return hub.HubCurrentBar; } }
+		public int ExecBip { get { return hub.HubExecBip; } }
+		public DateTime Time { get { return hub.HubTime; } }
+		public double TickSize { get { return hub.HubTickSize; } }
+		
+		public double Close(int barsAgo) { return hub.HubClose(barsAgo); }
+		public double Open(int barsAgo) { return hub.HubOpen(barsAgo); }
+		public double High(int barsAgo) { return hub.HubHigh(barsAgo); }
+		public double Low(int barsAgo) { return hub.HubLow(barsAgo); }
+		
+		// --- доступ к произвольной серии пула ---
+		//
+		// Модуль, работающий на собственном таймфрейме, обязан получать
+		// значения ТОЛЬКО через эти методы. Прямого доступа к BarsArray у него
+		// нет: иначе он смог бы обойти проверку готовности и прочитать бар,
+		// которого ещё не существует.
+		
+		/// <summary>Номер BarsInProgress слота. 0 — серия графика.</summary>
+		public int Bip(int slot) { return hub.ResolveSlot(slot); }
+		
+		/// <summary>Загружена ли серия слота.</summary>
+		public bool SlotLoaded(int slot) { return hub.IsSlotLoaded(slot); }
+		
+		/// <summary>Номер текущего бара серии слота. Минус один — данных нет.</summary>
+		public int BarOf(int slot) { return hub.HubBarOf(slot); }
+		
+		/// <summary>Готовность серии слота: есть ли нужное число баров.</summary>
+		public bool SlotReady(int slot, int needBars) { return hub.HubSlotReady(slot, needBars); }
+		
+		public double CloseOf(int slot, int barsAgo) { return hub.HubValueOf(slot, barsAgo, 0); }
+		public double OpenOf(int slot, int barsAgo) { return hub.HubValueOf(slot, barsAgo, 1); }
+		public double HighOf(int slot, int barsAgo) { return hub.HubValueOf(slot, barsAgo, 2); }
+		public double LowOf(int slot, int barsAgo) { return hub.HubValueOf(slot, barsAgo, 3); }
+		public double VolumeOf(int slot, int barsAgo) { return hub.HubValueOf(slot, barsAgo, 4); }
+		public DateTime TimeOf(int slot, int barsAgo) { return hub.HubTimeOf(slot, barsAgo); }
+		
+		/// <summary>Закрылся ли на этом такте бар слота. Для модулей на старших ТФ.</summary>
+		public bool IsBarCloseOf(int slot, int currentBip) { return hub.ResolveSlot(slot) == currentBip; }
+		
+		/// <summary>Текущее направление позиции: +1, 0, -1. Только чтение.</summary>
+		public int PositionSide { get { return hub.HubPositionSide; } }
+		public int PositionQuantity { get { return hub.HubPositionQty; } }
+		public double PositionAvgPrice { get { return hub.HubPositionAvg; } }
+		
+		/// <summary>Запись в общую трассировку из модуля.</summary>
+		/// <summary>Реализованный результат стратегии. Только чтение.</summary>
+		public double RealizedPnl { get { return hub.HubRealizedPnl; } }
+		
+		/// <summary>Число завершённых сделок. В режиме без ордеров ноль.</summary>
+		public int RealizedTradeCount { get { return hub.HubRealizedTradeCount; } }
+		
+		/// <summary>Первый бар новой торговой сессии по шаблону торговых часов.</summary>
+		public bool IsFirstBarOfSession { get { return hub.HubIsFirstBarOfSession; } }
+		
+		/// <summary>Стоимость одного тика одного контракта.</summary>
+		public double TickValue { get { return hub.HubTickSize * hub.HubPointValue; } }
+		
+		public void Trace(string moduleId, string ev, string detail)
+		{
+		hub.HubTrace(moduleId, ev, detail);
+		}
+		}
+		
+		#endregion
+		
+		#region Демонстрационные модули
+		
+		/// <summary>
+		/// ОБРАЗЕЦ МОДУЛЯ РОЛИ Signal. Пересечение двух скользящих средних,
+		/// посчитанных вручную: сторонних индикаторов модуль не создаёт, чтобы
+		/// образец оставался самодостаточным.
+		/// </summary>
+		public class SwDemoSignalModule : SwModule
+		{
+		private readonly int fast, slow;
+		
+		public SwDemoSignalModule(string id, int fastLen, int slowLen)
+		{
+		Id = id; Role = SwRole.Signal;
+		fast = Math.Max(2, fastLen); slow = Math.Max(3, slowLen);
+		}
+		
+		public override void Compute(int bip)
+		{
+		if (bip != Host.ExecBip) return;
+		
+		int bar = Host.CurrentBar;
+		if (bar < slow + 2)
+		{
+		Health = SwHealth.Warmup;
+		Emit(SwSignal.Empty(bar));
+		return;
+		}
+		
+		double f = 0, s = 0;
+		for (int i = 0; i < fast; i++) f += Host.Close(i);
+		for (int i = 0; i < slow; i++) s += Host.Close(i);
+		f /= fast; s /= slow;
+		
+		SwSignal sig = new SwSignal();
+		sig.IsReady = true;
+		sig.ProducedAtBar = bar;
+		sig.Direction = f > s ? 1 : f < s ? -1 : 0;
+		sig.Confidence = Math.Min(1.0, Math.Abs(f - s) / Math.Max(Host.TickSize, 1e-9) / 20.0);
+		sig.Text = "MA " + fast + "/" + slow + " " + (sig.Direction > 0 ? "up" : sig.Direction < 0 ? "dn" : "flat");
+		
+		Health = SwHealth.Ok;
+		Emit(sig);
+		}
+		}
+		
+		/// <summary>ОБРАЗЕЦ МОДУЛЯ РОЛИ Filter. Запрещает вход против длинного окна.</summary>
+		public class SwDemoFilterModule : SwModule
+		{
+		private readonly int lookback;
+		
+		public SwDemoFilterModule(string id, int lb)
+		{
+		Id = id; Role = SwRole.Filter; lookback = Math.Max(5, lb);
+		}
+		
+		public override void Compute(int bip)

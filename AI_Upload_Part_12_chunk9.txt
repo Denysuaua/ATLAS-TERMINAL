@@ -1,0 +1,300 @@
+﻿//  ту же секунду, что и свеча анализа, приходит в очереди тактов ПОСЛЕ неё.
+//  Поэтому [B18]:
+//    Exact — дождаться поздних кластеров; голос — в следующем такте исполнения;
+//    Fast  — голос по закрытию свечи; кластеры с меткой времени её конца
+//            отбрасываются (для тиков это доли процента объёма);
+//    Auto  — Fast для тикового источника (подбары без высоты), иначе Exact.
+//
+//  ЧЕГО НЕТ. Взгляда в будущее: голос опирается только на кластеры закрытой
+//  свечи и прошлые балансы. Будущие свечи — только в статистике отчёта.
+//  Гипотеза «масса выше опоры → продолжение вверх» проверяется блоком
+//  исследования [B19] на ваших данных: таблица доходностей по корзинам
+//  рычага и медианного центра должна показать монотонность, если связь есть.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Роль модуля рычага в решении.</summary>
+    public enum SwLeverRole
+    {
+        Filter,     // вердикт по текущему голосу
+        Signal      // новый голос вверх или вниз
+    }
+
+    /// <summary>Чем взвешивается кластер.</summary>
+    public enum SwLeverWeight
+    {
+        Volume,     // объём
+        Ticks       // число сделок; для минутного источника — время у цены
+    }
+
+    /// <summary>Опора рычага — геометрический центр свечи.</summary>
+    public enum SwLeverFulcrum
+    {
+        RangeMid,   // середина между максимумом и минимумом
+        BodyMid     // середина тела
+    }
+
+    /// <summary>Какой мерой голосует модуль.</summary>
+    public enum SwLeverMeasure
+    {
+        Both,           // среднее рычага богатых кластеров и медианного центра
+        Lever,          // только рычаг богатых кластеров
+        MedianCenter    // только медианный центр массы
+    }
+
+    /// <summary>Вердикт роли Filter в середине.</summary>
+    public enum SwLeverPolicy
+    {
+        DirectionOnly,  // середина не мешает
+        BlockMiddle     // середина — вето: движение затухает
+    }
+
+    /// <summary>Когда профиль свечи считается полным.</summary>
+    public enum SwLeverFinalize
+    {
+        Auto,
+        Exact,
+        Fast
+    }
+
+    /// <summary>Голос рычага.</summary>
+    public enum SwLeverState
+    {
+        Warmup,
+        Up,
+        Down,
+        Middle
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwLeverConfig
+    {
+        public SwLeverRole Role = SwLeverRole.Filter;
+        public int AnalysisSlot = 0;
+        public int ClusterSlot = 1;
+        public SwLeverWeight Weight = SwLeverWeight.Volume;
+        public int Clusters = 10;
+        public SwLeverFulcrum Fulcrum = SwLeverFulcrum.RangeMid;
+        public SwLeverMeasure Measure = SwLeverMeasure.Both;
+        public int SmoothCandles = 3;
+        public int ScaleWindow = 50;
+        public double VoteZ = 0.5;
+        public SwLeverPolicy Policy = SwLeverPolicy.DirectionOnly;
+        public bool SignalWithTrend = false;
+        public int TrendWindow = 20;
+        public int SignalBars = 1;
+        public bool ExitAgainst = false;
+        public int ExitConfirm = 2;
+        public int MinHeightTicks = 4;
+        public SwLeverFinalize Finalize = SwLeverFinalize.Auto;
+        public bool Research = true;
+        public int ResearchHorizon = 5;
+        public bool ExpPocMeasure = false;     // Э22
+        public double ExpClrMin = 0;           // Э69: минимум тела к диапазону; 0 — выключено
+        public double ExpVolZMin = 0;          // Э69: минимум z массы свечи; 0 — выключено
+    }
+
+    /// <summary>Накопитель статистики события: число, средняя, доля в сторону события.</summary>
+    public class SwLeverStat
+    {
+        public int N, Hits;
+        public double Sum, Sum2;
+
+        public void Add(double v)
+        {
+            if (double.IsNaN(v) || double.IsInfinity(v)) return;
+            N++; Sum += v; Sum2 += v * v;
+            if (v > 0) Hits++;
+        }
+
+        public double Mean { get { return N > 0 ? Sum / N : double.NaN; } }
+        public double HitRate { get { return N > 0 ? (double)Hits / N : double.NaN; } }
+
+        public double StdErr
+        {
+            get
+            {
+                if (N < 2) return double.NaN;
+                double m = Sum / N;
+                double v = (Sum2 - N * m * m) / (N - 1);
+                return v > 0 ? Math.Sqrt(v / N) : 0;
+            }
+        }
+    }
+
+    /// <summary>Итог взвешивания одной свечи анализа.</summary>
+    public class SwLeverCandle
+    {
+        public long Index;                  // номер свечи анализа
+        public DateTime Start, End;
+        public double Open, High, Low, Close;
+        public bool HasData;
+        public string NoDataReason = string.Empty;
+
+        public double Fulcrum;              // опора
+        public double Center;               // медиана массы
+        public double MedianOffset;         // m: смещение медианы от опоры в долях плеча
+        public double Lever;                // T: рычаг богатых кластеров
+        public double Balance;              // мера голосования по [B09]
+        public double Weight;               // масса свечи
+        public int Levels;                  // цен в профиле
+
+        public int Clusters;
+        public double[] ClLo, ClHi, ClDensity;
+        public bool[] ClRich;
+        public double MedianDensity;
+        public double Poc, PocOffset;       // Э22: точка контроля и её смещение от опоры
+    }
+
+    public class SwLeverModule : SwModule
+    {
+        private readonly SwLeverConfig cfg;
+        private bool srcOk;
+        private double tick = 1e-6;
+
+        // --- профиль ---
+        private Dictionary<int, double> curProf = new Dictionary<int, double>();
+        private Dictionary<int, double> pendProf = new Dictionary<int, double>();
+        private bool pending;                       // закрытая свеча ждёт поздних кластеров
+        private SwLeverCandle pendSnap;
+        private bool firstCandle = true;            // первая свеча неполная: начало данных
+        private DateTime lastSubTime = DateTime.MinValue;
+        private DateTime lastClosedEnd = DateTime.MinValue;
+        private long anaIndex;
+        private int subSeen, subPoint;
+        private bool modeTraced;
+        private long lateDropped, candlesSkipped, candlesWeighed;
+        private double outsideWeight, totalWeight;
+
+        // --- ряды по свечам с данными ---
+        private readonly List<double> hB = new List<double>();
+        private readonly List<double> hW = new List<double>();
+        private readonly List<double> hC = new List<double>();
+        private readonly List<double> hR = new List<double>();
+        private int cap = 64;
+
+        // --- состояние ---
+        private SwLeverState state = SwLeverState.Warmup;
+        private double smooth = double.NaN, scale = double.NaN, z = double.NaN;
+        private double biasMedian = double.NaN;
+        private int trendDir;
+        private SwLeverCandle last;
+        private int lastClusters;
+
+        // --- сигнал, выход ---
+        private int pendDir, pendBarsLeft;
+        private double pendConf;
+        private string pendId = string.Empty, pendText = string.Empty, pendShort = string.Empty;
+        private int exitAgainst;
+        private bool exitArmed;
+        private string exitReason = string.Empty;
+        private int lastPosSide;
+        private double lastAvg = double.NaN;
+        private int exitShownBar = -1;
+
+        // --- счётчики ---
+        private int votesUp, votesDown, fades, suppressedTrend, exitsRequested;
+
+        public SwLeverModule(string id, SwLeverConfig config)
+        {
+            Id = id;
+            cfg = config ?? new SwLeverConfig();
+            Role = cfg.Role == SwLeverRole.Signal ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+            tick = Host.TickSize > 0 ? Host.TickSize : 1e-6;
+            cap = Math.Max(Math.Max(cfg.ScaleWindow, cfg.TrendWindow), Math.Max(cfg.SmoothCandles, 10)) + 4;
+
+            // Кластеры должны идти из другой серии: невключённый слот пула читался
+            // бы с графика, и свеча «взвешивала» бы сама себя.
+            bool loaded = cfg.ClusterSlot == 0 || Host.SlotLoaded(cfg.ClusterSlot);
+            srcOk = loaded && Host.Bip(cfg.ClusterSlot) != Host.Bip(cfg.AnalysisSlot);
+
+            Host.Trace(Id, "LEVER_ATTACHED",
+                "роль " + cfg.Role + ", свечи — слот " + cfg.AnalysisSlot + ", кластеры — слот " + cfg.ClusterSlot
+                + (srcOk ? "" : " (НЕДОСТУПЕН)") + ", вес " + cfg.Weight + ", кластеров " + cfg.Clusters
+                + ", опора " + cfg.Fulcrum + ", мера " + cfg.Measure + ", сглаживание " + cfg.SmoothCandles
+                + ", масштаб " + cfg.ScaleWindow + ", порог z " + cfg.VoteZ.ToString("F2") + ", профиль " + cfg.Finalize);
+
+            if (!srcOk)
+                Host.Trace(Id, "LEVER_NO_SOURCE", "слот кластеров " + cfg.ClusterSlot
+                    + " не загружен или совпадает с серией свечей: взвешивать нечем, модуль не готов");
+        }
+
+        public override void Compute(int bip)
+        {
+            if (srcOk)
+            {
+                if (Host.IsBarCloseOf(cfg.ClusterSlot, bip)) OnSubBar();
+                if (Host.IsBarCloseOf(cfg.AnalysisSlot, bip)) OnAnalysisClose();
+            }
+
+            if (bip != Host.ExecBip) return;
+            ExecTick();
+        }
+
+        #region Профиль свечи
+
+        private bool FastMode()
+        {
+            if (cfg.Finalize == SwLeverFinalize.Fast) return true;
+            if (cfg.Finalize == SwLeverFinalize.Exact) return false;
+            // Auto: тиковый источник — подбары без высоты.
+            bool fast = subSeen >= 200 && subPoint >= 0.95 * subSeen;
+            if (!modeTraced && subSeen >= 200)
+            {
+                modeTraced = true;
+                Host.Trace(Id, "LEVER_MODE", fast
+                    ? "источник тиковый: профиль по закрытию свечи (Fast)"
+                    : "источник с высотой подбаров: ожидание поздних кластеров (Exact), голос на такт позже");
+            }
+            return fast;
+        }
+
+        private bool TickLike()
+        {
+            return subSeen >= 50 && subPoint >= 0.95 * subSeen;
+        }
+
+        private void OnSubBar()
+        {
+            DateTime t = Host.TimeOf(cfg.ClusterSlot, 0);
+            double h = Host.HighOf(cfg.ClusterSlot, 0);
+            double l = Host.LowOf(cfg.ClusterSlot, 0);
+            double v = Host.VolumeOf(cfg.ClusterSlot, 0);
+            if (t == DateTime.MinValue || double.IsNaN(h) || double.IsNaN(l)) return;
+
+            subSeen++;
+            if (Math.Abs(h - l) < tick * 0.5) subPoint++;
+            lastSubTime = t;
+
+            if (pending)
+            {
+                if (t <= pendSnap.End)
+                {
+                    Accumulate(pendProf, h, l, v);
+                    // У источника с высотой подбаров (минуты) в момент конца свечи
+                    // кончается ровно один подбар: после него профиль полон. У тиков
+                    // метку конца могут нести несколько сделок — ждём следующую.
+                    if (t == pendSnap.End && !TickLike()) FinalizePending();
+                    return;
+                }
+                // Первый подбар после конца свечи: её профиль полон.
+                FinalizePending();
+            }
+
+            if (lastClosedEnd != DateTime.MinValue && t <= lastClosedEnd)
+            {
+                lateDropped++;
+                return;
+            }
+            Accumulate(curProf, h, l, v);
+        }
+
+        /// <summary>

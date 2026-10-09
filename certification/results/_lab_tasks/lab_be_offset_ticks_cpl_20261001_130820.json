@@ -1,0 +1,32 @@
+{
+ "task_id": "lab_be_offset_ticks_cpl_20261001_130820",
+ "data": "MGC",
+ "instrument": "MGC",
+ "profile": "chicago",
+ "mode": "dev",
+ "objective": "SharpeDaily",
+ "select": "plateau",
+ "max_trials": 500,
+ "start": "2015-01-01",
+ "end": "2026-01-01",
+ "optimize": {
+  "be_offset_ticks": [
+   1,
+   2,
+   3
+  ],
+  "be_trigger_ticks": [
+   10,
+   15,
+   20,
+   25,
+   30
+  ]
+ },
+ "constraints": [
+  "be_offset_ticks < stop_ticks",
+  "be_trigger_ticks < stop_ticks",
+  "min_range_ticks < max_range_ticks",
+  "atr_fast < atr_slow"
+ ]
+}

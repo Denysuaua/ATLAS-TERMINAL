@@ -1,0 +1,68 @@
+{
+  "task_id": "dev_20261001134718",
+  "target_module": "8 · Пробой: окна и фильтры",
+  "data": "MGC",
+  "profile": "berlin",
+  "mode": "dev",
+  "objective": "SharpeDaily",
+  "max_trials": 5000,
+  "select": "plateau",
+  "base": {
+    "stop_ticks": 200,
+    "be_offset_ticks": 2,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 20,
+    "atr_slow": 40,
+    "trend_bars": 10
+  },
+  "constraints": [
+    "be_offset_ticks < stop_ticks",
+    "be_trigger_ticks < stop_ticks",
+    "min_range_ticks < max_range_ticks",
+    "atr_fast < atr_slow"
+  ],
+  "optimize": {
+    "trail_morning_ticks": [
+      10,
+      15,
+      20,
+      25,
+      30,
+      35,
+      40,
+      45,
+      50,
+      55,
+      60,
+      65,
+      70,
+      75,
+      80,
+      85,
+      90,
+      95,
+      100,
+      105,
+      110,
+      115,
+      120,
+      125,
+      130,
+      135,
+      140,
+      145,
+      150
+    ],
+    "max_entries_per_session": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  "instrument": "MGC"
+}

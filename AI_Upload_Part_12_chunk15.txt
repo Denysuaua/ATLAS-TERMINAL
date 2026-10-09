@@ -1,0 +1,300 @@
+﻿//    CHoCH  — смена характера: пробой противоположного экстремума, разворот;
+//    CHoCH+ — усиленная смена: пробит не только ближний экстремум, но и
+//             предыдущий за ним. Более глубокий структурный слом.
+//
+//  ДВА МАСШТАБА. Внутренний использует малую силу опорной точки и ловит
+//  мелкую структуру; свинговый использует большую силу и ловит крупную.
+//  Итого двенадцать типов событий: 2 ТФ × 2 масштаба × 3 типа.
+//
+//  ПОЧЕМУ СЧИТАЕТСЯ НАТИВНО, А НЕ ЧЕРЕЗ ХОСТИНГ ИНДИКАТОРА.
+//  Хостируемый индикатор, объявляющий собственные серии данных, требует
+//  зеркалирования вызовов AddDataSeries в State.Configure хозяина. Состав
+//  таких вызовов во внешнем индикаторе мне неизвестен и проверке по
+//  официальному руководству не поддаётся. Нативный расчёт самодостаточен
+//  и полностью прослеживается.
+//
+//  ГЛАВНАЯ ЛОВУШКА, КОТОРАЯ ЗДЕСЬ ЗАКРЫТА.
+//  Опорная точка на баре N становится известна только на баре N + right.
+//  До этого момента она НЕ СУЩЕСТВУЕТ. Использование её раньше — заглядывание
+//  в будущее, не дающее ни ошибки, ни предупреждения: результат прогона
+//  просто оказывается лучше достижимого. Модуль обращается к экстремуму
+//  исключительно после подтверждения и хранит номер бара подтверждения.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Масштаб структуры.</summary>
+    public enum SwPacScope
+    {
+        Internal,   // малая сила опорной точки, мелкая структура
+        Swing       // большая сила, крупная структура
+    }
+
+    /// <summary>Тип структурного события.</summary>
+    public enum SwPacEvent
+    {
+        None,
+        Bos,        // продолжение
+        Choch,      // смена характера
+        ChochPlus   // усиленная смена характера
+    }
+
+    /// <summary>Чем подтверждается пробой уровня.</summary>
+    public enum SwPacStrongWeak { Off, VolumeRatio, TrendSide }
+
+    public enum SwPacBreakBy
+    {
+        BarClose,   // закрытие за уровнем; строже и надёжнее
+        BarExtreme  // касание экстремумом; раньше, но чаще ложно
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    /// <summary>Настройки модуля структуры. Значения по умолчанию рабочие.</summary>
+    public class SwPacConfig
+    {
+        // --- серии ---
+        public int LowerSlot = 1;          // слот пула для младшего ТФ
+        public int HigherSlot = 2;         // слот пула для старшего ТФ
+        public bool UseHigherTimeframe = true;
+
+        // --- сила опорных точек ---
+        public int InternalStrength = 3;   // баров слева и справа для внутренней структуры
+        public int SwingStrength = 10;     // то же для свинговой
+
+        // --- подтверждение пробоя ---
+        public SwPacBreakBy BreakBy = SwPacBreakBy.BarClose;
+
+        // --- какие события допускаются во вход ---
+        public bool LowInternalBos = true;     // v1.4: догма — все шесть событий на младшем ТФ
+        public bool LowInternalChoch = true;
+        public bool LowInternalChochPlus = true;
+        public bool LowSwingBos = true;
+        public bool LowSwingChoch = true;
+        public bool LowSwingChochPlus = true;
+
+        public bool HighInternalBos = false;
+        public bool HighInternalChoch = false;
+        public bool HighInternalChochPlus = false;
+        public bool HighSwingBos = true;
+        public bool HighSwingChoch = true;
+        public bool HighSwingChochPlus = true;
+
+        // --- уверенность по типу события ---
+        // Значения субъективны и служат лишь для сравнения событий между
+        // собой. Порог отсечения задаётся в ядре настройкой [D02].
+        public double ConfidenceBos = 0.40;
+        public double ConfidenceChoch = 0.65;
+        public double ConfidenceChochPlus = 0.85;
+        public double HigherTimeframeBonus = 0.10;
+        // --- эксперименты v1.3, выключены нулём ---
+        public double ExpBreakAtr = 0;       // Э37: глубина пробоя, долей ATR
+        public double ExpBreakVolMult = 0;   // Э38: объём бара пробоя, кратно среднему
+        public int ExpBreakWindow = 14;      // окно ATR и среднего объёма, баров
+        public int ExpMinBarsBetweenSignals = 0;   // Э42: минимум баров между сигналами
+        public bool ExpChochPlusFailedExtreme = false;             // Э76: правила PACV025
+        public SwPacStrongWeak ExpStrongWeak = SwPacStrongWeak.Off; // Э77: сильные/слабые экстремумы
+        public double ExpStrongBonus = 0.10;                        // Э77: ±к уверенности по силе пробитого уровня
+    }
+
+    /// <summary>
+    /// Состояние структуры одного масштаба на одной серии.
+    /// Хранит подтверждённые экстремумы и действующее направление.
+    /// </summary>
+    public class SwPacState
+    {
+        public int Strength;
+
+        // Подтверждённые экстремумы. Номер бара подтверждения хранится рядом:
+        // без него невозможно доказать, что уровень существовал на момент
+        // использования.
+        public double LastHigh = double.NaN;
+        public int LastHighBar = -1;
+        public double PrevHigh = double.NaN;
+
+        public double LastLow = double.NaN;
+        public int LastLowBar = -1;
+        public double PrevLow = double.NaN;
+
+        public int Trend;                 // +1 бычий, -1 медвежий, 0 не определён
+
+        // Пробитые уровни помечаются, чтобы одно и то же событие не
+        // порождалось на каждом последующем баре.
+        public bool HighBroken;
+        public bool LowBroken;
+
+        public int BosCount, ChochCount, ChochPlusCount;
+
+        // v1.5 — Э76/Э77: несостоявшиеся экстремумы, ожидание первого CHoCH, объём ног и сила уровней
+        public bool HadFailedHigh, HadFailedLow, PriorEventConfirmed;
+        public double VolSinceHigh, VolSinceLow, PrevLegVolHigh = double.NaN, PrevLegVolLow = double.NaN;
+        public int LastHighStrong = -1, LastLowStrong = -1;   // 1 сильный, 0 слабый, −1 нет метки
+
+        public void Reset(int strength)
+        {
+            Strength = Math.Max(1, strength);
+            LastHigh = LastLow = PrevHigh = PrevLow = double.NaN;
+            LastHighBar = LastLowBar = -1;
+            Trend = 0;
+            HighBroken = LowBroken = false;
+            BosCount = ChochCount = ChochPlusCount = 0;
+            HadFailedHigh = HadFailedLow = PriorEventConfirmed = false;
+            VolSinceHigh = VolSinceLow = 0; PrevLegVolHigh = PrevLegVolLow = double.NaN; LastHighStrong = LastLowStrong = -1;
+        }
+
+        /// <summary>v1.5. Объём бара в ноги обоих типов (PACV025: накопление каждый бар, сброс на пивоте).</summary>
+        public void AccumulateVolume(double v) { if (!double.IsNaN(v) && v > 0) { VolSinceHigh += v; VolSinceLow += v; } }
+
+        /// <summary>v1.5. Сила подтверждённого пивота по PACV025; обновляет ноги объёма. −1 — метки нет.</summary>
+        public int Classify(bool isHigh, SwPacStrongWeak mode)
+        {
+            int res = -1;
+            if (mode == SwPacStrongWeak.VolumeRatio)
+            {
+                double leg = isHigh ? VolSinceHigh : VolSinceLow, prev = isHigh ? PrevLegVolHigh : PrevLegVolLow;
+                if (!double.IsNaN(prev) && prev > 0 && leg > 0) res = Math.Min(prev, leg) / Math.Max(prev, leg) >= 0.5 ? 1 : 0;
+                if (isHigh) { PrevLegVolHigh = leg; VolSinceHigh = 0; } else { PrevLegVolLow = leg; VolSinceLow = 0; }
+            }
+            else if (mode == SwPacStrongWeak.TrendSide)
+            {
+                if (Trend != 0) res = ((Trend < 0 && isHigh) || (Trend > 0 && !isHigh)) ? 1 : 0;
+            }
+            return res;
+        }
+
+        public void PushHigh(double px, int bar)
+        {
+            if (!double.IsNaN(LastHigh)) { if (px < LastHigh) HadFailedHigh = true; else if (px > LastHigh) HadFailedHigh = false; }   // Э76
+            PrevHigh = LastHigh;
+            LastHigh = px;
+            LastHighBar = bar;
+            HighBroken = false;
+        }
+
+        public void PushLow(double px, int bar)
+        {
+            if (!double.IsNaN(LastLow)) { if (px > LastLow) HadFailedLow = true; else if (px < LastLow) HadFailedLow = false; }       // Э76
+            PrevLow = LastLow;
+            LastLow = px;
+            LastLowBar = bar;
+            LowBroken = false;
+        }
+    }
+
+    public class SwPacStructureModule : SwModule
+    {
+        private readonly SwPacConfig cfg;
+
+        private readonly SwPacState lowInternal = new SwPacState();
+        private readonly SwPacState lowSwing = new SwPacState();
+        private readonly SwPacState highInternal = new SwPacState();
+        private readonly SwPacState highSwing = new SwPacState();
+
+        // Событие, отобранное на текущем такте решения.
+        private SwPacEvent pendingEvent = SwPacEvent.None;
+        private int pendingDir;
+        private double pendingConfidence;
+        private string pendingText = string.Empty;
+        private int pendingRank;           // приоритет отбора
+
+        // --- v1.1: наблюдение, на отбор не влияет ---
+        private string pendingSignalId = string.Empty;
+        private string pendingShort = string.Empty;
+        private int labelsThisTick;
+
+        private sealed class PacCandidate
+        {
+            public string Id;
+            public string Desc;
+            public int Dir;
+            public double Conf;
+        }
+
+        // Допущенные события такта, уступившие отобранному: для журнала сигналов.
+        private readonly List<PacCandidate> tickCandidates = new List<PacCandidate>();
+
+        // --- v1.2: события такта для отрисовки после отбора ---
+        private sealed class PacEventVis
+        {
+            public string Id;
+            public bool Filtered;
+            public int Flag;
+            public double Conf;
+            public int Dir;
+            public string Text;
+            public DateTime TBreak, TPivot;
+            public double Level, Hi, Lo;
+        }
+        private readonly List<PacEventVis> tickEventVis = new List<PacEventVis>();
+
+        // Показанные незавершённые опорные точки: ключ → номер бара кандидата.
+        private readonly Dictionary<string, int> candShown = new Dictionary<string, int>();
+
+        public SwPacStructureModule(string id, SwPacConfig config)
+        {
+            Id = id;
+            Role = SwRole.Signal;
+            cfg = config ?? new SwPacConfig();
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+
+            lowInternal.Reset(cfg.InternalStrength);
+            lowSwing.Reset(cfg.SwingStrength);
+            highInternal.Reset(cfg.InternalStrength);
+            highSwing.Reset(cfg.SwingStrength);
+
+            Host.Trace(Id, "PAC_ATTACHED",
+                "младший слот " + cfg.LowerSlot + ", старший слот " + cfg.HigherSlot
+                + ", сила " + cfg.InternalStrength + "/" + cfg.SwingStrength);
+        }
+
+        public override void Compute(int bip)
+        {
+            // --- 1. Обработка закрытия бара младшей серии ---
+            if (Host.IsBarCloseOf(cfg.LowerSlot, bip))
+                ProcessSeries(cfg.LowerSlot, lowInternal, lowSwing, false);
+
+            // --- 2. Обработка закрытия бара старшей серии ---
+            if (cfg.UseHigherTimeframe && Host.IsBarCloseOf(cfg.HigherSlot, bip))
+                ProcessSeries(cfg.HigherSlot, highInternal, highSwing, true);
+
+            // --- 3. Отправка только в такте серии исполнения ---
+            if (bip != Host.ExecBip) return;
+
+            int bar = Host.CurrentBar;
+
+            if (!Ready())
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                ClearPending();
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+
+            if (pendingEvent == SwPacEvent.None)
+            {
+                s.Direction = 0;
+                s.Confidence = 0;
+                s.Text = "структура: событий нет";
+            }
+            else if (cfg.ExpMinBarsBetweenSignals > 0 && lastSignalBar >= 0 && bar - lastSignalBar < cfg.ExpMinBarsBetweenSignals)
+            {
+                // Э42: событие слишком близко к прошлому сигналу — не независимое.
+                s.Direction = 0;
+                s.Confidence = 0;
+                s.Text = "структура: " + pendingShort + " пропущено — до прошлого сигнала " + (bar - lastSignalBar) + " баров";
+                Host.Trace(Id, "PAC_UNIQUENESS_SKIP", s.Text);
+            }
+            else
+            {
+                s.Direction = pendingDir;
+                s.Confidence = Math.Min(1.0, pendingConfidence);
+                s.Text = pendingText;

@@ -1,0 +1,305 @@
+{
+  "strategy": "DualBreakout",
+  "reference": "DZ_BT_DualBreakout_S021.py",
+  "note": "Параметры эталона и их свойства в NinjaTrader. Связи объявлены явно, с обоснованием: вывести влияние параметров автоматически по коду невозможно.",
+  "params": {
+    "stop_ticks": {
+      "default": 200,
+      "range": [
+        100,
+        150,
+        200,
+        250,
+        300
+      ],
+      "nt": "StopLossTicks",
+      "index": "[E03]"
+    },
+    "be_trigger_ticks": {
+      "default": 15,
+      "range": [
+        10,
+        15,
+        20,
+        25,
+        30
+      ],
+      "index": "[F33]",
+      "nt_expr": {
+        "BreakevenAtR": "be_trigger_ticks/stop_ticks",
+        "TrailActivateAtR": "be_trigger_ticks/stop_ticks"
+      }
+    },
+    "be_offset_ticks": {
+      "default": 1,
+      "range": [
+        1,
+        2,
+        3
+      ],
+      "nt": "BreakevenOffsetTicks",
+      "index": "[F32]"
+    },
+    "trail_morning_ticks": {
+      "default": 15,
+      "range": [
+        8,
+        10,
+        15,
+        20,
+        25,
+        30
+      ],
+      "nt": "DboMorningTrailTicks",
+      "index": "[W16]"
+    },
+    "trail_evening_ticks": {
+      "default": 10,
+      "range": [
+        6,
+        8,
+        10,
+        15,
+        20
+      ],
+      "nt": "DboEveningTrailTicks",
+      "index": "[W26]"
+    },
+    "min_range_ticks": {
+      "default": 15,
+      "range": [
+        10,
+        15,
+        20
+      ],
+      "nt": "DboMinRangeTicks",
+      "index": "[W31]"
+    },
+    "max_range_ticks": {
+      "default": 45,
+      "range": [
+        35,
+        45,
+        55,
+        65
+      ],
+      "nt": "DboMaxRangeTicks",
+      "index": "[W32]"
+    },
+    "min_base_bars": {
+      "default": 50,
+      "range": [
+        40,
+        50,
+        55
+      ],
+      "nt": "DboMinBaseBars",
+      "index": "[W33]"
+    },
+    "flat_threshold": {
+      "default": 0.85,
+      "range": [
+        0.75,
+        0.8,
+        0.85,
+        0.9,
+        0.95
+      ],
+      "nt": "DboFlatThreshold",
+      "index": "[W34]"
+    },
+    "atr_fast": {
+      "default": 20,
+      "range": [
+        10,
+        15,
+        20,
+        30
+      ],
+      "nt": "DboAtrFast",
+      "index": "[W35]"
+    },
+    "atr_slow": {
+      "default": 40,
+      "range": [
+        30,
+        40,
+        60,
+        80
+      ],
+      "nt": "DboAtrSlow",
+      "index": "[W36]"
+    },
+    "trend_bars": {
+      "default": 10,
+      "range": [
+        5,
+        8,
+        10,
+        15,
+        20
+      ],
+      "nt": "DboTrendBars",
+      "index": "[W37]"
+    },
+    "max_entries_per_session": {
+      "default": 0,
+      "range": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "nt": "DboMaxEntries",
+      "index": "[W39]"
+    }
+  },
+  "edges": [
+    {
+      "a": "stop_ticks",
+      "b": "be_trigger_ticks",
+      "why": "безубыток на +15 при стопе 200 — это 0,075R; соотношение задаёт структурную долю прибыльных stop/(stop+trigger)"
+    },
+    {
+      "a": "be_trigger_ticks",
+      "b": "be_offset_ticks",
+      "why": "отступ имеет смысл только относительно порога включения"
+    },
+    {
+      "a": "be_trigger_ticks",
+      "b": "trail_morning_ticks",
+      "why": "трейлинг включается вместе с безубытком; трейлинг короче порога подтягивает стоп выше безубытка сразу"
+    },
+    {
+      "a": "be_trigger_ticks",
+      "b": "trail_evening_ticks",
+      "why": "то же для вечера"
+    },
+    {
+      "a": "min_range_ticks",
+      "b": "max_range_ticks",
+      "why": "границы одного окна допуска ширины базы"
+    },
+    {
+      "a": "max_range_ticks",
+      "b": "stop_ticks",
+      "why": "уровень входа — граница базы; широкая база означает дальний противоположный край"
+    },
+    {
+      "a": "atr_fast",
+      "b": "atr_slow",
+      "why": "NormVol — их отношение"
+    },
+    {
+      "a": "atr_fast",
+      "b": "flat_threshold",
+      "why": "порог сравнивается с отношением, зависящим от обоих периодов"
+    },
+    {
+      "a": "atr_slow",
+      "b": "flat_threshold",
+      "why": "то же"
+    },
+    {
+      "a": "max_entries_per_session",
+      "b": "be_trigger_ticks",
+      "why": "повторные входы возникают после выходов по безубытку и трейлингу"
+    }
+  ],
+  "groups": {
+    "exit_management": [
+      "stop_ticks",
+      "be_trigger_ticks",
+      "be_offset_ticks",
+      "trail_morning_ticks",
+      "trail_evening_ticks"
+    ],
+    "base_filter": [
+      "min_range_ticks",
+      "max_range_ticks",
+      "min_base_bars"
+    ],
+    "volatility_filter": [
+      "atr_fast",
+      "atr_slow",
+      "flat_threshold"
+    ],
+    "direction": [
+      "trend_bars"
+    ],
+    "reentry": [
+      "max_entries_per_session"
+    ]
+  },
+  "instrument_profiles": {
+    "MGC": {
+      "note": "3 контракта MGC по 1 доллару за тик. Диапазоны — стартовые для золота, не сертифицированные.",
+      "reference": {
+        "tick": 0.1,
+        "usd_per_tick": 3.0,
+        "commission_rt_usd": 1.32
+      },
+      "ranges": {
+        "stop_ticks": [
+          100,
+          150,
+          200,
+          250,
+          300
+        ],
+        "trail_morning_ticks": [
+          15,
+          20,
+          30,
+          40
+        ],
+        "trail_evening_ticks": [
+          10,
+          15,
+          20,
+          30
+        ]
+      }
+    },
+    "GC": {
+      "note": "1 контракт GC: 10 долларов за тик. Комиссию укажите по своему тарифу.",
+      "reference": {
+        "tick": 0.1,
+        "usd_per_tick": 10.0,
+        "commission_rt_usd": 4.5
+      },
+      "ranges": {
+        "stop_ticks": [
+          100,
+          150,
+          200,
+          250,
+          300
+        ],
+        "trail_morning_ticks": [
+          15,
+          20,
+          30,
+          40
+        ],
+        "trail_evening_ticks": [
+          10,
+          15,
+          20,
+          30
+        ]
+      }
+    }
+  },
+  "nt_fixed": {
+    "BreakevenMode": "AtRMultiple",
+    "BreakevenOnBestPrice": true,
+    "TrailMode": "FixedDistance",
+    "UseScaleOut": false,
+    "Slot1Enabled": false,
+    "Slot2Enabled": false,
+    "Slot3Enabled": false,
+    "Slot8Enabled": true
+  },
+  "nt_fixed_note": "Постоянные значения меню, при которых стратегия в NinjaTrader совпадает с эталоном: безубыток по R с триггером по максимуму, трейлинг на фиксированном расстоянии от экстремума, без ступеней; модули структуры, линий и времени выключены (время конфликтует с окнами пробоя), пробой включён. Пул серий и ссылки [S90], [M84]–[M86] зависят от графика и задаются руками."
+}

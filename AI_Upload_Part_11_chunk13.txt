@@ -1,0 +1,300 @@
+﻿                DisplayAttribute d = Attribute.GetCustomAttribute(p, typeof(DisplayAttribute)) as DisplayAttribute;
+                string label = d != null && d.GetName() != null ? d.GetName() : p.Name;
+                sb.Append(p.Name).Append('|').Append(p.PropertyType.Name).Append('|').Append(label).Append('\n');
+            }
+            count = props.Count;
+            byte[] h;
+            using (var sha = System.Security.Cryptography.SHA256.Create())
+                h = sha.ComputeHash(Encoding.UTF8.GetBytes(sb.ToString()));
+            var hex = new StringBuilder(12);
+            for (int i = 0; i < 6; i++) hex.Append(h[i].ToString("x2"));
+            return hex.ToString();
+        }
+
+        /// <summary>
+        /// Э6 [T16] — ОТЛИЧИЯ ОТ УМОЛЧАНИЙ НА СТАРТЕ: одной строкой все настройки, чьё значение
+        /// не равно умолчанию из SetDefaults. Так виден молча изменённый режим — например,
+        /// выключенный [E01] при «умолчаниях» в остальном.
+        /// </summary>
+        private void PrintNonDefaults()
+        {
+            if (schemaDefaults == null) { Print("[HUB] отличия от умолчаний: умолчания не сняты"); return; }
+            int n;
+            string s = NonDefaultsString(out n);
+            Print("[HUB] отличий от умолчаний: " + n + (n > 0 ? " — " + s : string.Empty));
+        }
+
+        /// <summary>Все настройки со значением не по умолчанию: «[индекс] Имя = значение; …».</summary>
+        private string NonDefaultsString(out int n)
+        {
+            var sb = new StringBuilder(2048);
+            n = 0;
+            if (schemaDefaults == null) return string.Empty;
+            foreach (System.Reflection.PropertyInfo p in MenuProperties())
+            {
+                object def, cur;
+                if (!schemaDefaults.TryGetValue(p.Name, out def)) continue;
+                try { cur = p.GetValue(this, null); } catch { continue; }
+                if (object.Equals(def, cur)) continue;
+                DisplayAttribute d = Attribute.GetCustomAttribute(p, typeof(DisplayAttribute)) as DisplayAttribute;
+                string label = d != null && d.GetName() != null ? d.GetName() : p.Name;
+                int close = label.IndexOf(']');
+                string idx = label.StartsWith("[") && close > 0 ? label.Substring(0, close + 1) : p.Name;
+                if (n > 0) sb.Append("; ");
+                sb.Append(idx).Append(' ').Append(p.Name).Append(" = ").Append(cur == null ? "null" : cur.ToString());
+                n++;
+            }
+            return sb.ToString();
+        }
+
+        private static readonly object analyzerJournalLock = new object();
+
+        /// <summary>
+        /// Э11 [T19] — ЖУРНАЛ ИТЕРАЦИЙ АНАЛИЗАТОРА. При завершении итерации — дневной результат
+        /// её сделок (Trade: Exit.Time, ProfitCurrency, Commission — с. 2391–2393) в
+        /// dz_export\\sa_runs. Итерация опознаётся отпечатком своих настроек. Из этих строк
+        /// DZ_SA_Audit_S021.py строит матрицу «дни × итерации» и считает DSR и PBO —
+        /// оптимизация в анализаторе становится проверяемой так же, как на ПК. Итерация без
+        /// сделок пишется строкой без даты: она тоже испытание. Итерации идут параллельно,
+        /// поэтому запись — под общей блокировкой.
+        /// </summary>
+        private static TimeZoneInfo chicagoTz;
+        private bool tradingDayWarned;
+
+        /// <summary>
+        /// v1.17. ТОРГОВЫЙ ДЕНЬ CME по якорю 17:00 Чикаго: сессия, открывшаяся в 17:00 воскресенья, относится
+        /// к понедельнику; так же режет дни очиститель данных (anchor_hours_chicago = 17). Время исполнения
+        /// NinjaTrader отдаёт в поясе платформы, поэтому сначала перевод в UTC через Core.Globals, затем
+        /// в Чикаго. Прежде бралась календарная дата платформы, и сделки воскресной сессии Globex выпадали из
+        /// рабочих дней аудита DZ_SA_Audit_S021.py (находка Н-03 документа 14). Если пояс Чикаго в системе
+        /// не найден — прежняя календарная дата и одна строка в Output.
+        /// </summary>
+        private DateTime TradingDay(DateTime platformTime)
+        {
+            try
+            {
+                if (chicagoTz == null) chicagoTz = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
+                DateTime utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(platformTime, DateTimeKind.Unspecified),
+                    NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo);
+                DateTime ct = TimeZoneInfo.ConvertTimeFromUtc(utc, chicagoTz);
+                return ct.AddHours(7).Date;
+            }
+            catch (Exception ex)
+            {
+                if (!tradingDayWarned)
+                {
+                    tradingDayWarned = true;
+                    Print("[HUB] торговый день: пояс Чикаго недоступен, взята календарная дата платформы: " + ex.Message);
+                }
+                return platformTime.Date;
+            }
+        }
+
+        private void WriteAnalyzerIteration()
+        {
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                int n;
+                string pars = NonDefaultsString(out n).Replace(';', ',');
+                string id;
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                {
+                    byte[] h = sha.ComputeHash(Encoding.UTF8.GetBytes(pars));
+                    var hx = new StringBuilder(12);
+                    for (int i = 0; i < 6; i++) hx.Append(h[i].ToString("x2"));
+                    id = hx.ToString();
+                }
+                var days = new SortedDictionary<DateTime, double[]>();
+                var all = SystemPerformance.AllTrades;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    var tr = all[i];
+                    if (tr == null || tr.Exit == null) continue;
+                    DateTime d = TradingDay(tr.Exit.Time);   // v1.17: торговый день CME, не дата платформы
+                    double[] acc;
+                    if (!days.TryGetValue(d, out acc)) { acc = new double[3]; days[d] = acc; }
+                    acc[0] += tr.ProfitCurrency; acc[1] += tr.Commission; acc[2] += 1;
+                }
+                string instr = Instrument != null ? Instrument.FullName : "?";
+                var sb = new StringBuilder(4096);
+                if (days.Count == 0)
+                    sb.Append(id).Append(';').Append(instr).Append(';').Append(HubVersion).Append(";;0;0;0;").Append(pars).Append('\n');
+                foreach (var kv in days)
+                    sb.Append(id).Append(';').Append(instr).Append(';').Append(HubVersion).Append(';')
+                      .Append(kv.Key.ToString("yyyy-MM-dd", inv)).Append(';').Append(kv.Value[0].ToString("R", inv)).Append(';')
+                      .Append(kv.Value[1].ToString("R", inv)).Append(';').Append((int)kv.Value[2]).Append(';').Append(pars).Append('\n');
+                string folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "NinjaTrader 8", "dz_export", "sa_runs");
+                lock (analyzerJournalLock)
+                {
+                    System.IO.Directory.CreateDirectory(folder);
+                    string path = System.IO.Path.Combine(folder, "sa_daily_" + DateTime.Now.ToString("yyyyMMdd", inv) + ".csv");
+                    if (!System.IO.File.Exists(path))
+                        System.IO.File.WriteAllText(path, "iteration;instrument;hub_version;date;profit;commission;trades;params\n", new UTF8Encoding(false));
+                    System.IO.File.AppendAllText(path, sb.ToString(), new UTF8Encoding(false));
+                }
+            }
+            catch (Exception ex) { Print("[HUB] журнал итераций анализатора не записан: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// Э12 [T20] — ИТОГИ ПО ГОДАМ: результат, число сделок и PF каждого года. Стоп-критерий
+        /// проекта — знак эффекта меняется от года к году; здесь это видно без ПК. В режиме
+        /// без ордеров — по виртуальным сделкам, иначе — по сделкам стратегии.
+        /// </summary>
+        private string YearlyBreakdown()
+        {
+            var years = new SortedDictionary<int, double[]>();   // год → прибыль, убыток, сделок
+            if (DryRunMode)
+            {
+                foreach (var kv in virtYearPnl) years[kv.Key] = kv.Value;
+            }
+            else
+            {
+                var all = SystemPerformance.AllTrades;
+                for (int i = 0; i < all.Count; i++)
+                {
+                    var tr = all[i];
+                    if (tr == null || tr.Exit == null) continue;
+                    double[] a;
+                    int y = tr.Exit.Time.Year;
+                    if (!years.TryGetValue(y, out a)) { a = new double[3]; years[y] = a; }
+                    double p = tr.ProfitCurrency;
+                    if (p > 0) a[0] += p; else a[1] += -p;
+                    a[2] += 1;
+                }
+            }
+            var sb = new StringBuilder(512);
+            foreach (var kv in years)
+            {
+                double net = kv.Value[0] - kv.Value[1];
+                sb.Append("\n    ").Append(kv.Key).Append(": итог ").Append(net.ToString("F2"))
+                  .Append(", сделок ").Append((int)kv.Value[2])
+                  .Append(", PF ").Append(kv.Value[1] > 0 ? (kv.Value[0] / kv.Value[1]).ToString("F2") : "—");
+            }
+            return sb.Length == 0 ? " сделок нет" : sb.ToString();
+        }
+
+        /// <summary>[U04]: схема меню в dz_export\\hub_menu_schema.json — индекс, имя, тип, пределы, умолчание, текущее значение, группа.</summary>
+        private void ExportMenuSchema()
+        {
+        	try
+        	{
+        		var props = MenuProperties();
+        		var sb = new System.Text.StringBuilder(65536);
+        		sb.Append("{\"schema\":\"DZ-HUB-MENU-SCHEMA-v1\",\"strategy\":").Append(JStr(Name))
+        			.Append(",\"exported_local\":").Append(JStr(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")))
+        			.Append(",\"count\":").Append(props.Count).Append(",\"properties\":[");
+        		bool first = true;
+        		foreach (System.Reflection.PropertyInfo p in props)
+        		{
+        			DisplayAttribute d = Attribute.GetCustomAttribute(p, typeof(DisplayAttribute)) as DisplayAttribute;
+        			RangeAttribute r = Attribute.GetCustomAttribute(p, typeof(RangeAttribute)) as RangeAttribute;
+        			string label = d != null && d.GetName() != null ? d.GetName() : p.Name;
+        			int close = label.IndexOf(']');
+        			string idx = label.StartsWith("[") && close > 1 ? label.Substring(1, close - 1) : "";
+        			Type t = p.PropertyType;
+        			string type = t == typeof(bool) ? "bool" : t == typeof(int) ? "int" : t == typeof(double) ? "double" : t == typeof(string) ? "string" : t.IsEnum ? "enum" : t.Name;
+        			object def = null;
+        			if (schemaDefaults != null) schemaDefaults.TryGetValue(p.Name, out def);
+        			if (!first) sb.Append(',');
+        			first = false;
+        			sb.Append("{\"index\":").Append(JStr(idx)).Append(",\"name\":").Append(JStr(p.Name)).Append(",\"label\":").Append(JStr(label))
+        				.Append(",\"type\":").Append(JStr(type))
+        				.Append(",\"min\":").Append(r != null ? JVal(Convert.ToDouble(r.Minimum, System.Globalization.CultureInfo.InvariantCulture)) : "null")
+        				.Append(",\"max\":").Append(r != null ? JVal(Convert.ToDouble(r.Maximum, System.Globalization.CultureInfo.InvariantCulture)) : "null")
+        				.Append(",\"default\":").Append(JVal(def)).Append(",\"value\":").Append(JVal(p.GetValue(this, null)))
+        				.Append(",\"group\":").Append(JStr(d != null ? d.GetGroupName() : ""))
+        				.Append(",\"order\":").Append(d != null && d.GetOrder().HasValue ? d.GetOrder().Value.ToString() : "null")
+        				.Append(",\"description\":").Append(JStr(d != null ? d.GetDescription() : ""));
+        			if (t.IsEnum)
+        			{
+        				sb.Append(",\"enum\":[");
+        				string[] names = Enum.GetNames(t);
+        				for (int i = 0; i < names.Length; i++) { if (i > 0) sb.Append(','); sb.Append(JStr(names[i])); }
+        				sb.Append(']');
+        			}
+        			sb.Append('}');
+        		}
+        		sb.Append("]}");
+        		string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NinjaTrader 8", "dz_export");
+        		System.IO.Directory.CreateDirectory(dir);
+        		string path = System.IO.Path.Combine(dir, "hub_menu_schema.json");
+        		System.IO.File.WriteAllText(path, sb.ToString(), new System.Text.UTF8Encoding(false));
+        		Print("[DZ_SCHEMA] " + path + ": свойств " + props.Count);
+        	}
+        	catch (Exception ex) { Print("[DZ_SCHEMA] выгрузка не выполнена: " + ex.Message); }
+        }
+
+        /// <summary>[U05]: пресет из dz_export\\presets. Всё или ничего; защитные свойства не меняются.</summary>
+        /// <summary>
+        /// v1.5. Стратегия запущена в Strategy Analyzer. Признак — имя счёта «Backtest»:
+        /// в примечаниях к выпуску NinjaTrader 8 исправлена ошибка 8269 — счёт стратегии в
+        /// анализаторе назывался «Sim101» вместо «Backtest». Гипотеза до проверки на 8.1.8.
+        /// </summary>
+        private bool InAnalyzer
+        {
+            get { try { return Account != null && Account.Name == "Backtest"; } catch { return false; } }
+        }
+
+        private void ApplyPreset()
+        {
+        	presetFailReason = string.Empty;
+        	if (string.IsNullOrWhiteSpace(PresetFile)) return;
+        	if (InAnalyzer)
+        	{
+        		Print("[DZ_PRESET] пропущен: Strategy Analyzer — значения задаёт оптимизатор, пресет затёр бы их на каждой итерации");
+        		return;
+        	}
+        	string dir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NinjaTrader 8", "dz_export", "presets");
+        	string path = System.IO.Path.IsPathRooted(PresetFile) ? PresetFile : System.IO.Path.Combine(dir, PresetFile);
+        	string json;
+        	try { json = System.IO.File.ReadAllText(path); }
+        	catch (Exception ex) { presetFailReason = "файл не читается"; Print("[DZ_PRESET] ОТКАЗ: файл не читается: " + ex.Message); return; }
+        	if (json.IndexOf("\"DZ_SW_Hub_S021\"", StringComparison.Ordinal) < 0) { presetFailReason = "пресет не для DZ_SW_Hub_S021"; Print("[DZ_PRESET] ОТКАЗ: пресет не для DZ_SW_Hub_S021"); return; }
+        	string err;
+        	var raw = ParsePresetParams(json, out err);
+        	if (raw == null) { presetFailReason = "разбор: " + err; Print("[DZ_PRESET] ОТКАЗ: " + err); return; }
+        	var byName = new System.Collections.Generic.Dictionary<string, System.Reflection.PropertyInfo>();
+        	foreach (System.Reflection.PropertyInfo p in MenuProperties()) byName[p.Name] = p;
+        	var plan = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<System.Reflection.PropertyInfo, object>>();
+        	var errors = new System.Collections.Generic.List<string>();
+        	foreach (var kv in raw)
+        	{
+        		System.Reflection.PropertyInfo p;
+        		if (Array.IndexOf(PresetDenied, kv.Key) >= 0) { errors.Add(kv.Key + ": защитное свойство, пресетом не меняется"); continue; }
+        		if (!byName.TryGetValue(kv.Key, out p)) { errors.Add(kv.Key + ": такого свойства нет"); continue; }
+        		object v;
+        		string e = ConvertPresetValue(p, kv.Value.Key, kv.Value.Value, out v);
+        		if (e != null) { errors.Add(kv.Key + ": " + e); continue; }
+        		plan.Add(new System.Collections.Generic.KeyValuePair<System.Reflection.PropertyInfo, object>(p, v));
+        	}
+        	if (errors.Count > 0) { presetFailReason = "ошибок " + errors.Count; Print("[DZ_PRESET] ОТКАЗ, не применено ничего: " + string.Join("; ", errors)); return; }
+        	foreach (var kv in plan) kv.Key.SetValue(this, kv.Value, null);
+        	Print("[DZ_PRESET] применён " + path + ": настроек " + plan.Count);
+        }
+
+        private static string ConvertPresetValue(System.Reflection.PropertyInfo p, string s, bool isString, out object v)
+        {
+        	v = null;
+        	Type t = p.PropertyType;
+        	var inv = System.Globalization.CultureInfo.InvariantCulture;
+        	if (t == typeof(bool)) { if (isString || (s != "true" && s != "false")) return "ожидалось true или false"; v = s == "true"; }
+        	else if (t == typeof(int)) { int x; if (isString || !int.TryParse(s, System.Globalization.NumberStyles.Integer, inv, out x)) return "ожидалось целое"; v = x; }
+        	else if (t == typeof(double)) { double x; if (isString || !double.TryParse(s, System.Globalization.NumberStyles.Float, inv, out x)) return "ожидалось число"; v = x; }
+        	else if (t.IsEnum) { if (!isString || !Enum.IsDefined(t, s)) return "нет значения " + s + " в перечислении " + t.Name; v = Enum.Parse(t, s); }
+        	else if (t == typeof(string)) { if (!isString) return "ожидалась строка"; v = s; }
+        	else return "тип " + t.Name + " пресетом не задаётся";
+        	RangeAttribute r = Attribute.GetCustomAttribute(p, typeof(RangeAttribute)) as RangeAttribute;
+        	if (r != null && (t == typeof(int) || t == typeof(double)))
+        	{
+        		double x = Convert.ToDouble(v, inv), lo = Convert.ToDouble(r.Minimum, inv), hi = Convert.ToDouble(r.Maximum, inv);
+        		if (x < lo || x > hi) return "значение " + x.ToString(inv) + " вне предела " + lo.ToString(inv) + "…" + hi.ToString(inv);
+        	}
+        	return null;
+        }
+
+        /// <summary>Плоский объект "params": ключ → (значение, строка ли). Вложенные значения не принимаются.</summary>
+        private static System.Collections.Generic.Dictionary<string, System.Collections.Generic.KeyValuePair<string, bool>> ParsePresetParams(string json, out string err)
+        {

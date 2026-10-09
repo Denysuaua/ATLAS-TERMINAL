@@ -1,0 +1,1 @@
+{"InitialStopTicks": 40, "DefaultQuantity": 1, "Slot1Enabled": true, "Slot2Enabled": true, "Slot3Enabled": true, "Slot5Enabled": true, "Slot7Enabled": false, "Slot8Enabled": false, "Slot9Enabled": false, "Slot10Enabled": false, "DryRunMode": true, "BreakevenAfterTicks": 30, "BreakevenOffsetTicks": 2, "TrailDistanceTicks": 40}

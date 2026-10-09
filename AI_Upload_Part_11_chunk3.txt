@@ -1,0 +1,300 @@
+﻿		{
+		if (bip != Host.ExecBip) return;
+		
+		int bar = Host.CurrentBar;
+		if (bar < lookback + 2)
+		{
+		Health = SwHealth.Warmup;
+		Emit(SwSignal.Empty(bar));
+		return;
+		}
+		
+		double now = Host.Close(0), then = Host.Close(lookback);
+		
+		SwSignal sig = new SwSignal();
+		sig.IsReady = true;
+		sig.ProducedAtBar = bar;
+		sig.Direction = now > then ? 1 : now < then ? -1 : 0;
+		sig.Verdict = sig.Direction == 0 ? SwVerdict.Neutral : SwVerdict.Agree;
+		sig.Confidence = 1.0;
+		sig.Text = "тренд " + lookback + " баров " + (sig.Direction > 0 ? "вверх" : sig.Direction < 0 ? "вниз" : "плоско");
+		
+		Health = SwHealth.Ok;
+		Emit(sig);
+		}
+		}
+		
+		#endregion
+		
+		public class DZ_SW_Hub_S021 : Strategy
+		
+
+    {
+        private const string HubVersion = "DZ_SW_Hub_S021-v1.20 (2026-10-05)";
+        private const string PanelTag = "DZ_SW_HUB_PANEL";
+
+        #region Состояние ядра
+
+        private readonly List<SwModule> modules = new List<SwModule>();
+        private SwHostView hostView;
+
+        private readonly List<SwSignal> bufSignals = new List<SwSignal>();
+        private readonly List<SwSignal> bufFilters = new List<SwSignal>();
+        private readonly List<SwAction> bufActions = new List<SwAction>();
+
+        // Сток для сигналов модулей, чья роль не голосует и не накладывает вето.
+        // Они разбираются, чтобы счётчики отправленного и принятого сходились,
+        // но в решение не попадают.
+        private readonly List<SwSignal> bufIgnored = new List<SwSignal>();
+
+        private readonly List<SwTraceEntry> trace = new List<SwTraceEntry>();
+
+        private SwExecutionModule exec;
+        private SwFinancialManager fin;
+
+        // Типизированные ссылки на модули: нужны только панели, чтобы
+        // показывать их собственные строки состояния. Логика через них
+        // не идёт — она идёт через общий список modules.
+        private SwPacStructureModule refPac;
+        private SwTrfpVoteModule refTrfp;
+        private SwTimeWindowModule refTime;
+        private SwRegimeModule refRegime;
+        private SwAdaptiveStopModule refAStop;
+        private SwEscortLineExitModule refEscort;
+        private SwRiskGuardModule refGuard;
+        private SwDualBreakoutModule refDbo;
+        private SwAdaptiveKernelModule refKer;
+        private SwLorentzianModule refLor;
+        private SwHurstKernelModule refHk;
+        private SwFileSignalModule refFs;
+        private SwKalmanChannelModule refKal;
+        private SwLeverModule refLev;
+        private SwHierarchicalMassModule refHm;
+        private SwFinancialConfig finCfg;
+
+        private int execBip;
+
+        // Индексы BarsInProgress для четырёх слотов пула. Ноль означает,
+        // что слот выключен и обращение к нему уводится на серию графика.
+        private readonly int[] seriesBip = new int[4];
+
+        /// <summary>Номер BarsInProgress по номеру слота: 0 — график, 1..4 — пул.</summary>
+        internal int ResolveSlot(int slot)
+        {
+            if (slot < 1 || slot > 4) return 0;
+            return seriesBip[slot - 1];
+        }
+
+        /// <summary>Загружена ли серия слота. Выключенный слот уводится на график.</summary>
+        internal bool IsSlotLoaded(int slot)
+        {
+            return slot >= 1 && slot <= 4 && seriesBip[slot - 1] > 0;
+        }
+
+        // ВИРТУАЛЬНАЯ ПОЗИЦИЯ РЕЖИМА БЕЗ ОРДЕРОВ.
+        //
+        // Без неё цепочка обрывается: заявки не отправляются, значит
+        // OnExecutionUpdate не вызывается, значит финансовый модуль не узнаёт
+        // о входе и молчит. Режим без ордеров — рекомендованный первый шаг
+        // проверки, и он обязан прогонять весь конвейер целиком, иначе
+        // проверяется не система, а её обрубок.
+        private int virtSide;
+        private int virtQty;
+        private double virtAvg;
+        private double virtStop = double.NaN;
+
+        // Реализованный результат виртуальных сделок. Нужен риск-модулю:
+        // без него дневные лимиты в режиме без ордеров не проверялись бы,
+        // и главная защита осталась бы непротестированной.
+        private double virtRealizedPnl;
+
+        // Трейлинг, заданный сигналом для следующей сделки. Финансовый модуль
+        // забирает его при открытии сделки.
+        internal double HubPendingTrailOverride = double.NaN;
+
+        // Виртуальный отложенный стоп-вход. Выставляется на баре t и
+        // проверяется на баре t+1: ордер, поставленный по закрытию бара,
+        // работает в течение следующего. Проверка на том же баре t была бы
+        // заглядыванием: этот бар уже известен целиком.
+        private int virtEntryDir;
+        private double virtEntryStop = double.NaN;
+        private int virtEntryQty;
+        private int virtEntryArmedBar = -1;
+        private int decisionsMade, entriesRequested, entriesBlocked, lossesDetected;
+        private string lastDecisionText = "—";
+
+        // v1.1 — СТОРОЖ КОНФИГУРАЦИИ. В боевом режиме замечание конфигурации запрещает
+        // новые входы; выходы, стоп и сопровождение работают как прежде.
+        private bool configBlocked, configBlockTraced;
+        private string configBlockReason = string.Empty;
+        // v1.1 — пресет [U05] указан, но отвергнут: оператор думает, что торгует пресетом,
+        // а стратегия работает на значениях меню. Так было с PROD_v5–v7.
+        private string presetFailReason = string.Empty;
+
+        // v1.4 — РЫНОЧНЫЕ ЗАЯВКИ РЕЖИМА БЕЗ ОРДЕРОВ ждут открытия следующего бара.
+        private int vmEntryDir, vmEntryQty, vmEntryBar = -1;
+        private int vmExitQty, vmExitStep, vmExitBar = -1;
+        private bool vmExitFull;
+        private string vmExitReason = string.Empty;
+
+        // v1.4 — журнал виртуальных сделок [T17] и голоса модулей [T18].
+        private DateTime virtEntryTime = DateTime.MinValue;
+        private string virtEntryVotes = string.Empty, pendingEntryVotes = string.Empty;
+        private string virtEntryMask = string.Empty, pendingEntryMask = string.Empty;   // v1.18 маска схождения
+        private int virtEntryBar = -1;                                                    // v1.18 бар входа
+        private static TimeZoneInfo berlinTz; private bool berlinWarned;
+        private string dryJournalPath = string.Empty;
+        private int dryTradeNo;
+        private readonly SortedDictionary<int, double[]> virtYearPnl = new SortedDictionary<int, double[]>();   // Э12
+
+        // v1.1 — переопределение трейлинга живёт, пока жива заявка входа. Частичное
+        // исполнение вызывает OnTradeOpened повторно; прежде второй вызов брал трейлинг
+        // по умолчанию, потому что первый уже обнулил HubPendingTrailOverride.
+        internal double HubEntryTrailOverride = double.NaN;
+
+        // Э2 [T14] — проскальзывание стоп-заявок против их уровня, тиков (больше нуля — хуже).
+        private int slipStopQty;
+        private double slipStopSum, slipStopWorst = double.NegativeInfinity;
+
+        #endregion
+
+        #region Доступ для SwHostView
+
+        internal int HubCurrentBar { get { return CurrentBars[execBip]; } }
+        internal int HubExecBip { get { return execBip; } }
+        internal DateTime HubTime { get { return Times[execBip][0]; } }
+        internal double HubTickSize { get { return TickSize; } }
+        internal double HubClose(int b) { return Closes[execBip][b]; }
+
+        internal int HubBarOf(int slot)
+        {
+            int bip = ResolveSlot(slot);
+            try { return CurrentBars[bip]; } catch { return -1; }
+        }
+
+        /// <summary>
+        /// Готовность серии. Проверка обязательна ДО обращения к барам:
+        /// руководство NinjaTrader прямо требует сверять CurrentBars[] перед
+        /// доступом к series[barsAgo], иначе возможно обращение к
+        /// несуществующему бару.
+        /// </summary>
+        internal bool HubSlotReady(int slot, int needBars)
+        {
+            int bip = ResolveSlot(slot);
+            try { return CurrentBars[bip] >= Math.Max(0, needBars); } catch { return false; }
+        }
+
+        /// <summary>Значение серии слота. kind: 0 close, 1 open, 2 high, 3 low.</summary>
+        internal double HubValueOf(int slot, int barsAgo, int kind)
+        {
+            int bip = ResolveSlot(slot);
+            try
+            {
+                if (CurrentBars[bip] < barsAgo) return double.NaN;
+                switch (kind)
+                {
+                    case 1: return Opens[bip][barsAgo];
+                    case 2: return Highs[bip][barsAgo];
+                    case 3: return Lows[bip][barsAgo];
+                    case 4: return Volumes[bip][barsAgo];
+                    default: return Closes[bip][barsAgo];
+                }
+            }
+            catch { return double.NaN; }
+        }
+
+        internal DateTime HubTimeOf(int slot, int barsAgo)
+        {
+            int bip = ResolveSlot(slot);
+            try
+            {
+                if (CurrentBars[bip] < barsAgo) return DateTime.MinValue;
+                return Times[bip][barsAgo];
+            }
+            catch { return DateTime.MinValue; }
+        }
+        internal double HubOpen(int b) { return Opens[execBip][b]; }
+        internal double HubHigh(int b) { return Highs[execBip][b]; }
+        internal double HubLow(int b) { return Lows[execBip][b]; }
+
+        internal int HubPositionSide
+        {
+            get
+            {
+                if (DryRunMode) return virtSide;
+                if (Position == null) return 0;
+                return Position.MarketPosition == MarketPosition.Long ? 1
+                     : Position.MarketPosition == MarketPosition.Short ? -1 : 0;
+            }
+        }
+        internal int HubPositionQty
+        {
+            get { return DryRunMode ? virtQty : (Position == null ? 0 : Position.Quantity); }
+        }
+        internal double HubPositionAvg
+        {
+            get { return DryRunMode ? virtAvg : (Position == null ? 0 : Position.AveragePrice); }
+        }
+
+        /// <summary>Открытие виртуальной позиции исполнителем.</summary>
+        internal void HubVirtualOpen(int dir, int qty, double price, int bar)
+        {
+            virtSide = dir; virtQty = qty; virtAvg = price; virtStop = double.NaN;
+            try { virtEntryTime = Times[execBip][0]; } catch { virtEntryTime = DateTime.MinValue; }
+            virtEntryVotes = pendingEntryVotes; pendingEntryVotes = string.Empty;
+            virtEntryMask = pendingEntryMask; pendingEntryMask = string.Empty; virtEntryBar = bar;   // v1.18
+            if (fin != null) fin.OnTradeOpened(dir, price, qty, bar);
+        }
+
+        /// <summary>Виртуальная частичная фиксация с немедленным подтверждением.</summary>
+        internal void HubVirtualPartial(int stepNumber, int qty, double price)
+        {
+            if (virtSide == 0) return;
+            virtRealizedPnl += (virtSide > 0 ? price - virtAvg : virtAvg - price)
+                             * qty * HubPointValue;
+            WriteVirtualTrade(qty, price, stepNumber > 0 ? "ступень " + stepNumber : "частичный выход");
+            virtQty = Math.Max(0, virtQty - qty);
+            if (fin != null && stepNumber > 0) fin.OnStepExecution(stepNumber, price, qty);
+            if (virtQty == 0) HubVirtualClose("ступень закрыла остаток", price);
+        }
+
+        internal void HubVirtualSetStop(double price) { virtStop = price; }
+
+        /// <summary>
+        /// Закрытие виртуальной позиции по ЯВНО переданной цене.
+        ///
+        /// Прежде любое закрытие оценивалось по уровню стопа — в том числе
+        /// полный выход по требованию модуля и закрытие остатка ступенью.
+        /// Для длинной позиции стоп ниже рынка, и каждый такой выход занижал
+        /// результат прогона. Цену знает только вызывающий: стоп — уровень
+        /// стопа, выход по требованию — рынок, ступень — цену ступени.
+        /// </summary>
+        internal void HubVirtualClose(string why, double exitPx)
+        {
+            if (virtSide == 0) return;
+            if (double.IsNaN(exitPx) || exitPx <= 0) exitPx = Closes[execBip][0];
+            virtRealizedPnl += (virtSide > 0 ? exitPx - virtAvg : virtAvg - exitPx)
+                             * virtQty * HubPointValue;
+            if (virtQty > 0) WriteVirtualTrade(virtQty, exitPx, why);
+            HubTrace("EXEC", "DRY_CLOSED", why + ", было " + virtQty + " конт.");
+            virtSide = 0; virtQty = 0; virtAvg = 0; virtStop = double.NaN;
+            if (fin != null) fin.OnTradeClosed();
+        }
+
+        /// <summary>
+        /// Срабатывание виртуального стопа. Проверяется по экстремумам бара:
+        /// закрытие оставило бы стоп неисполненным на проколах и завысило бы
+        /// результат прогона.
+        /// </summary>
+        internal void HubVirtualArmEntry(int dir, int qty, double stopPx, int bar)
+        {
+            virtEntryDir = dir; virtEntryQty = qty; virtEntryStop = stopPx; virtEntryArmedBar = bar;
+        }
+
+        /// <summary>
+        /// Исполнение виртуального стоп-входа на баре после выставления.
+        ///
+        /// ПОРЯДОК СОБЫТИЙ ВНУТРИ БАРА ПРИНИМАЕТСЯ ПЕССИМИСТИЧНЫМ. Если бар
+        /// одновременно достиг уровня входа и стартового стопа, по OHLC нельзя
+        /// узнать, что было раньше. Принимается худшее: вход, затем стоп.
+        /// Именно выгодный выбор порядка внутри минутного бара — наиболее

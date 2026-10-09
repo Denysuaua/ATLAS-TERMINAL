@@ -1,0 +1,300 @@
+﻿        public SwKalmanFilterPolicy KalPolicy { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[B01] Роль", Order = 1, GroupName = "16 · Рычаг свечи",
+        	Description = "Роль модуля в конвейере.")]
+        public SwLeverRole LevRole { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[B02] Серия анализа", Order = 2, GroupName = "16 · Рычаг свечи",
+        	Description = "Слот пула 0–4.")]
+        public int LevAnalysisSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[B03] Серия кластеров", Order = 3, GroupName = "16 · Рычаг свечи",
+        	Description = "Слот пула 0–4.")]
+        public int LevClusterSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(2, 100)]
+        [Display(Name = "[B04] Кластеров", Order = 4, GroupName = "16 · Рычаг свечи",
+        	Description = "Число кластеров объёма.")]
+        public int LevClusters { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.0, 10.0)]
+        [Display(Name = "[B05] Порог голоса, z", Order = 5, GroupName = "16 · Рычаг свечи",
+        	Description = "Порог значимости голоса.")]
+        public double LevVoteZ { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[B06] Политика", Order = 6, GroupName = "16 · Рычаг свечи",
+        	Description = "Как рычаг голосует.")]
+        public SwLeverPolicy LevPolicy { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[G01] Серия", Order = 1, GroupName = "17 · Иерархическая масса",
+        	Description = "Слот пула с минутками, 0–4.")]
+        public int HmSlot { get; set; }
+        [NinjaScriptProperty]
+        [Range(5, 480)]
+        [Display(Name = "[G02] Окно, минут", Order = 2, GroupName = "17 · Иерархическая масса",
+        	Description = "Длина окна расчёта; эшелоны — полные блоки 5 и 15 минут от конца окна.")]
+        public int HmWindow { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.0, 10.0)]
+        [Display(Name = "[G03] Вес эшелона 5M", Order = 3, GroupName = "17 · Иерархическая масса",
+        	Description = "Вес 5-минутного эшелона в синтетическом узле.")]
+        public double HmWeight5 { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.0, 10.0)]
+        [Display(Name = "[G04] Вес эшелона 15M", Order = 4, GroupName = "17 · Иерархическая масса",
+        	Description = "Вес 15-минутного эшелона; 1,5 по ТЗ.")]
+        public double HmWeight15 { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[G05] Режим сигнала", Order = 5, GroupName = "17 · Иерархическая масса",
+        	Description = "Выключено — фильтр.")]
+        public bool HmSignalMode { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.5, 0.99)]
+        [Display(Name = "[G06] Процентиль ширины", Order = 6, GroupName = "17 · Иерархическая масса",
+        	Description = "Процентиль отклонений от оси для ширины коридора; 0,85 по ТЗ.")]
+        public double HmPercentile { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.0, 100.0)]
+        [Display(Name = "[G07] Порог смещения, тиков", Order = 7, GroupName = "17 · Иерархическая масса",
+        	Description = "|смещение| ниже порога — нейтраль.")]
+        public double HmBiasThreshold { get; set; }
+        [NinjaScriptProperty]
+        [Display(Name = "[G08] Шлюз сжатия", Order = 8, GroupName = "17 · Иерархическая масса",
+        	Description = "Ширина ниже доли своей медианы — нейтраль. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool HmExpSqueeze { get; set; }
+        [NinjaScriptProperty]
+        [Range(0.1, 1.0)]
+        [Display(Name = "[G09] Доля медианы для сжатия", Order = 9, GroupName = "17 · Иерархическая масса",
+        	Description = "Для [G08].")]
+        public double HmExpSqueezeRatio { get; set; }
+        [NinjaScriptProperty]
+        [Range(0, 20)]
+        [Display(Name = "[G10] Устойчивость знака, расчётов", Order = 10, GroupName = "17 · Иерархическая масса",
+        	Description = "Направление после K подряд расчётов одного знака; 0 — выключено. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public int HmExpPersist { get; set; }
+        #endregion
+
+		#region Восстановленные настройки модулей
+		[NinjaScriptProperty]
+		[Display(Name = "[M87] Структура: младший ТФ, внутренний BOS", Order = 34, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по продолжению внутренней структуры (BOS) на младшем таймфрейме.")]
+		public bool PacLowInternalBos { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M88] Структура: младший ТФ, внутренний CHoCH", Order = 35, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по смене характера внутренней структуры (CHoCH) на младшем таймфрейме.")]
+		public bool PacLowInternalChoch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M89] Структура: младший ТФ, внутренний CHoCH+", Order = 36, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по усиленной смене характера внутренней структуры (CHoCH+) на младшем таймфрейме.")]
+		public bool PacLowInternalChochPlus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M90] Структура: младший ТФ, свинговый BOS", Order = 37, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по продолжению свинговой структуры (BOS) на младшем таймфрейме.")]
+		public bool PacLowSwingBos { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M91] Структура: младший ТФ, свинговый CHoCH", Order = 38, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по смене характера свинговой структуры (CHoCH) на младшем таймфрейме.")]
+		public bool PacLowSwingChoch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M92] Структура: младший ТФ, свинговый CHoCH+", Order = 39, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по усиленной смене характера свинговой структуры (CHoCH+) на младшем таймфрейме.")]
+		public bool PacLowSwingChochPlus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M93] Структура: старший ТФ, внутренний BOS", Order = 40, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по продолжению внутренней структуры (BOS) на старшем таймфрейме.")]
+		public bool PacHighInternalBos { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M94] Структура: старший ТФ, внутренний CHoCH", Order = 41, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по смене характера внутренней структуры (CHoCH) на старшем таймфрейме.")]
+		public bool PacHighInternalChoch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M95] Структура: старший ТФ, внутренний CHoCH+", Order = 42, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по усиленной смене характера внутренней структуры (CHoCH+) на старшем таймфрейме.")]
+		public bool PacHighInternalChochPlus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M96] Структура: старший ТФ, свинговый BOS", Order = 43, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по продолжению свинговой структуры (BOS) на старшем таймфрейме.")]
+		public bool PacHighSwingBos { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M97] Структура: старший ТФ, свинговый CHoCH", Order = 44, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по смене характера свинговой структуры (CHoCH) на старшем таймфрейме.")]
+		public bool PacHighSwingChoch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M98] Структура: старший ТФ, свинговый CHoCH+", Order = 45, GroupName = "04 · Настройки модулей",
+			Description = "Разрешить вход по усиленной смене характера свинговой структуры (CHoCH+) на старшем таймфрейме.")]
+		public bool PacHighSwingChochPlus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M99] Структура: уверенность BOS", Order = 46, GroupName = "04 · Настройки модулей",
+			Description = "Уверенность сигнала по событию BOS, 0–1. Значения субъективны и служат для сравнения событий между собой; порог отсечения — [D02].")]
+		public double PacConfidenceBos { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M100] Структура: уверенность CHoCH", Order = 47, GroupName = "04 · Настройки модулей",
+			Description = "Уверенность сигнала по событию CHoCH, 0–1. Порог отсечения — [D02].")]
+		public double PacConfidenceChoch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M101] Структура: уверенность CHoCH+", Order = 48, GroupName = "04 · Настройки модулей",
+			Description = "Уверенность сигнала по событию CHoCH+, 0–1. Порог отсечения — [D02].")]
+		public double PacConfidenceChochPlus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M102] Структура: надбавка за старший ТФ", Order = 49, GroupName = "04 · Настройки модулей",
+			Description = "Прибавляется к уверенности, если событие произошло на старшем таймфрейме.")]
+		public double PacHigherTimeframeBonus { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[W42] Пробой: длина бара минутной серии, минут", Order = 78, GroupName = "04 · Настройки модулей",
+			Description = "Длительность бара серии [M84]: время открытия бара = метка закрытия минус эта длина. Для минутной серии — 1.")]
+		public int DboM1BarMinutes { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[K66] Адаптация окна: множитель, минимум", Order = 17, GroupName = "09 · Адаптивное ядро",
+			Description = "Ширина окна = базовая × ATR(20)/ATR(5) в пределах от этого минимума до [K67]: при всплеске короткой волатильности окно сужается, в затишье расширяется.")]
+		public double KerAdaptMin { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[K67] Адаптация окна: множитель, максимум", Order = 18, GroupName = "09 · Адаптивное ядро",
+			Description = "Верхний предел множителя адаптивной ширины окна; нижний — [K66].")]
+		public double KerAdaptMax { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[K68] Окно самопроверки, баров", Order = 19, GroupName = "09 · Адаптивное ядро",
+			Description = "Окно сглаживания оценки качества наклона для экспериментальной самопроверки ядра.")]
+		public int KerSkillWindow { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C08] Границы канала", Order = 8, GroupName = "15 · Канал Калмана",
+			Description = "GaussianSemiDeviation — полуотклонения остатков с гауссовыми весами: канал асимметричен, асимметрия служит мерой импульса. KalmanInnovation — середина ± k·√S: канал симметричен.")]
+		public SwKalmanBands KalBands { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C09] Окно входа: минимум, баров", Order = 9, GroupName = "15 · Канал Калмана",
+			Description = "Плавающее окно ТФ входа: длина по коэффициенту эффективности Кауфмана — в направленном движении короче, в боковике длиннее.")]
+		public int KalEntryWindowMin { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C10] Окно входа: максимум, баров", Order = 10, GroupName = "15 · Канал Калмана",
+			Description = "Верхний предел плавающего окна ТФ входа; нижний — [C09].")]
+		public int KalEntryWindowMax { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C11] Окно сопровождения: минимум, баров", Order = 11, GroupName = "15 · Канал Калмана",
+			Description = "Плавающее окно текущего и старшего ТФ — для сопровождения позиции.")]
+		public int KalEscortWindowMin { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C12] Окно сопровождения: максимум, баров", Order = 12, GroupName = "15 · Канал Калмана",
+			Description = "Верхний предел окна сопровождения; нижний — [C11].")]
+		public int KalEscortWindowMax { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C13] Горизонталь: смещение не больше, доля ширины", Order = 13, GroupName = "15 · Канал Калмана",
+			Description = "Канал горизонтален, если смещение середины за окно меньше этой доли ширины канала.")]
+		public double KalFlatTilt { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C14] Симметрия: дисбаланс не больше", Order = 14, GroupName = "15 · Канал Калмана",
+			Description = "Канал симметричен, если модуль дисбаланса расстояний от середины до границ меньше порога.")]
+		public double KalSymmetryMax { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C15] Боковик: свечей подряд", Order = 15, GroupName = "15 · Канал Калмана",
+			Description = "Сколько свечей подряд должны выполняться условия «горизонтально, параллельно, симметрично», чтобы объявить боковик. 0 — авто: половина минимума окна входа, от 3 до 12.")]
+		public int KalRangeConfirmBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C16] Тренд: значимость наклона, z", Order = 16, GroupName = "15 · Канал Калмана",
+			Description = "Наклон середины считается трендом при z не ниже порога.")]
+		public double KalTrendZ { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C17] Тренд: смещение середины, доля ширины", Order = 17, GroupName = "15 · Канал Калмана",
+			Description = "Минимальное смещение середины за окно в долях ширины канала для тренда.")]
+		public double KalTrendTilt { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C18] Сжатие: ширина к средней ниже", Order = 18, GroupName = "15 · Канал Калмана",
+			Description = "Ширина канала к своей средней ниже порога — сжатие.")]
+		public double KalCompressionRatio { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C19] Расширение: ширина к средней выше", Order = 19, GroupName = "15 · Канал Калмана",
+			Description = "Ширина канала к своей средней выше порога — расширение.")]
+		public double KalExpansionRatio { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C20] ТФ направления", Order = 20, GroupName = "15 · Канал Калмана",
+			Description = "Текущий или старший таймфрейм: по нему фильтр выносит вердикт.")]
+		public SwKalmanTfChoice KalDirectionTf { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C21] ТФ сопровождения", Order = 21, GroupName = "15 · Канал Калмана",
+			Description = "Текущий или старший таймфрейм: по его границе ведётся стоп и проверяется разворот.")]
+		public SwKalmanTfChoice KalEscortTf { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C22] Требовать согласия старшего ТФ", Order = 22, GroupName = "15 · Канал Калмана",
+			Description = "Сигнал против состояния старшего таймфрейма отклоняется.")]
+		public bool KalRequireHigherAgreement { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C23] Сигнал действует, баров", Order = 23, GroupName = "15 · Канал Калмана",
+			Description = "Сколько баров сигнал пробоя границы боковика остаётся в силе.")]
+		public int KalSignalBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C24] Сопровождать стопом по границе", Order = 24, GroupName = "15 · Канал Калмана",
+			Description = "Переносить стоп за границу канала ТФ сопровождения [C21] с отступом [C25].")]
+		public bool KalEscortStop { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C25] Отступ стопа от границы, тиков", Order = 25, GroupName = "15 · Канал Калмана",
+			Description = "Отступ стопа сопровождения от границы канала.")]
+		public int KalStopOffsetTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C26] Выход при развороте середины", Order = 26, GroupName = "15 · Канал Калмана",
+			Description = "Требовать выхода, когда середина и коридор ТФ сопровождения развернулись против позиции.")]
+		public bool KalExitOnSlopeFlip { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C27] Разворот подтверждён, баров", Order = 27, GroupName = "15 · Канал Калмана",
+			Description = "Сколько баров подряд разворот должен держаться, прежде чем требуется выход [C26].")]
+		public int KalExitConfirmBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C28] Исследование: статистика в Output", Order = 28, GroupName = "15 · Канал Калмана",
+			Description = "В конце прогона печатать статистику канала: исходы после сигналов, удержание боковика, взаимодействие с каналом старшего ТФ.")]
+		public bool KalResearch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C29] Исследование: горизонт исхода, баров", Order = 29, GroupName = "15 · Канал Калмана",
+			Description = "Через сколько баров оценивается исход после сигнала.")]
+		public int KalResearchHorizon { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C30] Исследование: удержание боковика, баров", Order = 30, GroupName = "15 · Канал Калмана",
+			Description = "Сколько баров цена должна оставаться в канале после объявления боковика, чтобы удержание засчиталось.")]
+		public int KalRangeHoldBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[C31] Прогрев, эквивалентных периодов", Order = 31, GroupName = "15 · Канал Калмана",
+			Description = "Модуль готов после стольких периодов [C05], но не раньше 10 баров.")]
+		public int KalWarmupPeriods { get; set; }
+

@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Атлас — пульт реального времени</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root{--bg:#0f1419;--panel:#171e26;--line:#26303b;--txt:#d6dde5;--mute:#7d8a97;--ok:#26a69a;--warn:#f0b429;--bad:#ef5350}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font:13px/1.4 system-ui,sans-serif;height:100vh;display:flex;flex-direction:column}
+header{display:flex;gap:8px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header input{background:#0b1015;color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:4px 6px}
+button{background:#22303c;color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:5px 10px;cursor:pointer}
+button:disabled{opacity:.4;cursor:not-allowed}button.bad{background:#5a1f1f;border-color:var(--bad)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--bad);display:inline-block}
+main{flex:1;display:flex;min-height:0}#chart{flex:1;min-width:0}
+aside{width:380px;background:var(--panel);border-left:1px solid var(--line);overflow:auto;padding:10px}
+h3{margin:12px 0 6px;font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em}
+table{width:100%;border-collapse:collapse}td{padding:3px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.kv td:first-child{color:var(--mute)}#log{font:11px/1.35 ui-monospace,monospace;color:var(--mute);white-space:pre-wrap;max-height:160px;overflow:auto}
+.flag{padding:1px 6px;border-radius:3px;font-size:11px}footer{padding:3px 12px;font-size:11px;color:var(--mute);background:var(--panel)}
+footer a{color:var(--mute)}
+.page{flex:1;overflow:auto;padding:12px 16px}.page p{color:var(--mute)}.row{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;align-items:center}
+.page select,.page input[size]{background:#0b1015;color:var(--txt);border:1px solid var(--line);border-radius:4px;padding:3px 5px}
+.note{margin:6px 0;color:var(--warn)}pre{background:#0b1015;border:1px solid var(--line);padding:8px;max-height:300px;overflow:auto;font-size:11px}
+#grid td{white-space:nowrap}#grid tr.off{color:var(--mute)}
+</style></head><body>
+<header>
+  <span class="dot" id="dot"></span><b>Атлас</b>
+  <button data-tab="live">Пульт</button><button data-tab="cfg">Конфигуратор задач</button><button data-tab="preset">Пресет</button>
+  <label>Порт <input id="port" size="5" value="8088"></label>
+  <label>Ключ <input id="token" size="34" type="password" placeholder="из dz_export\atlas_ws_token.txt"></label>
+  <button id="connect">Подключить</button>
+  <span id="status" style="color:var(--mute)">не подключено</span>
+  <span style="flex:1"></span>
+  <button id="pause" disabled>Пауза входов</button><button id="resume" disabled>Возобновить</button>
+  <button id="flatten" class="bad" disabled>Закрыть позицию</button>
+</header>
+<main><div id="chart"></div>
+<aside>
+  <h3>Состояние</h3><table class="kv" id="state"></table>
+  <h3>Модули</h3><table id="mods"></table>
+  <h3>Журнал пульта</h3><div id="log"></div>
+</aside></main>
+<section id="cfg" class="page" hidden>
+ <p>Схема меню — <code>dz_export\hub_menu_schema.json</code> (стратегия с [U04]). Граф — <code>DZ_OPT_Graph_DualBreakout.json</code>: он говорит, что оптимизатор на ПК умеет исполнить.</p>
+ <label>Схема <input type="file" id="fSchema" accept=".json"></label> <label>Граф <input type="file" id="fGraph" accept=".json"></label>
+ <div id="cfgInfo" class="note"></div>
+ <div class="row"><label>Группа <select id="grp"></select></label>
+  <label>Режим <select id="mode"><option value="dev">dev — только отмеченные</option><option value="param">param — отмеченные и соседи по графу</option><option value="system">system — гипотеза графа</option></select></label>
+  <label>Глубина <input id="depth" size="2" value="1"></label><label>Гипотеза <select id="hyp"></select></label></div>
+ <table id="grid"></table>
+ <div class="row"><label>Данные <input id="tData" value="gc-1m.csv" size="18"></label>
+  <label>Профиль <select id="tProf"><option>chicago</option><option>berlin</option></select></label>
+  <label>Цель <select id="tObj"><option>SharpeDaily</option><option>SharpeAnnual</option><option>NetProfit</option><option>ProfitFactor</option><option>SortinoAnnual</option></select></label>
+  <label>Испытаний не больше <input id="tMax" value="500" size="5"></label>
+  <label>Выбор <select id="tSel"><option>plateau</option><option>raw</option></select></label>
+  <button id="mkTask">Сформировать task.json</button></div>
+ <div id="cfgMsg" class="note"></div><pre id="taskOut"></pre>
+</section>
+<section id="preset" class="page" hidden>
+ <p>Итог оптимизатора — <code>results\&lt;задача&gt;\summary.json</code>. Пресет кладётся в <code>dz_export\presets</code> и указывается в [U05].</p>
+ <label>Итог <input type="file" id="fSum" accept=".json"></label>
+ <label>Набор <select id="pSet"><option>best_selected</option><option>best_plateau</option><option>best_raw</option></select></label>
+ <button id="mkPreset">Сформировать пресет</button>
+ <div id="pMsg" class="note"></div><pre id="presetOut"></pre>
+</section>
+<footer>Время на графике — берлинское. Центр масс свечи = (High + Low + Close) / 3. Порядок экстремумов внутри свечи по OHLC неизвестен и не рисуется.
+ Графики: <a href="https://www.tradingview.com/" target="_blank">TradingView Lightweight Charts</a> (Apache 2.0).</footer>
+<script src="lightweight-charts.standalone.production.js" onerror="this.onerror=null;this.src='https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js'"></script>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const berlin = new Intl.DateTimeFormat("ru-RU", {timeZone: "Europe/Berlin", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit"});
+let chart, candles, com, corridor = [], ws = null, lastBeat = 0, commandsAllowed = false, lastBar = null;
+
+function log(msg) { const el = $("log"); el.textContent = new Date().toLocaleTimeString("ru-RU") + "  " + msg + "\n" + el.textContent.slice(0, 6000); }
+
+function initChart() {
+  if (chart) return;
+  if (!window.LightweightCharts) { log("библиотека графиков не загрузилась"); return; }
+  chart = LightweightCharts.createChart($("chart"), {
+    layout: {background: {color: "#0f1419"}, textColor: "#aab4be"},
+    grid: {vertLines: {color: "#1b232c"}, horzLines: {color: "#1b232c"}},
+    timeScale: {timeVisible: true, secondsVisible: false, tickMarkFormatter: t => berlin.format(new Date(t * 1000))},
+    localization: {timeFormatter: t => berlin.format(new Date(t * 1000))},
+    autoSize: true
+  });
+  candles = chart.addCandlestickSeries({upColor: "#26a69a", downColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false});
+  com = chart.addLineSeries({color: "rgba(240,180,41,.55)", lineWidth: 1, priceLineVisible: false, lastValueVisible: false});
+  corridor = ["#5c9ded", "#8a6de9", "#8a6de9"].map((c, i) => chart.addLineSeries({color: c, lineWidth: i ? 1 : 2, lineStyle: i ? 2 : 0, priceLineVisible: false, lastValueVisible: false}));
+}
+
+function setButtons() {
+  const ok = ws && ws.readyState === 1 && commandsAllowed;
+  for (const id of ["pause", "resume", "flatten"]) $(id).disabled = !ok;
+}
+
+function onBar(b) {
+  initChart(); if (!chart) return;
+  if (lastBar && b.ts < lastBar) return;               // запоздавший снимок не переписывает график
+  lastBar = b.ts;
+  candles.update({time: b.ts, open: b.o, high: b.h, low: b.l, close: b.c});
+  if (b.com != null) com.update({time: b.ts, value: b.com});
+  (b.ch || []).forEach((v, i) => { if (v != null && v !== 0 && corridor[i]) corridor[i].update({time: b.ts, value: v}); });
+  const side = b.pos > 0 ? "ДЛИННАЯ" : b.pos < 0 ? "КОРОТКАЯ" : "нет";
+  $("state").innerHTML = [
+    ["Бар", berlin.format(new Date(b.ts * 1000))], ["Позиция", side + (b.pos ? " · " + b.qty + " @ " + b.avg : "")],
+    ["Реализовано", (b.pnl ?? 0).toFixed(2)],
+    ["Режим", b.dry ? "<span class='flag' style='background:#3a3a1a'>БЕЗ ОРДЕРОВ</span>" : "<span class='flag' style='background:#1f3a2e'>ТОРГОВЛЯ</span>"],
+    ["Входы", b.paused ? "<span class='flag' style='background:#5a1f1f'>ПРИОСТАНОВЛЕНЫ</span>" : "разрешены"],
+    ["Визуальных событий", b.vis]
+  ].map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("");
+  const col = h => h === "Ok" ? "var(--ok)" : h === "Warmup" || h === "Stale" ? "var(--warn)" : "var(--bad)";
+  const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;"}[c]));
+  $("mods").innerHTML = (b.mods || []).map(m => `<tr><td style="color:${col(m.health)}">●</td><td><b>${esc(m.id)}</b><br><span style="color:var(--mute)">${esc(m.role)} · ${esc(m.health)}</span></td>`
+    + `<td>${m.dir > 0 ? "▲" : m.dir < 0 ? "▼" : "—"} ${m.conf ?? ""}</td><td style="color:var(--mute)">${esc(m.txt)}</td></tr>`).join("");
+}
+
+function connect() {
+  if (ws) ws.close();
+  localStorage.setItem("atlas_port", $("port").value); localStorage.setItem("atlas_token", $("token").value);
+  ws = new WebSocket("ws://127.0.0.1:" + parseInt($("port").value, 10));
+  $("status").textContent = "подключение…";
+  ws.onopen = () => ws.send(JSON.stringify({cmd: "auth", token: $("token").value.trim()}));
+  ws.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    lastBeat = Date.now();
+    if (m.t === "auth") { commandsAllowed = !!m.commands; $("status").textContent = commandsAllowed ? "подключено · команды разрешены" : "подключено · только наблюдение"; log("вход выполнен"); setButtons(); }
+    else if (m.t === "bar") onBar(m);
+    else if (m.t === "queued") log("команда принята в очередь: " + m.cmd + " — исполнится на ближайшем баре");
+    else if (m.t === "reject") log("отказ: " + m.why);
+  };
+  ws.onclose = () => { $("status").textContent = "отключено"; commandsAllowed = false; setButtons(); log("соединение закрыто — проверьте ключ, порт и [U01]"); };
+}
+
+function send(cmd) {
+  if (!ws || ws.readyState !== 1) return;
+  if (cmd === "flatten" && prompt("Закрыть позицию стратегии? Наберите FLATTEN") !== "FLATTEN") { log("закрытие отменено"); return; }
+  ws.send(JSON.stringify({cmd, token: $("token").value.trim()}));
+}
+
+setInterval(() => {                                      // пульс: сервер шлёт отметку каждые 2 с
+  const age = (Date.now() - lastBeat) / 1000, up = ws && ws.readyState === 1;
+  $("dot").style.background = !up ? "var(--bad)" : age < 5 ? "var(--ok)" : "var(--warn)";
+  if (up && age >= 5) $("status").textContent = "нет данных " + age.toFixed(0) + " с — стратегия не отвечает";
+}, 1000);
+
+$("port").value = localStorage.getItem("atlas_port") || "8088";
+$("token").value = localStorage.getItem("atlas_token") || "";
+$("connect").onclick = connect;
+for (const id of ["pause", "resume", "flatten"]) $(id).onclick = () => send(id);
+</script>
+<script>
+"use strict";
+/* ---------- вкладки ---------- */
+document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => {
+  const t = b.dataset.tab; document.querySelector("main").style.display = t === "live" ? "flex" : "none";
+  for (const id of ["cfg", "preset"]) document.getElementById(id).hidden = id !== t;
+});
+const DENIED = ["DryRunMode", "WsEnabled", "WsAllowCommands", "ExportSchema", "PresetFile"];   // как в коммутаторе
+let SCHEMA = null, GRAPH = null, NT2REF = {}, REF2NT = {};
+const q = id => document.getElementById(id);
+const readJson = (inp, cb) => inp.onchange = () => { const f = inp.files[0]; if (!f) return; f.text().then(t => { try { cb(JSON.parse(t)); } catch (e) { alert("не JSON: " + e.message); } }); };
+const prop = name => SCHEMA.properties.find(p => p.name === name);
+
+function checkValue(p, v) {                       // тот же смысл, что ConvertPresetValue в коммутаторе
+  if (p.type === "int" && !Number.isInteger(v)) return "ожидалось целое";
+  if ((p.type === "int" || p.type === "double") && typeof v !== "number") return "ожидалось число";
+  if (p.type === "bool" && typeof v !== "boolean") return "ожидалось true/false";
+  if (p.type === "enum" && !(p.enum || []).includes(v)) return "нет такого значения";
+  if (p.min != null && v < p.min || p.max != null && v > p.max) return `вне предела ${p.min}…${p.max}`;
+  return null;
+}
+
+function refresh() {
+  if (!SCHEMA || !GRAPH) { q("cfgInfo").textContent = "загрузите схему и граф"; return; }
+  NT2REF = {}; REF2NT = {};
+  for (const [ref, g] of Object.entries(GRAPH.params)) if (g.nt) { NT2REF[g.nt] = ref; REF2NT[ref] = g.nt; }
+  const miss = Object.keys(NT2REF).filter(n => !prop(n));
+  q("cfgInfo").textContent = `схема: ${SCHEMA.count} настроек · исполнимо на ПК: ${Object.keys(NT2REF).length}` + (miss.length ? ` · в схеме НЕТ свойств графа: ${miss.join(", ")} — граф и сборка расходятся` : "");
+  const groups = [...new Set(SCHEMA.properties.map(p => p.group))].sort((a, b) => parseInt(a) - parseInt(b));
+  q("grp").innerHTML = groups.map(g => `<option>${g}</option>`).join("");
+  q("hyp").innerHTML = Object.keys(GRAPH.groups || {}).map(g => `<option>${g}</option>`).join("");
+  drawGrid();
+}
+
+function drawGrid() {
+  const rows = SCHEMA.properties.filter(p => p.group === q("grp").value);
+  q("grid").innerHTML = "<tr><td></td><td>Настройка</td><td>Тип</td><td>Сейчас</td><td>Пределы</td><td>От</td><td>До</td><td>Шаг</td></tr>" + rows.map(p => {
+    const ref = NT2REF[p.name], g = ref ? GRAPH.params[ref] : null, r = g && g.range || [];
+    const st = r.length > 1 ? +(r[1] - r[0]).toFixed(6) : 1;
+    return ref ? `<tr><td><input type="checkbox" data-n="${p.name}"></td><td>[${p.index}] ${p.name}<br><small>${ref}</small></td><td>${p.type}</td><td>${p.value}</td><td>${p.min ?? ""}…${p.max ?? ""}</td>`
+      + `<td><input size="6" data-f="${p.name}" value="${r[0] ?? p.value}"></td><td><input size="6" data-t="${p.name}" value="${r[r.length - 1] ?? p.value}"></td><td><input size="5" data-s="${p.name}" value="${st}"></td></tr>`
+      : `<tr class="off"><td></td><td>[${p.index}] ${p.name}</td><td>${p.type}</td><td>${p.value}</td><td colspan="4">исполнителя на ПК пока нет — появится с исполнителем модулей на C#</td></tr>`;
+  }).join("");
+}
+
+function makeTask() {
+  const msg = [], optimize = {}, targets = [];
+  document.querySelectorAll("#grid input[type=checkbox]:checked").forEach(cb => {
+    const n = cb.dataset.n, p = prop(n), ref = NT2REF[n];
+    const f = +q_(`[data-f="${n}"]`), t = +q_(`[data-t="${n}"]`), st = +q_(`[data-s="${n}"]`);
+    if (!(st > 0) || t < f) { msg.push(`${n}: нужно «от ≤ до» и шаг > 0`); return; }
+    const vals = []; for (let v = f; v <= t + st / 1e6; v += st) vals.push(p.type === "int" ? Math.round(v) : +v.toFixed(6));
+    const bad = vals.map(v => checkValue(p, v)).find(Boolean);
+    if (bad) { msg.push(`${n}: ${bad}`); return; }
+    if (vals.length > 50) { msg.push(`${n}: ${vals.length} значений — больше 50, увеличьте шаг`); return; }
+    optimize[ref] = [...new Set(vals)]; targets.push(ref);
+  });
+  const mode = q("mode").value;
+  if (mode !== "system" && !targets.length) msg.push("не отмечено ни одной настройки");
+  if (msg.length) { q("cfgMsg").textContent = "ОТКАЗ: " + msg.join("; "); q("taskOut").textContent = ""; return; }
+  const base = {};                                 // остальные параметры — текущие значения стратегии, а не умолчания движка
+  for (const [ref, nt] of Object.entries(REF2NT)) if (!(mode === "dev" && ref in optimize)) { const p = prop(nt); if (p) base[ref] = p.value; }
+  const task = {task_id: `${mode}_${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}`, data: q("tData").value, profile: q("tProf").value,
+    mode, objective: q("tObj").value, max_trials: +q("tMax").value, select: q("tSel").value, base};
+  if (mode === "dev") task.optimize = optimize; else if (mode === "param") { task.target = targets; task.depth = +q("depth").value; } else task.hypothesis = q("hyp").value;
+  const combos = mode === "dev" ? Object.values(optimize).reduce((a, v) => a * v.length, 1) : null;
+  q("cfgMsg").textContent = (combos ? `комбинаций: ${combos}` + (combos > task.max_trials ? ` — больше предела ${task.max_trials}: оптимизатор возьмёт из сетки случайную выборку с фиксированным зерном` : "") + ". " : "")
+    + "Каждое испытание записывается в реестр и повышает порог дефлированного Шарпа: широкая сетка — дорогая сетка.";
+  const json = JSON.stringify(task, null, 2); q("taskOut").textContent = json; download(`task_${task.task_id}.json`, json);
+}
+const q_ = sel => document.querySelector(sel).value;
+function download(name, text) { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], {type: "application/json"})); a.download = name; a.click(); }
+
+/* ---------- пресет из итога оптимизатора ---------- */
+let SUMMARY = null;
+function makePreset() {
+  if (!SUMMARY || !SCHEMA || !GRAPH) { q("pMsg").textContent = "нужны итог, схема и граф (две последние — на вкладке конфигуратора)"; return; }
+  const set = SUMMARY[q("pSet").value]; if (!set) { q("pMsg").textContent = "в итоге нет набора " + q("pSet").value; return; }
+  const params = {}, errors = [], skipped = [];
+  for (const [ref, v] of Object.entries(set)) {
+    const nt = REF2NT[ref]; if (!nt) { skipped.push(ref); continue; }
+    if (DENIED.includes(nt)) { errors.push(`${nt}: защитное свойство`); continue; }
+    const p = prop(nt); if (!p) { errors.push(`${nt}: нет в схеме`); continue; }
+    const val = p.type === "int" ? Math.round(v) : v, bad = checkValue(p, val);
+    if (bad) errors.push(`${nt}: ${bad}`); else params[nt] = val;
+  }
+  if (errors.length) { q("pMsg").textContent = "ОТКАЗ, пресет не сформирован: " + errors.join("; "); q("presetOut").textContent = ""; return; }
+  const preset = {preset: "DZ-PRESET-v1", strategy: "DZ_SW_Hub_S021", created: new Date().toISOString(),
+    source: {objective: SUMMARY.objective, set: q("pSet").value, schema_exported: SCHEMA.exported_local}, params};
+  q("pMsg").textContent = `настроек: ${Object.keys(params).length}` + (skipped.length ? ` · без свойства в стратегии, не переносятся: ${skipped.join(", ")}` : "")
+    + ". Коммутатор проверит пресет ещё раз при запуске: всё или ничего.";
+  const json = JSON.stringify(preset, null, 2); q("presetOut").textContent = json; download(`DZ_S021_preset_${Date.now()}.json`, json);
+}
+readJson(q("fSchema"), j => { SCHEMA = j; refresh(); }); readJson(q("fGraph"), j => { GRAPH = j; refresh(); }); readJson(q("fSum"), j => { SUMMARY = j; });
+q("grp").onchange = drawGrid; q("mkTask").onclick = makeTask; q("mkPreset").onclick = makePreset;
+</script>
+<script>
+"use strict";
+/* ---------- конфигуратор v2: три режима, связи графа, ограничения, проверка вперёд ---------- */
+const DEFAULT_CONS = ["be_offset_ticks < stop_ticks", "be_trigger_ticks < stop_ticks", "min_range_ticks < max_range_ticks", "atr_fast < atr_slow"];
+let MODE = "dev";
+const cfg = document.getElementById("cfg"), grid = document.getElementById("grid");
+document.getElementById("mode").closest("label").style.display = "none";
+const bar = document.createElement("div"); bar.className = "row";
+bar.innerHTML = `<b>Режим:</b> <button data-m="dev">Разработчик</button><button data-m="param">Умный: параметр</button><button data-m="system">Умный: вся стратегия</button>
+ <label class="m-param">Целевой параметр <select id="tgt"></select></label>
+ <span id="dsr" class="note"></span>`;
+grid.before(bar);
+const extra = document.createElement("div");
+extra.innerHTML = `<div id="links" class="note m-param"></div>
+ <div class="row"><label>Ограничения — невозможные комбинации отбрасываются до запуска<br>
+ <textarea id="cons" rows="3" cols="60" style="background:#0b1015;color:var(--txt);border:1px solid var(--line)"></textarea></label><span id="infeas" class="note"></span></div>
+ <div class="row"><label><input type="checkbox" id="wfa"> Скользящая проверка вперёд</label>
+ <label>с года <input id="wy0" size="4" value="2016"></label><label>по год <input id="wy1" size="4" value="2025"></label>
+ <label>обучение, лет <input id="wtr" size="2" value="3"></label><label>проверка, лет <input id="wte" size="2" value="1"></label></div>`;
+grid.after(extra);
+const setMode = m => { MODE = m;
+  bar.querySelectorAll("[data-m]").forEach(b => b.style.outline = b.dataset.m === m ? "2px solid var(--ok)" : "none");
+  document.querySelectorAll(".m-param").forEach(e => e.style.display = m === "param" ? "" : "none");
+  document.getElementById("hyp").closest("label").style.display = m === "system" ? "" : "none";
+  document.getElementById("depth").closest("label").style.display = m === "param" ? "" : "none";
+  grid.style.display = m === "dev" ? "" : "none"; links(); };
+bar.querySelectorAll("[data-m]").forEach(b => b.onclick = () => setMode(b.dataset.m));
+
+function invNorm(p) {    // обратная функция нормального распределения, приближение Акклама (погрешность ~1e-9)
+  const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239],
+        b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572],
+        c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783],
+        d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416], pl = 0.02425;
+  if (p < pl) { const q = Math.sqrt(-2 * Math.log(p)); return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  if (p > 1 - pl) { const q = Math.sqrt(-2 * Math.log(1 - p)); return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  const q = p - 0.5, r = q * q; return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5]) * q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+function emax(n) {       // ожидаемый максимум N испытаний без преимущества — Бейли и Лопес де Прадо, как в оптимизаторе
+  if (n < 2) return 0; const g = 0.5772156649;
+  return (1 - g) * invNorm(1 - 1 / n) + g * invNorm(1 - 1 / (n * Math.E));
+}
+function neighbours(t, depth) {
+  const seen = new Map([[t, 0]]), q = [t];
+  while (q.length) { const x = q.shift(); if (seen.get(x) >= depth) continue;
+    for (const e of GRAPH.edges || []) { const y = e.a === x ? e.b : e.b === x ? e.a : null;
+      if (y && !seen.has(y)) { seen.set(y, seen.get(x) + 1); q.push(y); } } }
+  return [...seen.keys()].filter(k => k !== t);
+}
+function links() {
+  if (!GRAPH) return;
+  const tg = document.getElementById("tgt"); if (!tg.options.length) tg.innerHTML = Object.keys(GRAPH.params).map(k => `<option>${k}</option>`).join("");
+  const d = +document.getElementById("depth").value || 1, t = tg.value, nb = neighbours(t, d);
+  document.getElementById("links").innerHTML = MODE !== "param" ? "" : `Будут варьироваться: <b>${t}</b>` + (nb.length ? " и связанные по графу: " + nb.map(n => {
+    const e = (GRAPH.edges || []).find(e => (e.a === t && e.b === n) || (e.b === t && e.a === n)); return `<b>${n}</b>` + (e ? ` — <i>${e.why}</i>` : ""); }).join("; ") : " — связей в графе нет");
+  const c = document.getElementById("cons"); if (!c.value) c.value = DEFAULT_CONS.filter(x => x.split(/\s*[<>]=?\s*/).every(n => n in GRAPH.params)).join("\n");
+}
+document.getElementById("depth").onchange = links;
+function checkedGrids() {
+  const out = {};
+  document.querySelectorAll("#grid input[type=checkbox]:checked").forEach(cb => { const n = cb.dataset.n, ref = NT2REF[n], p = prop(n);
+    const f = +document.querySelector(`[data-f="${n}"]`).value, t = +document.querySelector(`[data-t="${n}"]`).value, s = +document.querySelector(`[data-s="${n}"]`).value;
+    const v = []; if (s > 0 && t >= f) for (let x = f; x <= t + s / 1e6; x += s) v.push(p.type === "int" ? Math.round(x) : +x.toFixed(6));
+    out[ref] = [...new Set(v)]; });
+  return out;
+}
+function feasible(t, cons) { return cons.every(c => { const m = c.match(/^\s*([\w.]+)\s*(<=|>=|<|>)\s*([\w.]+)\s*$/); if (!m) return true;
+  const val = x => /^-?\d+(\.\d+)?$/.test(x) ? +x : t[x]; const a = val(m[1]), b = val(m[3]); if (a === undefined || b === undefined) return true;
+  return {"<": a < b, "<=": a <= b, ">": a > b, ">=": a >= b}[m[2]]; }); }
+setInterval(() => {                               // живой расчёт: число комбинаций, невозможные, порог «случайного лучшего»
+  if (!GRAPH || !SCHEMA || MODE !== "dev") { document.getElementById("dsr").textContent = ""; return; }
+  const g = checkedGrids(), keys = Object.keys(g), n = keys.reduce((a, k) => a * g[k].length, keys.length ? 1 : 0);
+  const cons = document.getElementById("cons").value.split("\n").map(s => s.trim()).filter(Boolean);
+  let bad = 0; if (n && n <= 200000) { const base = {}; for (const [r, nt] of Object.entries(REF2NT)) { const p = prop(nt); if (p) base[r] = p.value; }
+    const rec = (i, t) => { if (i === keys.length) { if (!feasible(t, cons)) bad++; return; } for (const v of g[keys[i]]) rec(i + 1, {...t, [keys[i]]: v}); }; rec(0, base); }
+  document.getElementById("infeas").textContent = n ? `невозможных комбинаций: ${bad} из ${n}` : "";
+  document.getElementById("dsr").textContent = n ? `комбинаций ${n}; лучший из ${n} случайных наборов даст Шарп ≈ ${emax(n).toFixed(2)}σ — порог, который обязан превзойти результат` : "";
+}, 700);
+
+function makeTask2() {
+  if (!SCHEMA || !GRAPH) { alert("загрузите схему и граф"); return; }
+  const base = {}; for (const [r, nt] of Object.entries(REF2NT)) { const p = prop(nt); if (p) base[r] = p.value; }
+  const cons = document.getElementById("cons").value.split("\n").map(s => s.trim()).filter(Boolean);
+  const task = {task_id: `${MODE}_${new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14)}`, target_module: document.getElementById("grp").value,
+    data: document.getElementById("tData").value, profile: document.getElementById("tProf").value, mode: MODE,
+    objective: document.getElementById("tObj").value, max_trials: +document.getElementById("tMax").value, select: document.getElementById("tSel").value, base, constraints: cons};
+  if (MODE === "dev") { const g = checkedGrids(); if (!Object.keys(g).length || Object.values(g).some(v => !v.length)) { alert("отметьте настройки и задайте «от ≤ до», шаг > 0"); return; }
+    task.optimize = g; for (const k of Object.keys(g)) delete base[k]; }
+  else if (MODE === "param") { task.target = [document.getElementById("tgt").value]; task.depth = +document.getElementById("depth").value || 1; }
+  else task.hypothesis = document.getElementById("hyp").value;
+  let out = task, name = `task_${task.task_id}.json`;
+  if (document.getElementById("wfa").checked) {
+    const y0 = +document.getElementById("wy0").value, y1 = +document.getElementById("wy1").value, tr = +document.getElementById("wtr").value, te = +document.getElementById("wte").value, win = [];
+    for (let y = y0; y + tr + te - 1 <= y1; y += te) win.push({train: [`${y}-01-01`, `${y + tr}-01-01`], test: [`${y + tr}-01-01`, `${y + tr + te}-01-01`]});
+    if (!win.length) { alert("окон нет: проверьте годы"); return; }
+    out = {plan: "DZ-WFA-v1", plan_id: "wfa_" + task.task_id, task, windows: win}; name = `wfa_plan_${task.task_id}.json`;
+    document.getElementById("cfgMsg").textContent = `план проверки вперёд: окон ${win.length}. Запуск: python DZ_OPT_WFA.py --plan ${name}`;
+  } else document.getElementById("cfgMsg").textContent = "Задача сформирована. Неотмеченные параметры — текущие значения стратегии.";
+  const json = JSON.stringify(out, null, 2); document.getElementById("taskOut").textContent = json; download(name, json);
+}
+document.getElementById("mkTask").onclick = makeTask2;
+document.getElementById("fGraph").addEventListener("change", () => setTimeout(() => setMode(MODE), 300));
+setMode("dev");
+</script>
+<script>
+"use strict";
+/* ---------- иерархическая масса: ось, полосы, P_true — из телеметрии модуля ---------- */
+let HM = null;
+const _onBarBase = onBar;
+onBar = function (b) {
+  _onBarBase(b);
+  const m = (b.mods || []).find(x => x.x && x.x.event === "hierarchical_mass_update"); if (!m || !chart) return;
+  if (!HM) HM = {axis: chart.addLineSeries({color: "rgba(214,221,229,.6)", lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false}),
+                 up: chart.addLineSeries({color: "#2ec4b6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false}),
+                 lo: chart.addLineSeries({color: "#2ec4b6", lineWidth: 1, priceLineVisible: false, lastValueVisible: false}),
+                 pt: chart.addLineSeries({color: "#ff9f1c", lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: "P_true"})};
+  const x = m.x; HM.axis.update({time: b.ts, value: x.axis}); HM.up.update({time: b.ts, value: x.upper_band});
+  HM.lo.update({time: b.ts, value: x.lower_band}); HM.pt.update({time: b.ts, value: x.p_true});
+  const row = document.createElement("tr");
+  row.innerHTML = `<td>Масса</td><td>смещение ${x.delta_bias_ticks} т · ширина ${x.width_ticks} т · угол ${x.angle_deg}°</td>`;
+  document.getElementById("state").appendChild(row);
+};
+</script>
+<script>
+"use strict";
+/* ---------- служба оптимизатора: очередь без командной строки; профиль инструмента ---------- */
+const _dl = download; download = (n, t) => { if (!window.__noDl) _dl(n, t); };
+const svcBox = document.createElement("div");
+svcBox.innerHTML = `<div class="row"><b>Служба:</b> <label>порт <input id="sPort" size="5" value="${localStorage.getItem("atlas_svc_port") || "8090"}"></label>
+ <label>ключ <input id="sTok" size="34" type="password" value="${localStorage.getItem("atlas_svc_tok") || ""}" placeholder="atlas_service_token.txt"></label>
+ <label>Инструмент <select id="tInst"></select></label> <button id="toQueue">В очередь службы</button><span id="sMsg" class="note"></span></div>
+ <table id="jobs"></table>`;
+document.getElementById("taskOut").before(svcBox);
+const svc = (method, path, body) => fetch(`http://127.0.0.1:${document.getElementById("sPort").value}${path}`,
+  {method, headers: {"X-Atlas-Token": document.getElementById("sTok").value.trim(), "Content-Type": "application/json"}, body: body ? JSON.stringify(body) : undefined})
+  .then(r => r.json().then(j => { if (!r.ok) throw new Error(j.error || r.status); return j; }));
+function applyProfile() {                      // диапазоны стопа и трейлинга — из профиля инструмента в графе
+  const p = GRAPH && GRAPH.instrument_profiles && GRAPH.instrument_profiles[document.getElementById("tInst").value]; if (!p) return;
+  document.getElementById("tData").value = document.getElementById("tInst").value;
+  for (const [ref, r] of Object.entries(p.ranges || {})) { const nt = REF2NT[ref]; if (!nt || !r.length) continue;
+    const f = document.querySelector(`[data-f="${nt}"]`), t = document.querySelector(`[data-t="${nt}"]`), s = document.querySelector(`[data-s="${nt}"]`);
+    if (f) { f.value = r[0]; t.value = r[r.length - 1]; s.value = r.length > 1 ? r[1] - r[0] : 1; } }
+  document.getElementById("sMsg").textContent = p.note || "";
+}
+document.getElementById("fGraph").addEventListener("change", () => setTimeout(() => {
+  const inst = Object.keys((GRAPH && GRAPH.instrument_profiles) || {});
+  document.getElementById("tInst").innerHTML = inst.map(i => `<option>${i}</option>`).join(""); applyProfile(); }, 400));
+document.getElementById("tInst").onchange = applyProfile;
+document.getElementById("grp").addEventListener("change", () => setTimeout(applyProfile, 50));
+document.getElementById("toQueue").onclick = () => {
+  localStorage.setItem("atlas_svc_port", document.getElementById("sPort").value); localStorage.setItem("atlas_svc_tok", document.getElementById("sTok").value);
+  window.__noDl = true; try { makeTask2(); } finally { window.__noDl = false; }
+  let obj; try { obj = JSON.parse(document.getElementById("taskOut").textContent); } catch { return; }
+  const inst = document.getElementById("tInst").value; (obj.task || obj).instrument = inst;
+  svc("POST", "/task", obj).then(j => document.getElementById("sMsg").textContent = "в очереди: " + j.queued)
+    .catch(e => document.getElementById("sMsg").textContent = "служба: " + e.message + " — запущена ли START_ATLAS_SERVICE.bat, верен ли ключ?");
+};
+setInterval(() => {
+  if (!document.getElementById("sTok").value || document.getElementById("cfg").hidden) return;
+  svc("GET", "/status").then(j => {
+    const rows = Object.entries(j.jobs).sort((a, b) => (b[1].queued || "").localeCompare(a[1].queued || "")).slice(0, 12);
+    const col = s => s === "done" ? "var(--ok)" : s === "failed" ? "var(--bad)" : "var(--warn)";
+    document.getElementById("jobs").innerHTML = "<tr><td>Задача</td><td>Состояние</td><td>DSR</td><td>PBO</td><td>Вердикт / ошибка</td></tr>" + rows.map(([id, s]) =>
+      `<tr><td>${id}</td><td style="color:${col(s.state)}">${s.state}</td><td>${s.deflated_sharpe ?? ""}</td><td>${s.pbo ?? ""}</td>`
+      + `<td style="color:var(--mute)">${s.wfa ? "проверка вперёд: вне выборки " + s.wfa.oos_net_total + ", эффективность " + s.wfa.walk_forward_efficiency : (s.verdict || (s.error || "").slice(-160))}</td></tr>`).join("");
+  }).catch(() => {});
+}, 3000);
+</script>
+</body></html>

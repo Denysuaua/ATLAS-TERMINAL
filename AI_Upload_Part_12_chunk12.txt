@@ -1,0 +1,300 @@
+﻿        private static readonly string[] MagNames =
+        {
+            "база: |ход| каждой свечи",                               // 0
+            "|ход| после середины (затухание)",                       // 1
+            "|ход| после голоса вверх или вниз"                       // 2
+        };
+
+        private readonly SwLeverStat[] stats = CreateStats(21);
+        private readonly SwLeverStat[] mags = CreateStats(3);
+        private readonly int[] stDirSum = new int[21];
+        private readonly List<PendingEval> pend = new List<PendingEval>();
+
+        private static SwLeverStat[] CreateStats(int n)
+        {
+            SwLeverStat[] a = new SwLeverStat[n];
+            for (int i = 0; i < n; i++) a[i] = new SwLeverStat();
+            return a;
+        }
+
+        private static int Bin(double x)
+        {
+            return x < -0.6 ? 0 : x < -0.2 ? 1 : x <= 0.2 ? 2 : x <= 0.6 ? 3 : 4;
+        }
+
+        private void AddEval(int type, int dir, double start, double norm, long due)
+        {
+            if (double.IsNaN(start) || !(norm > 0) || pend.Count >= 20000) return;
+            PendingEval e = new PendingEval();
+            e.Type = type; e.Dir = dir; e.Start = start; e.Norm = norm; e.Due = due;
+            pend.Add(e);
+        }
+
+        /// <summary>
+        /// Свеча взвешена: регистрируются оценки. Доходность нормируется на
+        /// медианный размах свечи — робастная мера типичной свечи участка.
+        /// </summary>
+        private void RegisterResearch(SwLeverCandle c, SwLeverState prev, bool newUp, bool newDn, bool fade)
+        {
+            double norm = Math.Max(TailMedian(hR, Math.Max(5, cfg.ScaleWindow)), 2 * tick);
+            long due = c.Index + Math.Max(1, cfg.ResearchHorizon);
+            double p = c.Close;
+
+            AddEval(0, 1, p, norm, due);
+            AddEval(100, 0, p, norm, due);   // база модуля хода
+
+            if (state == SwLeverState.Up) AddEval(1, 1, p, norm, due);
+            if (state == SwLeverState.Down) AddEval(2, -1, p, norm, due);
+            if (newUp) AddEval(3, 1, p, norm, due);
+            if (newDn) AddEval(4, -1, p, norm, due);
+            if (fade) AddEval(prev == SwLeverState.Up ? 5 : 6, prev == SwLeverState.Up ? -1 : 1, p, norm, due);
+
+            if (state == SwLeverState.Up && trendDir != 0) AddEval(trendDir > 0 ? 7 : 8, 1, p, norm, due);
+            if (state == SwLeverState.Down && trendDir != 0) AddEval(trendDir < 0 ? 9 : 10, -1, p, norm, due);
+
+            AddEval(11 + Bin(c.Lever), 1, p, norm, due);
+            AddEval(16 + Bin(c.MedianOffset), 1, p, norm, due);
+
+            if (state == SwLeverState.Middle) AddEval(101, 0, p, norm, due);
+            if (state == SwLeverState.Up || state == SwLeverState.Down) AddEval(102, 0, p, norm, due);
+        }
+
+        /// <summary>Закрытие свечи анализа: созревшие оценки получают результат.</summary>
+        private void ResolveResearch()
+        {
+            double p = Host.CloseOf(cfg.AnalysisSlot, 0);
+            if (double.IsNaN(p)) return;
+            for (int k = pend.Count - 1; k >= 0; k--)
+            {
+                PendingEval e = pend[k];
+                if (e.Due > anaIndex) continue;
+                double r = (p - e.Start) / e.Norm;
+                if (e.Type >= 100)
+                {
+                    int mi = e.Type - 100;
+                    if (mi >= 0 && mi < mags.Length) mags[mi].Add(Math.Abs(r));
+                }
+                else if (e.Type >= 0 && e.Type < stats.Length)
+                {
+                    stats[e.Type].Add(e.Dir * r);
+                    stDirSum[e.Type] += e.Dir;
+                }
+                pend.RemoveAt(k);
+            }
+        }
+
+        #endregion
+
+        #region Отрисовка
+
+        /// <summary>
+        /// Центр массы — отрезок на уровне медианы массы через всю свечу, цвет —
+        /// сторона перевеса этой свечи. Кластеры — только у последней взвешенной
+        /// свечи: прямоугольники, непрозрачность по плотности. Опора — отладка.
+        /// </summary>
+        private void ObserveCandle(SwLeverCandle c, SwLeverState prev)
+        {
+            if (!c.HasData || c.Start == DateTime.MinValue) return;
+
+            double sc = double.IsNaN(scale) ? 0.25 : scale;
+            double vz = Math.Max(0.01, cfg.VoteZ);
+            int side = c.Balance / sc >= vz ? 1 : c.Balance / sc <= -vz ? -1 : 0;
+
+            if (Host.VisualOn(SwVisualRole.LeverCenter))
+                EmitVisual(SwVisualEvent.Segment(SwVisualRole.LeverCenter, c.Start, c.Center, c.End, c.Center)
+                    .WithVariant(side).InRing("LEVC"));
+
+            if (Host.VisualOn(SwVisualRole.LeverFulcrum) && Host.VisualDebugOn)
+                EmitVisual(SwVisualEvent.Segment(SwVisualRole.LeverFulcrum, c.Start, c.Fulcrum, c.End, c.Fulcrum)
+                    .AsDebug().InRing("LEVG"));
+
+            if (Host.VisualOn(SwVisualRole.LeverCluster))
+            {
+                double maxD = 0;
+                for (int b = 0; b < c.Clusters; b++) if (c.ClDensity[b] > maxD) maxD = c.ClDensity[b];
+                for (int b = 0; b < c.Clusters; b++)
+                {
+                    int op = maxD > 0 ? 8 + (int)Math.Round(52.0 * c.ClDensity[b] / maxD) : 8;
+                    double mid = (c.ClLo[b] + c.ClHi[b]) / 2.0;
+                    int v = c.ClRich[b] ? (mid >= c.Fulcrum ? 1 : -1) : 0;
+                    EmitVisual(SwVisualEvent.Rect(SwVisualRole.LeverCluster, c.Start, c.ClLo[b], c.End, c.ClHi[b])
+                        .AsState("CL" + b).WithVariant(v).WithOpacity(op));
+                }
+                for (int b = c.Clusters; b < lastClusters; b++) EmitVisual(SwVisualEvent.RemoveState("CL" + b));
+                lastClusters = c.Clusters;
+            }
+
+            if (state == prev || prev == SwLeverState.Warmup) return;
+            double pad = 3 * tick;
+            if ((state == SwLeverState.Up || state == SwLeverState.Down) && Host.VisualOn(SwVisualRole.LeverVote))
+            {
+                bool up = state == SwLeverState.Up;
+                EmitVisual(SwVisualEvent.Marker(up ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown,
+                        SwVisualRole.LeverVote, c.End, up ? c.Low - pad : c.High + pad)
+                    .WithVariant(up ? 1 : -1).InRing("LEVV"));
+            }
+            else if (state == SwLeverState.Middle && (prev == SwLeverState.Up || prev == SwLeverState.Down)
+                     && Host.VisualOn(SwVisualRole.LeverFade))
+            {
+                EmitVisual(SwVisualEvent.Label(SwVisualRole.LeverFade, c.End, c.High + 2 * pad, "затухание")
+                    .WithRank(1).InRing("LEVF"));
+            }
+        }
+
+        #endregion
+
+        #region Отчёт и панель
+
+        public string ResearchReport(string pad)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.AppendLine(pad + "Рычаг: свечей взвешено " + candlesWeighed + ", пропущено " + candlesSkipped
+                + ", поздних кластеров отброшено " + lateDropped
+                + (totalWeight > 0 ? ", масса вне диапазона свечи " + (100.0 * outsideWeight / (totalWeight + outsideWeight)).ToString("F2") + " %" : "")
+                + "; голосов ↑" + votesUp + " ↓" + votesDown + ", затуханий " + fades
+                + ", не отправлено против тренда " + suppressedTrend + ", требований выхода " + exitsRequested);
+            if (!double.IsNaN(biasMedian))
+                sb.AppendLine(pad + "Рычаг: медиана баланса за окно " + F2(biasMedian) + ", масштаб 1.4826·MAD " + F2(scale)
+                    + " — заметный сдвиг медианы от нуля говорит о смещении метода на этом инструменте");
+            if (!cfg.Research) return sb.ToString();
+
+            SwLeverStat b = stats[0];
+            double baseMean = b.Mean;
+            sb.AppendLine(pad + "Рычаг, исследование: горизонт " + Math.Max(1, cfg.ResearchHorizon)
+                + " свечей анализа, доходность в медианных размахах свечи, знак — в сторону события");
+            sb.AppendLine(pad + "  событие; n; средняя; ст. ошибка; в сторону, %; средняя минус база");
+            for (int i = 0; i < stats.Length; i++)
+            {
+                SwLeverStat s = stats[i];
+                if (s.N == 0) continue;
+                double avgDir = (double)stDirSum[i] / Math.Max(1, s.N);
+                double excess = i == 0 || double.IsNaN(baseMean) ? double.NaN : s.Mean - avgDir * baseMean;
+                sb.AppendLine(pad + "  " + EventNames[i] + "; " + s.N + "; " + F3(s.Mean) + "; " + F3(s.StdErr) + "; "
+                    + (double.IsNaN(s.HitRate) ? "—" : (100 * s.HitRate).ToString("F1")) + "; " + F3(excess));
+            }
+            sb.AppendLine(pad + "  модуль хода: событие; n; средний |ход|; ст. ошибка");
+            for (int i = 0; i < mags.Length; i++)
+            {
+                if (mags[i].N == 0) continue;
+                sb.AppendLine(pad + "  " + MagNames[i] + "; " + mags[i].N + "; " + F3(mags[i].Mean) + "; " + F3(mags[i].StdErr));
+            }
+            sb.AppendLine(pad + "  как читать: связь «масса выше опоры → рост» есть, если средние по корзинам T или m растут"
+                + " слева направо и крайние корзины отличаются от базы больше чем на две ст. ошибки; затухание подтверждается,"
+                + " если |ход| после середины меньше базового");
+            return sb.ToString();
+        }
+
+        public string StatusLine
+        {
+            get
+            {
+                StringBuilder sb = new StringBuilder("рычаг: ");
+                if (!srcOk) { sb.Append("нет серии кластеров [B03]"); return sb.ToString(); }
+                SwLeverCandle c = last;
+                if (c == null) { sb.Append("ожидание первой свечи"); return sb.ToString(); }
+                sb.Append(c.End.ToString("HH:mm")).Append(" · ");
+                if (!c.HasData) sb.Append("свеча не взвешена: ").Append(c.NoDataReason).Append(" · ");
+                else sb.Append("рычаг ").Append(F2(c.Lever)).Append(", медиана ").Append(F2(c.MedianOffset))
+                       .Append(", кластеров ").Append(c.Clusters).Append(" · ");
+                sb.Append(StatusShort());
+                return sb.ToString();
+            }
+        }
+
+        private string StatusShort()
+        {
+            if (state == SwLeverState.Warmup) return WarmupText();
+            return "голос " + StateText(state) + ", сглаж. " + F2(smooth) + ", z " + F2(z)
+                 + ", тренд Т–С " + (trendDir > 0 ? "↑" : trendDir < 0 ? "↓" : "нет");
+        }
+
+        private static string StateText(SwLeverState s)
+        {
+            switch (s)
+            {
+                case SwLeverState.Up: return "↑ масса выше";
+                case SwLeverState.Down: return "↓ масса ниже";
+                case SwLeverState.Middle: return "середина";
+                default: return "прогрев";
+            }
+        }
+
+        private static string F2(double v)
+        {
+            return double.IsNaN(v) ? "—" : v.ToString("+0.00;-0.00;0.00");
+        }
+
+        private static string F3(double v)
+        {
+            return double.IsNaN(v) ? "—" : v.ToString("+0.000;-0.000;0.000");
+        }
+
+        #endregion
+    }
+}
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\DZ_SW_Mod_Lorentzian_S021.cs.txt
+--------------------------------------------------------------------------------
+
+#region Using declarations
+using System;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_Lorentzian_S021 — КЛАССИФИКАТОР ЛОРЕНЦА, [MOD11], v1.4 (2026-10-05)
+//
+//  v1.4 — РЕВИЗИЯ ВЕТКИ ИССЛЕДОВАНИЙ (карточка MOD11). Расчёт умолчаний не изменён.
+//    Наблюдение: маркер направления и перевеса на баре своей серии (роль LorentzVote, кольцо «LV»).
+//    Эксперимент L17 ExpMetaLabels, выключен: метка соседа — исход сделки тройным барьером (цель и стоп
+//    по ExpMetaAtr·ATR, вертикаль Horizon, худший путь), отдельно для длинной и короткой; направление —
+//    та сторона, чья доля успешных исходов среди K соседей не ниже VoteThreshold и выше другой
+//    (AFML 3.4, 3.6: мета-разметка — «сработает ли сделка», а не «куда пойдёт цена»). Код метки хранится
+//    в kLab как labUp·2 + labDn, чтобы не менять Insert.
+//
+//  v1.3 — ЭКСПЕРИМЕНТЫ, ВЫКЛЮЧЕНЫ.
+//    Э17 [L23] эмбарго (AFML 7.4.2, с. 107): соседи, чья метка закончилась меньше чем за
+//      [L23] баров до текущего, исключаются. Свежие соседи — почти копия текущего состояния:
+//      их признаки и исходы связаны с текущими через последовательную корреляцию.
+//    Э18 [L24] затухание во времени (AFML 4.7, с. 70): голос соседа весит 0,5^(давность /
+//      полураспад) — новая информация важнее старой; в голосе K ближайших и в Надарая–Ватсоне.
+//
+//  v1.2 — ПОРЦИЯ 2 ОТЛАДКИ. Без объёма два из пяти признаков — плотность объёма и
+//    смещение от центра масс — постоянны, и классификатор молча работает на трёх.
+//    Теперь это видно: одна запись трассировки LOR_NO_VOLUME. Расчёт не меняется.
+//  Роль Filter по умолчанию — подтверждение входов PAC; Signal при [L12].
+//
+//  КОНВЕЙЕР
+//    1. Пять признаков на закрытии бара своей серии: волатильность ATR/цена,
+//       скорость фильтра Калмана, RSI, плотность объёма, смещение от центра масс.
+//    2. Нормализация: предварительная стандартизация → Йео–Джонсон с λ,
+//       оцененным по максимуму правдоподобия на скользящем окне → z-оценка.
+//       Параметры пересчитываются раз в [L08] баров и только по прошлым данным.
+//    3. Расстояние Лоренца: d = Σ ln(1 + |xᵢ − yᵢ|) — логарифм гасит выбросы.
+//    4. K ближайших соседей за [L02] баров с шагом [L04].
+//
+//  ЗАЩИТА ОТ ЗАГЛЯДЫВАНИЯ — главное свойство модуля.
+//    Метка соседа i — знак приращения цены за H баров ВПЕРЁД от i. Сосед
+//    допускается, только если i + H ≤ t: его исход уже известен. Без этого
+//    правила классификатор голосует будущим, и его точность на истории — фикция.
+//    Шаг выборки соседей снижает зависимость соседних меток: соседние бары
+//    делят большую часть будущего окна, и их голоса почти не независимы.
+//
+//  ZERO-GC. Все буферы создаются в Attach; на такте бара выделений нет.
+//
+//  ЭКСПЕРИМЕНТЫ — выключены по умолчанию:
+//    [L13] голос с гауссовым весом по расстоянию Лоренца вместо равного;
+//    [L14]/[L15] самопроверка: причинная скользящая точность против базовой
+//          частоты класса; ниже порога — модуль уходит в нейтраль;
+//    [L16] согласие с трендом адаптивного ядра [MOD9]: расхождение — нейтраль.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Метод решения по прошлым ситуациям — выбор пользователя [L17].</summary>
+    public enum SwLorentzMethod
+    {
+        KnnVote,          // K ближайших, голос по знаку исхода

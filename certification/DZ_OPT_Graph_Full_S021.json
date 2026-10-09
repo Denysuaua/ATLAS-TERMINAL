@@ -1,0 +1,3094 @@
+{
+ "graph": "DZ-OPT-GRAPH-FULL-v1",
+ "built": "2026-10-01T11:32:49",
+ "nodes": [
+  {
+   "name": "Slot13Enabled",
+   "property_id": "MOD13_Slot13Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot14Enabled",
+   "property_id": "MOD14_Slot14Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot15Enabled",
+   "property_id": "MOD15_Slot15Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KalRole",
+   "property_id": "C01_KalRole",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Filter",
+    "Signal"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KalLowerSlot",
+   "property_id": "C02_KalLowerSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "KalCurrentSlot",
+   "property_id": "C03_KalCurrentSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "KalHigherSlot",
+   "property_id": "C04_KalHigherSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "KalPeriod",
+   "property_id": "C05_KalPeriod",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    10,
+    15,
+    20,
+    30,
+    40
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "KalBandSigma",
+   "property_id": "C06_KalBandSigma",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1.0,
+    1.5,
+    2,
+    2.5,
+    3.0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "KalPolicy",
+   "property_id": "C07_KalPolicy",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "TrendDirection",
+    "TrendOnly",
+    "NoRange"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LevRole",
+   "property_id": "B01_LevRole",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Filter",
+    "Signal"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LevAnalysisSlot",
+   "property_id": "B02_LevAnalysisSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "LevClusterSlot",
+   "property_id": "B03_LevClusterSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "LevClusters",
+   "property_id": "B04_LevClusters",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    5,
+    8,
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LevVoteZ",
+   "property_id": "B05_LevVoteZ",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "LevPolicy",
+   "property_id": "B06_LevPolicy",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "DirectionOnly",
+    "BlockMiddle"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HmSlot",
+   "property_id": "G01_HmSlot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "HmWindow",
+   "property_id": "G02_HmWindow",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    8,
+    11,
+    15,
+    22,
+    30
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "HmWeight5",
+   "property_id": "G03_HmWeight5",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "HmWeight15",
+   "property_id": "G04_HmWeight15",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.75,
+    1.125,
+    1.5,
+    1.875,
+    2.25
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "HmSignalMode",
+   "property_id": "G05_HmSignalMode",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HmPercentile",
+   "property_id": "G06_HmPercentile",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.7,
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95,
+    0.99
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HmBiasThreshold",
+   "property_id": "G07_HmBiasThreshold",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1.0,
+    1.5,
+    2,
+    2.5,
+    3.0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "HmExpSqueeze",
+   "property_id": "G08_HmExpSqueeze",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HmExpSqueezeRatio",
+   "property_id": "G09_HmExpSqueezeRatio",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HmExpPersist",
+   "property_id": "G10_HmExpPersist",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "ExportSchema",
+   "property_id": "U04_ExportSchema",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "PresetFile",
+   "property_id": "U05_PresetFile",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "нет числового значения"
+  },
+  {
+   "name": "WsEnabled",
+   "property_id": "U01_WsEnabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "WsPort",
+   "property_id": "U02_WsPort",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    4044,
+    6066,
+    8088,
+    12132,
+    16176
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "WsAllowCommands",
+   "property_id": "U03_WsAllowCommands",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "VisualsEnabled",
+   "property_id": "V01_VisualsEnabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "VisualDebugEnabled",
+   "property_id": "V02_VisualDebugEnabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot1Enabled",
+   "property_id": "MOD1_Slot1Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot2Enabled",
+   "property_id": "MOD2_Slot2Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot3Enabled",
+   "property_id": "MOD3_Slot3Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot5Enabled",
+   "property_id": "MOD5_Slot5Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot6Enabled",
+   "property_id": "MOD6_Slot6Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot8Enabled",
+   "property_id": "MOD8_Slot8Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot7Enabled",
+   "property_id": "MOD7_Slot7Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot4Enabled",
+   "property_id": "MOD4_Slot4Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "UseSeries1",
+   "property_id": "S50_UseSeries1",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series1Type",
+   "property_id": "S51_Series1Type",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    "Tick",
+    "Volume",
+    "Range",
+    "Second",
+    "Minute",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+    "HeikenAshi",
+    "Kagi",
+    "Renko",
+    "PointAndFigure",
+    "LineBreak",
+    "Volumetric",
+    "Delta",
+    "PriceOnVolume"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series1Value",
+   "property_id": "S52_Series1Value",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "UseSeries2",
+   "property_id": "S60_UseSeries2",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series2Type",
+   "property_id": "S61_Series2Type",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    "Tick",
+    "Volume",
+    "Range",
+    "Second",
+    "Minute",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+    "HeikenAshi",
+    "Kagi",
+    "Renko",
+    "PointAndFigure",
+    "LineBreak",
+    "Volumetric",
+    "Delta",
+    "PriceOnVolume"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series2Value",
+   "property_id": "S62_Series2Value",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    2,
+    4,
+    5,
+    8,
+    10
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "UseSeries3",
+   "property_id": "S70_UseSeries3",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series3Type",
+   "property_id": "S71_Series3Type",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    "Tick",
+    "Volume",
+    "Range",
+    "Second",
+    "Minute",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+    "HeikenAshi",
+    "Kagi",
+    "Renko",
+    "PointAndFigure",
+    "LineBreak",
+    "Volumetric",
+    "Delta",
+    "PriceOnVolume"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series3Value",
+   "property_id": "S72_Series3Value",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    8,
+    11,
+    15,
+    22,
+    30
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "UseSeries4",
+   "property_id": "S80_UseSeries4",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series4Type",
+   "property_id": "S81_Series4Type",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    "Tick",
+    "Volume",
+    "Range",
+    "Second",
+    "Minute",
+    "Day",
+    "Week",
+    "Month",
+    "Year",
+    "HeikenAshi",
+    "Kagi",
+    "Renko",
+    "PointAndFigure",
+    "LineBreak",
+    "Volumetric",
+    "Delta",
+    "PriceOnVolume"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Series4Value",
+   "property_id": "S82_Series4Value",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    30,
+    45,
+    60,
+    90,
+    120
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "ExecSeriesSlot",
+   "property_id": "S90_ExecSeriesSlot",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "DboMorningBaseStart",
+   "property_id": "W11_DboMorningBaseStart",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    30000,
+    45000,
+    60000,
+    90000,
+    120000
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboMorningBaseEnd",
+   "property_id": "W12_DboMorningBaseEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    32980,
+    49469,
+    65959,
+    98938,
+    131918
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboMorningSignalStart",
+   "property_id": "W13_DboMorningSignalStart",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    35000,
+    52500,
+    70000,
+    105000,
+    140000
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboMorningSignalEnd",
+   "property_id": "W14_DboMorningSignalEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    47980,
+    71969,
+    95959,
+    143938,
+    191918
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboMorningSessionEnd",
+   "property_id": "W15_DboMorningSessionEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    71500,
+    107250,
+    143000,
+    214500,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboMorningTrailTicks",
+   "property_id": "W16_DboMorningTrailTicks",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    8,
+    10,
+    15,
+    20,
+    25,
+    30
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboEveningBaseStart",
+   "property_id": "W21_DboEveningBaseStart",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    85000,
+    127500,
+    170000,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboEveningBaseEnd",
+   "property_id": "W22_DboEveningBaseEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    87980,
+    131969,
+    175959,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboEveningSignalStart",
+   "property_id": "W23_DboEveningSignalStart",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    90000,
+    135000,
+    180000,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboEveningSignalEnd",
+   "property_id": "W24_DboEveningSignalEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    97980,
+    146969,
+    195959,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboEveningSessionEnd",
+   "property_id": "W25_DboEveningSessionEnd",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    106500,
+    159750,
+    213000,
+    235959
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "DboEveningTrailTicks",
+   "property_id": "W26_DboEveningTrailTicks",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    6,
+    8,
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboMinRangeTicks",
+   "property_id": "W31_DboMinRangeTicks",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboMaxRangeTicks",
+   "property_id": "W32_DboMaxRangeTicks",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    35,
+    45,
+    55,
+    65
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboMinBaseBars",
+   "property_id": "W33_DboMinBaseBars",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    40,
+    50,
+    55
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboFlatThreshold",
+   "property_id": "W34_DboFlatThreshold",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    0.75,
+    0.8,
+    0.85,
+    0.9,
+    0.95
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboAtrFast",
+   "property_id": "W35_DboAtrFast",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    10,
+    15,
+    20,
+    30
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboAtrSlow",
+   "property_id": "W36_DboAtrSlow",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    30,
+    40,
+    60,
+    80
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboTrendBars",
+   "property_id": "W37_DboTrendBars",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    5,
+    8,
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboEntryOffsetTicks",
+   "property_id": "W38_DboEntryOffsetTicks",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "DboMaxEntries",
+   "property_id": "W39_DboMaxEntries",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "DboEveningDir",
+   "property_id": "W40_DboEveningDir",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "DayTrend",
+    "H4",
+    "Both"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DboCloseAtSessionEnd",
+   "property_id": "W41_DboCloseAtSessionEnd",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "BreakevenOnBestPrice",
+   "property_id": "F34_BreakevenOnBestPrice",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot9Enabled",
+   "property_id": "MOD9_Slot9Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerKernel",
+   "property_id": "K50_KerKernel",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Epanechnikov",
+    "Triangular",
+    "Tricube",
+    "Cosine",
+    "Gaussian"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerRegression",
+   "property_id": "K51_KerRegression",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "LocalLinear",
+    "NadarayaWatson"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerSlot",
+   "property_id": "K52_KerSlot",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "KerBandwidth",
+   "property_id": "K53_KerBandwidth",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    10,
+    15,
+    20,
+    30,
+    40
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "KerAdaptive",
+   "property_id": "K54_KerAdaptive",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerVolumeWeighting",
+   "property_id": "K55_KerVolumeWeighting",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerVolumeGamma",
+   "property_id": "K56_KerVolumeGamma",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "KerVolumeScale",
+   "property_id": "K57_KerVolumeScale",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Robust",
+    "Standard"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerVolumeWindow",
+   "property_id": "K58_KerVolumeWindow",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    25,
+    38,
+    50,
+    75,
+    100
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "KerSlopeThreshold",
+   "property_id": "K59_KerSlopeThreshold",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "KerDivergence",
+   "property_id": "K60_KerDivergence",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Neutral",
+    "Veto",
+    "RequestPartialExit"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerExpTGate",
+   "property_id": "K61_KerExpTGate",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerExpTMin",
+   "property_id": "K62_KerExpTMin",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1.0,
+    1.5,
+    2,
+    2.5,
+    3.0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "KerExpFastSlow",
+   "property_id": "K63_KerExpFastSlow",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerExpSkill",
+   "property_id": "K64_KerExpSkill",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "KerSignalMode",
+   "property_id": "K65_KerSignalMode",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorMethod",
+   "property_id": "L17_LorMethod",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "KnnVote",
+    "NadarayaWatson",
+    "Consensus"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorNwKernel",
+   "property_id": "L18_LorNwKernel",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Epanechnikov",
+    "Triangular",
+    "Tricube",
+    "Cosine",
+    "Gaussian"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorNwBandMult",
+   "property_id": "L19_LorNwBandMult",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "LorNwThreshold",
+   "property_id": "L20_LorNwThreshold",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.05,
+    0.075,
+    0.1,
+    0.125,
+    0.15
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "LorNwMinEff",
+   "property_id": "L21_LorNwMinEff",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    5.0,
+    7.5,
+    10,
+    12.5,
+    15.0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "Slot11Enabled",
+   "property_id": "MOD11_Slot11Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorSlot",
+   "property_id": "L01_LorSlot",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "LorLookback",
+   "property_id": "L02_LorLookback",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1000,
+    1500,
+    2000,
+    3000,
+    4000
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorNeighbors",
+   "property_id": "L03_LorNeighbors",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    8,
+    12,
+    16,
+    24,
+    32
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorStride",
+   "property_id": "L04_LorStride",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    2,
+    3,
+    4,
+    6,
+    8
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorHorizon",
+   "property_id": "L05_LorHorizon",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    2,
+    3,
+    4,
+    6,
+    8
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorVoteThreshold",
+   "property_id": "L06_LorVoteThreshold",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.35,
+    0.4,
+    0.45,
+    0.5,
+    0.55,
+    0.6,
+    0.65
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "LorYeoJohnson",
+   "property_id": "L07_LorYeoJohnson",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorRefitBars",
+   "property_id": "L08_LorRefitBars",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    50,
+    75,
+    100,
+    150,
+    200
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorFitWindow",
+   "property_id": "L09_LorFitWindow",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    250,
+    375,
+    500,
+    750,
+    1000
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "LorKalmanQ",
+   "property_id": "L10_LorKalmanQ",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.005,
+    0.0075,
+    0.01,
+    0.0125,
+    0.015
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "LorKalmanR",
+   "property_id": "L11_LorKalmanR",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "LorSignalMode",
+   "property_id": "L12_LorSignalMode",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorExpKernelVote",
+   "property_id": "L13_LorExpKernelVote",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorExpPrecisionGate",
+   "property_id": "L14_LorExpPrecisionGate",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "LorExpPrecisionMin",
+   "property_id": "L15_LorExpPrecisionMin",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.5,
+    0.55,
+    0.6,
+    0.65,
+    0.7,
+    0.75,
+    0.8
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "LorExpAgreeKernel",
+   "property_id": "L16_LorExpAgreeKernel",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot10Enabled",
+   "property_id": "MOD10_Slot10Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkSlot",
+   "property_id": "H01_HkSlot",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "HkRegression",
+   "property_id": "H02_HkRegression",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "LocalLinear",
+    "NadarayaWatson"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkKernel",
+   "property_id": "H03_HkKernel",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Epanechnikov",
+    "Triangular",
+    "Tricube",
+    "Cosine",
+    "Gaussian"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkHurstPeriod",
+   "property_id": "H04_HkHurstPeriod",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    64,
+    96,
+    128,
+    192,
+    256
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "HkMinBandwidth",
+   "property_id": "H05_HkMinBandwidth",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    4,
+    6,
+    8,
+    12,
+    16
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "HkMaxBandwidth",
+   "property_id": "H06_HkMaxBandwidth",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    20,
+    30,
+    40,
+    60,
+    80
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "HkHLow",
+   "property_id": "H07_HkHLow",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.22,
+    0.27,
+    0.32,
+    0.37,
+    0.42,
+    0.47,
+    0.52
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HkHHigh",
+   "property_id": "H08_HkHHigh",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.42,
+    0.47,
+    0.52,
+    0.57,
+    0.62,
+    0.67,
+    0.72
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HkRwLevel",
+   "property_id": "H15_HkRwLevel",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.32,
+    0.37,
+    0.42,
+    0.47,
+    0.52,
+    0.57,
+    0.62
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HkSlopeThreshold",
+   "property_id": "H09_HkSlopeThreshold",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "HkSignalMode",
+   "property_id": "H10_HkSignalMode",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkExpGate",
+   "property_id": "H11_HkExpGate",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkExpGateBand",
+   "property_id": "H12_HkExpGateBand",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0,
+    0.03,
+    0.08,
+    0.13,
+    0.18
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "HkExpInverse",
+   "property_id": "H13_HkExpInverse",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "HkExpConfidence",
+   "property_id": "H14_HkExpConfidence",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "Slot12Enabled",
+   "property_id": "MOD12_Slot12Enabled",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "FsPath",
+   "property_id": "Q01_FsPath",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "нет числового значения"
+  },
+  {
+   "name": "FsMaxAge",
+   "property_id": "Q02_FsMaxAge",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    60,
+    90,
+    120,
+    180,
+    240
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "FsMaxLag",
+   "property_id": "Q03_FsMaxLag",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "FsSignalMode",
+   "property_id": "Q04_FsSignalMode",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "FsMinConfidence",
+   "property_id": "Q05_FsMinConfidence",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    0,
+    0.05,
+    0.1,
+    0.15
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "PacLowerSlot",
+   "property_id": "M01_PacLowerSlot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "PacHigherSlot",
+   "property_id": "M02_PacHigherSlot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "PacUseHigher",
+   "property_id": "M03_PacUseHigher",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "PacInternalStrength",
+   "property_id": "M04_PacInternalStrength",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    2,
+    3,
+    4,
+    6
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "PacSwingStrength",
+   "property_id": "M05_PacSwingStrength",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    5,
+    8,
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "PacBreakBy",
+   "property_id": "M06_PacBreakBy",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "BarClose",
+    "BarExtreme"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DboWindowZone",
+   "property_id": "M81_DboWindowZone",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Berlin",
+    "Chicago",
+    "NewYork",
+    "London",
+    "Utc"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DboUseMorning",
+   "property_id": "M82_DboUseMorning",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DboUseEvening",
+   "property_id": "M83_DboUseEvening",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DboM1Slot",
+   "property_id": "M84_DboM1Slot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "DboM15Slot",
+   "property_id": "M85_DboM15Slot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "DboH4Slot",
+   "property_id": "M86_DboH4Slot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "TimeForceFlatten",
+   "property_id": "M07_TimeForceFlatten",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "TrfpLine1Slot",
+   "property_id": "M11_TrfpLine1Slot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "TrfpLine2Slot",
+   "property_id": "M12_TrfpLine2Slot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "TrfpLine3Slot",
+   "property_id": "M13_TrfpLine3Slot",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "TrfpUseLine3",
+   "property_id": "M14_TrfpUseLine3",
+   "stage": 2,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "TrfpPeriod",
+   "property_id": "M15_TrfpPeriod",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    50,
+    75,
+    100,
+    150,
+    200
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "TrfpMultiplier",
+   "property_id": "M16_TrfpMultiplier",
+   "stage": 2,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    1.5,
+    2.25,
+    3,
+    3.75,
+    4.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "RegimeSlot",
+   "property_id": "M21_RegimeSlot",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "RegimeWindow",
+   "property_id": "M22_RegimeWindow",
+   "stage": 1,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    30,
+    45,
+    60,
+    90,
+    120
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "RegimeAllow",
+   "property_id": "M23_RegimeAllow",
+   "stage": 1,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "PersistentOnly",
+    "MeanRevertOnly",
+    "AnyExceptRandomWalk",
+    "Any"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "GuardDailyLoss",
+   "property_id": "M31_GuardDailyLoss",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "GuardDailyProfit",
+   "property_id": "M32_GuardDailyProfit",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "GuardBreachAction",
+   "property_id": "M33_GuardBreachAction",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "BlockNewEntries",
+    "BlockAndFlatten"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "GuardRestartPolicy",
+   "property_id": "M34_GuardRestartPolicy",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "BlockUntilNextSession",
+    "AssumeZeroPnl"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "AStopSlot",
+   "property_id": "M41_AStopSlot",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [],
+   "grid_rule": "выбор серии — структурное решение, вне перебора"
+  },
+  {
+   "name": "AStopAtrPeriod",
+   "property_id": "M42_AStopAtrPeriod",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    5,
+    8,
+    10,
+    15,
+    20
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "AStopWidthMode",
+   "property_id": "M43_AStopWidthMode",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Fixed",
+    "VolatilityBuckets"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "AStopFixedMultiplier",
+   "property_id": "M44_AStopFixedMultiplier",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1.5,
+    2.25,
+    3,
+    3.75,
+    4.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "EscortLineNumber",
+   "property_id": "M51_EscortLineNumber",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2,
+    3
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "EscortTrigger",
+   "property_id": "M52_EscortTrigger",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "LineFlip",
+    "PriceCross",
+    "FlipOrCross"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "EscortConfirmBars",
+   "property_id": "M53_EscortConfirmBars",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "RequireAllSignalsAgree",
+   "property_id": "D01_RequireAllSignalsAgree",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "MinConfidence",
+   "property_id": "D02_MinConfidence",
+   "stage": 3,
+   "class": "NUMERIC",
+   "executor_kind": "HOST_RUNNER",
+   "grid": [
+    0,
+    0.05,
+    0.1,
+    0.15
+   ],
+   "grid_rule": "доля 0–1: шаг 0,05 вокруг текущего"
+  },
+  {
+   "name": "FilterMissingBlocksEntry",
+   "property_id": "D03_FilterMissingBlocksEntry",
+   "stage": 3,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DryRunMode",
+   "property_id": "E01_DryRunMode",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "DefaultQuantity",
+   "property_id": "E02_DefaultQuantity",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "StopLossTicks",
+   "property_id": "E03_StopLossTicks",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    100,
+    150,
+    200,
+    250,
+    300
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "MinBarsInTrade",
+   "property_id": "E04_MinBarsInTrade",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "SizingMode",
+   "property_id": "F01_SizingMode",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "FixedQuantity",
+    "RiskMoneyPerTrade",
+    "RiskPercentOfEquity"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "RiskMoneyPerTrade",
+   "property_id": "F02_RiskMoneyPerTrade",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "AccountEquityReference",
+   "property_id": "F03_AccountEquityReference",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "RiskPercentOfEquity",
+   "property_id": "F04_RiskPercentOfEquity",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0.25,
+    0.375,
+    0.5,
+    0.625,
+    0.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "MinQuantity",
+   "property_id": "F05_MinQuantity",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "MaxQuantity",
+   "property_id": "F06_MaxQuantity",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    2,
+    4,
+    5,
+    8,
+    10
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "RoundTurnCostPerContract",
+   "property_id": "F07_RoundTurnCostPerContract",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "SlippageReserveTicks",
+   "property_id": "F08_SlippageReserveTicks",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "StopMode",
+   "property_id": "F11_StopMode",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "FixedTicks",
+    "PriceDollars",
+    "AtrMultiple"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "StopPriceDollars",
+   "property_id": "F12_StopPriceDollars",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "StopAtrMultiple",
+   "property_id": "F13_StopAtrMultiple",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1.0,
+    1.5,
+    2,
+    2.5,
+    3.0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "AtrPeriod",
+   "property_id": "F14_AtrPeriod",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    7,
+    10,
+    14,
+    21,
+    28
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "UseScaleOut",
+   "property_id": "F21_UseScaleOut",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "ScaleSteps",
+   "property_id": "F22_ScaleSteps",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "StepDistanceMode",
+   "property_id": "F23_StepDistanceMode",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "FixedTicks",
+    "PriceDollars",
+    "RMultiple"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "StepFixedTicks",
+   "property_id": "F24_StepFixedTicks",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    20,
+    30,
+    40,
+    50,
+    60,
+    80
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "StepPriceDollars",
+   "property_id": "F25_StepPriceDollars",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "StepRMultiple",
+   "property_id": "F26_StepRMultiple",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "ContractsOnStep1",
+   "property_id": "F27_ContractsOnStep1",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1,
+    2
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "ContractsPerStep",
+   "property_id": "F28_ContractsPerStep",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "KeepRunner",
+   "property_id": "F29_KeepRunner",
+   "stage": 4,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "BreakevenMode",
+   "property_id": "F31_BreakevenMode",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Off",
+    "AfterStep1",
+    "AfterStep2",
+    "AtRMultiple"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "BreakevenOffsetTicks",
+   "property_id": "F32_BreakevenOffsetTicks",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "OPT_ENGINE",
+   "grid": [
+    1,
+    2,
+    3
+   ],
+   "grid_rule": "сетка графа эталона, обоснованная исследованием"
+  },
+  {
+   "name": "BreakevenAtR",
+   "property_id": "F33_BreakevenAtR",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "TrailMode",
+   "property_id": "F41_TrailMode",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    "Off",
+    "FixedDistance",
+    "AtrMultiple",
+    "StepLock"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "TrailActivateAtR",
+   "property_id": "F42_TrailActivateAtR",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    0.5,
+    0.75,
+    1,
+    1.25,
+    1.5
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "TrailAtrMultiple",
+   "property_id": "F43_TrailAtrMultiple",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1.25,
+    1.875,
+    2.5,
+    3.125,
+    3.75
+   ],
+   "grid_rule": "множитель: ±50% вокруг текущего"
+  },
+  {
+   "name": "DisableStopMoveAfterStep1",
+   "property_id": "F51_DisableStopMoveAfterStep1",
+   "stage": 5,
+   "class": "STRUCTURAL",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "StepConfirmTimeoutBars",
+   "property_id": "F53_StepConfirmTimeoutBars",
+   "stage": 5,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    2,
+    3,
+    4,
+    6
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "MinBarsBetweenStopMoves",
+   "property_id": "F52_MinBarsBetweenStopMoves",
+   "stage": 4,
+   "class": "NUMERIC",
+   "executor_kind": "NT_ANALYZER",
+   "grid": [
+    1
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "EnablePositionManager",
+   "property_id": "P01_EnablePositionManager",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "BreakevenAfterTicks",
+   "property_id": "P02_BreakevenAfterTicks",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    15,
+    22,
+    30,
+    38,
+    45,
+    60
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "TrailAfterTicks",
+   "property_id": "P04_TrailAfterTicks",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    30,
+    45,
+    60,
+    75,
+    90,
+    120
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "TrailDistanceTicks",
+   "property_id": "P05_TrailDistanceTicks",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    20,
+    30,
+    40,
+    50,
+    60,
+    80
+   ],
+   "grid_rule": "тики: целые кратные шагу цены, ×0,5…×2"
+  },
+  {
+   "name": "EnableTracing",
+   "property_id": "T01_EnableTracing",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "PrintTraceToOutput",
+   "property_id": "T02_PrintTraceToOutput",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "TraceBufferSize",
+   "property_id": "T03_TraceBufferSize",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    100,
+    150,
+    200,
+    300,
+    400
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "PanelTraceLines",
+   "property_id": "T04_PanelTraceLines",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    3,
+    4,
+    6,
+    9,
+    12
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "SilentAfterBars",
+   "property_id": "T05_SilentAfterBars",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    2,
+    4,
+    5,
+    8,
+    10
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  },
+  {
+   "name": "ShowHubPanel",
+   "property_id": "T10_ShowHubPanel",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    false,
+    true
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "PanelPosition",
+   "property_id": "T11_PanelPosition",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    "BottomLeft",
+    "BottomRight",
+    "Center",
+    "TopLeft",
+    "TopRight"
+   ],
+   "grid_rule": "гипотеза: перебор значений, не сетка"
+  },
+  {
+   "name": "PanelFontSize",
+   "property_id": "T12_PanelFontSize",
+   "stage": null,
+   "class": "SAFETY",
+   "executor_kind": null,
+   "grid": [
+    6,
+    8,
+    11,
+    16,
+    22
+   ],
+   "grid_rule": "окно в барах: геометрическая сетка ×0,5…×2 — равная относительная чувствительность"
+  }
+ ],
+ "edges": [
+  {
+   "a": "DboMinRangeTicks",
+   "b": "DboMaxRangeTicks",
+   "rule": "связь графа",
+   "why": "границы одного окна допуска ширины базы",
+   "hard": true
+  },
+  {
+   "a": "DboMaxRangeTicks",
+   "b": "StopLossTicks",
+   "rule": "связь графа",
+   "why": "уровень входа — граница базы; широкая база означает дальний противоположный край",
+   "hard": true
+  },
+  {
+   "a": "DboAtrFast",
+   "b": "DboAtrSlow",
+   "rule": "связь графа",
+   "why": "NormVol — их отношение",
+   "hard": true
+  },
+  {
+   "a": "DboAtrFast",
+   "b": "DboFlatThreshold",
+   "rule": "связь графа",
+   "why": "порог сравнивается с отношением, зависящим от обоих периодов",
+   "hard": true
+  },
+  {
+   "a": "DboAtrSlow",
+   "b": "DboFlatThreshold",
+   "rule": "связь графа",
+   "why": "то же",
+   "hard": true
+  },
+  {
+   "a": "KalLowerSlot",
+   "b": "KalHigherSlot",
+   "rule": "KalLowerSlot < KalHigherSlot",
+   "why": "пара Low/High: нижняя граница меньше верхней",
+   "hard": true
+  },
+  {
+   "a": "HmExpSqueeze",
+   "b": "HmExpSqueezeRatio",
+   "rule": "HmExpSqueezeRatio действует только при HmExpSqueeze = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "HmExpSqueeze",
+   "b": "HmExpPersist",
+   "rule": "HmExpPersist действует только при HmExpSqueeze = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "KerExpTGate",
+   "b": "KerExpTMin",
+   "rule": "KerExpTMin действует только при KerExpTGate = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "KerExpFastSlow",
+   "b": "KerExpTMin",
+   "rule": "KerExpTMin действует только при KerExpFastSlow = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "KerExpSkill",
+   "b": "KerExpTMin",
+   "rule": "KerExpTMin действует только при KerExpSkill = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "LorExpKernelVote",
+   "b": "LorExpPrecisionMin",
+   "rule": "LorExpPrecisionMin действует только при LorExpKernelVote = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "LorExpPrecisionGate",
+   "b": "LorExpPrecisionMin",
+   "rule": "LorExpPrecisionMin действует только при LorExpPrecisionGate = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "LorExpAgreeKernel",
+   "b": "LorExpPrecisionMin",
+   "rule": "LorExpPrecisionMin действует только при LorExpAgreeKernel = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "HkMinBandwidth",
+   "b": "HkMaxBandwidth",
+   "rule": "HkMinBandwidth < HkMaxBandwidth",
+   "why": "пара Min/Max: нижняя граница меньше верхней",
+   "hard": true
+  },
+  {
+   "a": "HkHLow",
+   "b": "HkHHigh",
+   "rule": "HkHLow < HkHHigh",
+   "why": "пара Low/High: нижняя граница меньше верхней",
+   "hard": true
+  },
+  {
+   "a": "HkExpGate",
+   "b": "HkExpGateBand",
+   "rule": "HkExpGateBand действует только при HkExpGate = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "HkExpInverse",
+   "b": "HkExpGateBand",
+   "rule": "HkExpGateBand действует только при HkExpInverse = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "HkExpConfidence",
+   "b": "HkExpGateBand",
+   "rule": "HkExpGateBand действует только при HkExpConfidence = true",
+   "why": "числовой параметр эксперимента без флага не влияет на результат",
+   "hard": true
+  },
+  {
+   "a": "PacLowerSlot",
+   "b": "PacHigherSlot",
+   "rule": "PacLowerSlot < PacHigherSlot",
+   "why": "пара Low/High: нижняя граница меньше верхней",
+   "hard": true
+  },
+  {
+   "a": "MinQuantity",
+   "b": "MaxQuantity",
+   "rule": "MinQuantity < MaxQuantity",
+   "why": "пара Min/Max: нижняя граница меньше верхней",
+   "hard": true
+  }
+ ]
+}

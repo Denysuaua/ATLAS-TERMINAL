@@ -1,0 +1,300 @@
+﻿                HubTrace("HUB", "ENTRY_BLOCKED", lastDecisionText);
+                JournalDecision("LOW_CONFIDENCE", dir, votes, conf, 0, double.NaN);
+                return;
+            }
+
+            // --- вето фильтров ---
+            bool hasFilterModule = false;
+            foreach (SwModule m in modules)
+                if (m.Role == SwRole.Filter && m.Health != SwHealth.Disabled) hasFilterModule = true;
+
+            if (hasFilterModule && bufFilters.Count == 0 && FilterMissingBlocksEntry)
+            {
+                entriesBlocked++;
+                lastDecisionText = "фильтр подключён, но вердикта не дал";
+                HubTrace("HUB", "ENTRY_BLOCKED", lastDecisionText);
+                JournalDecision("FILTER_MISSING", dir, votes, conf, 0, double.NaN);
+                return;
+            }
+
+            foreach (SwSignal f in bufFilters)
+            {
+                // НЕГОТОВЫЙ ФИЛЬТР ЗАКРЫВАЕТ ВХОД, а не пропускает.
+                //
+                // Прежде неготовый фильтр пропускался. Структура рынка готова
+                // через два десятка баров, а линии на пятнадцатиминутке при
+                // периоде 100 прогреваются двадцать пять часов. Всё это время
+                // сигналы шли бы в рынок без фильтра — в самый ненадёжный
+                // период. Отказ по неготовности безопаснее для капитала.
+                if (!f.IsReady)
+                {
+                    entriesBlocked++;
+                    lastDecisionText = "фильтр не прогрет: " + (f.Text ?? "—");
+                    HubTrace("HUB", "ENTRY_BLOCKED", lastDecisionText);
+                    JournalDecision("FILTER_NOT_READY", dir, votes, conf, 0, double.NaN);
+                    return;
+                }
+
+                if (f.Verdict == SwVerdict.Veto
+                    || (f.Direction != 0 && f.Direction != dir))
+                {
+                    entriesBlocked++;
+                    lastDecisionText = "вето фильтра: " + f.Text;
+                    HubTrace("HUB", "ENTRY_BLOCKED", lastDecisionText);
+                    JournalDecision("FILTER_VETO", dir, votes, conf, 0, double.NaN);
+                    return;
+                }
+            }
+
+            decisionsMade++;
+            entriesRequested++;
+            lastDecisionText = (dir > 0 ? "LONG" : "SHORT")
+                             + "  голосов " + votes + "  уверенность " + conf.ToString("F2");
+            HubTrace("HUB", "ENTRY_DECISION", lastDecisionText);
+
+            int qty = DefaultQuantity;
+            if (fin != null)
+            {
+                string note;
+                int q = fin.ResolveQuantity(out note);
+                if (q <= 0)
+                {
+                    entriesBlocked++;
+                    lastDecisionText = "объём не рассчитан: " + note;
+                    HubTrace("FIN", "SIZING_BLOCK", note);
+                    JournalDecision("SIZING_BLOCK", dir, votes, conf, 0, double.NaN);
+                    return;
+                }
+                qty = q;
+                HubTrace("FIN", "SIZING", note);
+            }
+
+            // Уровень стоп-входа и трейлинг берутся у сигнала, давшего
+            // направление. Сигнал без уровня означает вход по рынку.
+            double entryStop = double.NaN, trailOv = double.NaN;
+            foreach (SwSignal sg in bufSignals)
+            {
+                if (!sg.IsReady || sg.Direction != dir) continue;
+                if (sg.EntryStopPrice > 0) entryStop = sg.EntryStopPrice;
+                if (sg.TrailTicksOverride > 0) trailOv = sg.TrailTicksOverride;
+                if (entryStop > 0) break;
+            }
+
+            JournalDecision("ENTRY", dir, votes, conf, qty, entryStop);
+            if (DryTradeVotes && DryRunMode) pendingEntryVotes = ModuleVotes();   // Э10 [T18]
+            if (DryRunMode) pendingEntryMask = ConfluenceMask(dir);              // v1.18 маска схождения
+            exec.RequestEntry(dir, qty, bar, lastDecisionText, entryStop, trailOv);
+        }
+
+        /// <summary>
+        /// Э1 [T13] — ЖУРНАЛ РЕШЕНИЙ, по умолчанию выключен. Строка на каждое решение с
+        /// направлением: исход (вход или причина отказа) и голоса всех модулей. Это сырьё
+        /// для мета-разметки (AFML, гл. 3): «первичный сигнал + вердикты фильтров → брать
+        /// или нет». Пишется только в реальном времени (живой счёт и воспроизведение рынка):
+        /// историю бэктест пересчитает сам, а запись на каждом прогоне оптимизатора
+        /// засыпала бы диск. Ошибка записи торговлю не останавливает.
+        /// </summary>
+        /// <summary>Голос каждого модуля роли Signal и Filter: id:роль:готов:направление:уверенность:вердикт.</summary>
+        /// <summary>v1.18. Маска схождения: модули-сигналы и фильтры, чей вердикт Agree совпал с направлением входа.</summary>
+        private string ConfluenceMask(int dir)
+        {
+            var sb = new StringBuilder(64);
+            foreach (SwModule m in modules)
+            {
+                if (m.Role != SwRole.Signal && m.Role != SwRole.Filter) continue;
+                SwSignal s = m.LastSignal;
+                if (!s.IsReady || s.Verdict != SwVerdict.Agree || s.Direction != dir) continue;
+                if (sb.Length > 0) sb.Append('_');
+                sb.Append(m.Id.Replace(';', ',').Replace('_', '-'));
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>v1.18. Время платформы → ISO-8601 UTC с миллисекундами; пусто, если перевод невозможен.</summary>
+        private string ToUtcIso(DateTime platformTime)
+        {
+            try
+            {
+                if (platformTime == DateTime.MinValue) return string.Empty;
+                DateTime utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(platformTime, DateTimeKind.Unspecified),
+                    NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo);
+                return utc.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch { return string.Empty; }
+        }
+
+        /// <summary>v1.18. Фаза сессии по Берлину в момент времени платформы.</summary>
+        private string SessionPhase(DateTime platformTime)
+        {
+            try
+            {
+                if (platformTime == DateTime.MinValue) return string.Empty;
+                if (berlinTz == null) berlinTz = TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time");
+                DateTime utc = TimeZoneInfo.ConvertTimeToUtc(DateTime.SpecifyKind(platformTime, DateTimeKind.Unspecified),
+                    NinjaTrader.Core.Globals.GeneralOptions.TimeZoneInfo);
+                DateTime b = TimeZoneInfo.ConvertTimeFromUtc(utc, berlinTz);
+                int m = b.Hour * 60 + b.Minute;
+                if (m < 8 * 60) return "азия";
+                if (m < 14 * 60 + 30) return "европа";
+                if (m < 17 * 60) return "стык";
+                if (m < 22 * 60 + 30) return "америка";
+                return "ночь";
+            }
+            catch (Exception ex)
+            {
+                if (!berlinWarned) { berlinWarned = true; Print("[HUB] фаза сессии: пояс Берлина недоступен: " + ex.Message); }
+                return string.Empty;
+            }
+        }
+
+        private string ModuleVotes()
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            var sb = new StringBuilder(256);
+            foreach (SwModule m in modules)
+            {
+                if (m.Role != SwRole.Signal && m.Role != SwRole.Filter) continue;
+                SwSignal s = m.LastSignal;
+                if (sb.Length > 0) sb.Append('|');
+                sb.Append(m.Id).Append(':').Append(m.Role).Append(':').Append(s.IsReady ? 1 : 0).Append(':')
+                  .Append(s.Direction).Append(':').Append(s.Confidence.ToString("F2", inv)).Append(':').Append(s.Verdict);
+            }
+            return sb.ToString();
+        }
+
+        // v1.16 — ОТРИСОВКА: кольцевые буферы для OnRender (без выделения памяти в такте).
+        private const int VisCap = 4096;
+        private readonly int[] visDecBar = new int[VisCap]; private readonly sbyte[] visDecKind = new sbyte[VisCap]; private int visDecHead, visDecCount;
+        private readonly int[] visGhBar = new int[VisCap]; private readonly sbyte[] visGhDir = new sbyte[VisCap], visGhLab = new sbyte[VisCap];
+        private readonly double[] visGhPx = new double[VisCap]; private int visGhHead, visGhCount;
+
+        private void VisPushDecision(string outcome)
+        {
+            sbyte k = outcome == "ENTRY" ? (sbyte)1 : outcome == "NO_SIGNAL" ? (sbyte)0 : (sbyte)-1;
+            if (k == 0) return;
+            visDecBar[visDecHead] = CurrentBars[execBip]; visDecKind[visDecHead] = k;
+            visDecHead = (visDecHead + 1) % VisCap; if (visDecCount < VisCap) visDecCount++;
+        }
+
+        private void VisPushGhost(int bar, int dir, double px, int label)
+        {
+            visGhBar[visGhHead] = bar; visGhDir[visGhHead] = (sbyte)dir; visGhPx[visGhHead] = px; visGhLab[visGhHead] = (sbyte)label;
+            visGhHead = (visGhHead + 1) % VisCap; if (visGhCount < VisCap) visGhCount++;
+        }
+
+        /// <summary>
+        /// v1.16. Слой отрисовки (руководство NT: OnRender, ChartControl.GetXByBarIndex, ChartScale.GetYByValue).
+        /// Рисует только видимые бары: светофор решения над баром (зелёный — вход, красный — вход
+        /// запрещён), призраки отвергнутых сигналов структуры с исходом тройного барьера Э32 ([T27]),
+        /// R-лестницу открытой позиции: вход, стоп, 1R, 1,75R. Включается [V01]; работает, когда
+        /// серия исполнения — серия графика ([S90] = 0).
+        /// </summary>
+        protected override void OnRender(ChartControl chartControl, ChartScale chartScale)
+        {
+            base.OnRender(chartControl, chartScale);
+            if (!VisualsEnabled || RenderTarget == null || ChartBars == null || execBip != 0) return;
+            int from = ChartBars.FromIndex, to = ChartBars.ToIndex;
+            SharpDX.Direct2D1.Brush g = System.Windows.Media.Brushes.LimeGreen.ToDxBrush(RenderTarget);
+            SharpDX.Direct2D1.Brush r = System.Windows.Media.Brushes.Red.ToDxBrush(RenderTarget);
+            SharpDX.Direct2D1.Brush gr = System.Windows.Media.Brushes.Gray.ToDxBrush(RenderTarget);
+            try
+            {
+                for (int i = 0; i < visDecCount; i++)
+                {
+                    int b = visDecBar[i]; if (b < from || b > to) continue;
+                    float x = chartControl.GetXByBarIndex(ChartBars, b), y = chartScale.GetYByValue(Bars.GetHigh(b)) - 10;
+                    RenderTarget.FillRectangle(new SharpDX.RectangleF(x - 3, y - 6, 6, 6), visDecKind[i] > 0 ? g : r);
+                }
+                for (int i = 0; i < visGhCount; i++)
+                {
+                    int b = visGhBar[i]; if (b < from || b > to) continue;
+                    float x = chartControl.GetXByBarIndex(ChartBars, b), y = chartScale.GetYByValue(visGhPx[i]);
+                    SharpDX.Direct2D1.Brush br = visGhLab[i] > 0 ? g : r;
+                    br.Opacity = 0.45f;
+                    RenderTarget.DrawEllipse(new SharpDX.Direct2D1.Ellipse(new SharpDX.Vector2(x, y), 5, 5), br, 2f);
+                    RenderTarget.DrawLine(new SharpDX.Vector2(x, y), new SharpDX.Vector2(x, y - 12 * visGhDir[i]), br, 2f);
+                    br.Opacity = 1f;
+                }
+                try { RenderModuleVisuals(chartControl, chartScale, from, to); }   // v1.19: события модулей
+                catch (Exception ex) { HubTrace("HUB", "RENDER_FAULT", ex.Message); }
+                int side = HubPositionSide;
+                if (side != 0)
+                {
+                    double avg = DryRunMode ? virtAvg : Position.AveragePrice, rr = Math.Round(HubInitialStopTicks) * TickSize;
+                    float x0 = chartControl.GetXByBarIndex(ChartBars, Math.Max(from, to - 30)), x1 = chartControl.GetXByBarIndex(ChartBars, to);
+                    double[] lv = { avg, avg - side * rr, avg + side * rr, avg + side * 1.75 * rr };
+                    for (int i = 0; i < lv.Length; i++)
+                    {
+                        float y = chartScale.GetYByValue(lv[i]);
+                        RenderTarget.DrawLine(new SharpDX.Vector2(x0, y), new SharpDX.Vector2(x1, y), i == 0 ? gr : i == 1 ? r : g, i == 0 ? 2f : 1f);
+                    }
+                }
+            }
+            finally { g.Dispose(); r.Dispose(); gr.Dispose(); }
+        }
+
+        private void JournalDecision(string outcome, int dir, int votes, double conf, int qty, double entryStop)
+        {
+            VisPushDecision(outcome);   // v1.16: светофор решения
+            if (!DecisionJournal || State != State.Realtime) return;
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                string folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                    "NinjaTrader 8", "dz_export", "decisions");
+                System.IO.Directory.CreateDirectory(folder);
+                DateTime t = Times[execBip][0];
+                string path = System.IO.Path.Combine(folder, "decisions_" + t.ToString("yyyyMMdd", inv) + ".csv");
+
+                var sb = new StringBuilder(512);
+                if (!System.IO.File.Exists(path))
+                    sb.Append("bar_close_platform;instrument;hub_version;dry_run;outcome;dir;votes;confidence;qty;entry_stop;modules\n");
+                sb.Append(t.ToString("yyyy-MM-dd HH:mm:ss", inv)).Append(';')
+                  .Append(Instrument != null ? Instrument.FullName : "?").Append(';')
+                  .Append(HubVersion).Append(';').Append(DryRunMode ? 1 : 0).Append(';')
+                  .Append(outcome).Append(';').Append(dir).Append(';').Append(votes).Append(';')
+                  .Append(conf.ToString("F3", inv)).Append(';').Append(qty).Append(';')
+                  .Append(double.IsNaN(entryStop) ? "" : entryStop.ToString("R", inv)).Append(';');
+
+                sb.Append(ModuleVotes()).Append('\n');
+                System.IO.File.AppendAllText(path, sb.ToString(), new UTF8Encoding(false));
+            }
+            catch (Exception ex) { HubTrace("HUB", "JOURNAL_FAULT", ex.Message); }
+        }
+
+        /// <summary>
+        /// ИСТОЧНИК ИСТИНЫ ОБ ИСПОЛНЕНИЯХ. Отправка заявки исполнением не
+        /// является: она может быть отклонена, отменена или исполнена
+        /// частично. Ступени финансового модуля считаются только здесь.
+        /// </summary>
+        protected override void OnExecutionUpdate(Execution execution, string executionId,
+            double price, int quantity, MarketPosition marketPosition, string orderId, DateTime time)
+        {
+            if (execution == null) return;
+
+            // Исполнения закрытия по сессии приходят без Order (руководство NT, Execution,
+            // с. 2255): их закрытие финансовый модуль узнаёт через OnPositionUpdate.
+            Order o = execution.Order;
+            if (o == null) return;
+
+            if (MeasureSlippage) MeasureStopSlippage(o, price, quantity);
+            if (fin == null) return;
+
+            try
+            {
+                string nm = o.Name;
+                if (string.IsNullOrEmpty(nm)) return;
+
+                // Подтверждение входа — по Order из Execution, а не по Position.
+                // Руководство NT, OnExecutionUpdate (с. 2273–2274): действия по исполнению
+                // входа опираются на свойства Order, переданного с Execution;
+                // OnPositionUpdate вызывается после OnExecutionUpdate (с. 2281), и Position
+                // в этот момент может ещё не отражать исполнение. Filled и AverageFillPrice
+                // накапливаются (с. 2284): частичные исполнения дают растущий объём.
+                if (nm == "SW_LONG" || nm == "SW_SHORT")
+                {
+                    int filled = o.Filled;
+                    if (filled <= 0) return;
+                    int dir = o.OrderAction == OrderAction.Buy ? 1 : -1;
+                    HubPendingTrailOverride = HubEntryTrailOverride;   // каждому частичному — трейлинг сессии
+                    fin.OnTradeOpened(dir, o.AverageFillPrice, filled, CurrentBars[execBip]);

@@ -1,0 +1,300 @@
+﻿        NadarayaWatson,   // взвешенное ядром среднее будущей доходности ВСЕХ допустимых ситуаций
+        Consensus         // направление, только если оба метода согласны
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwLorentzianConfig
+    {
+        public int Slot = 1;
+        public int Lookback = 2000;
+        public int Neighbors = 16;
+        public int Stride = 4;
+        public int Horizon = 4;
+        public double VoteThreshold = 0.5;       // доля перевеса голосов для направления
+        public bool UseYeoJohnson = true;
+        public int RefitBars = 100;
+        public int FitWindow = 500;
+        public double KalmanQ = 0.01, KalmanR = 1.0;
+        public bool SignalMode = false;
+        public bool ExpKernelVote = false;
+        public bool ExpPrecisionGate = false;
+        public double ExpPrecisionMin = 0.65;
+        public int EvalWindow = 200;
+        public bool ExpAgreeKernel = false;
+
+        // --- Надарая–Ватсон в пространстве признаков ---
+        public SwLorentzMethod Method = SwLorentzMethod.KnnVote;
+        public SwKernelType NwKernel = SwKernelType.Gaussian;
+        public double NwBandMult = 0.5;       // σ ядра = множитель × медиана расстояний
+        public double NwThreshold = 0.10;     // |прогноз| в ATR, ниже — нейтраль
+        public double NwMinEff = 10;          // минимальный эффективный объём выборки
+
+        // --- эксперименты v1.3, выключены нулём ---
+        public int ExpEmbargoBars = 0;        // Э17: эмбарго после метки, баров
+        public int ExpDecayHalfLife = 0;      // Э18: полураспад веса соседа, баров
+        public bool ExpMetaLabels = false;    // L17: метки тройным барьером
+        public double ExpMetaAtr = 1.0;       // L17: цель и стоп в ATR
+    }
+
+    public class SwLorentzianModule : SwModule
+    {
+        private const int F = 5;
+        private readonly SwLorentzianConfig cfg;
+        private readonly SwAdaptiveKernelModule kernel;
+
+        // --- кольцевые хранилища: признаки и закрытия по бару своей серии ---
+        private double[,] raw;
+        private double[] closeRing, scratch;
+        private int cap, count, head;
+
+        // --- параметры нормализации по признакам ---
+        private readonly double[] preMu = new double[F], preSd = new double[F], lam = new double[F];
+        private readonly double[] postMu = new double[F], postSd = new double[F];
+        private bool normReady;
+        private int sinceRefit;
+
+        // --- K ближайших ---
+        private double[] kDist; private int[] kLab, kBack; private int kN;
+
+        // --- Надарая–Ватсон: расстояния и доходности кандидатов, ATR по барам ---
+        private double[] nwD, nwY, nwScratch, atrRing, nwW;
+        private int nwN;
+        private double nwPred = double.NaN, nwEff;
+        private int knnDir, nwDir;
+
+        // --- состояние признаков ---
+        private double atr, prevClose = double.NaN, rsiUp, rsiDn;
+        private int rsiN;
+        private double kx = double.NaN, kv, p00 = 1, p01, p11 = 1;
+        private double[] volRing, tpvRing; private int volIdx, volCnt;
+
+        // --- решение и самопроверка ---
+        private int dir; private double strength;
+        private int zeroVolRun; private bool zeroVolTraced;   // v1.2
+        private int[] predRing; private int predHead, predCnt;
+        private bool[] evalHit, evalUp, evalLong; private int evalHead, evalCnt;
+        private int predsTotal;
+        private string textCache = ""; private int lastDir = int.MinValue, lastCode = -1;
+
+        public SwLorentzianModule(string id, SwLorentzianConfig config, SwAdaptiveKernelModule kernelModule)
+        {
+            Id = id;
+            cfg = config ?? new SwLorentzianConfig();
+            kernel = kernelModule;
+            Role = cfg.SignalMode ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+            cap = Math.Max(cfg.Lookback, cfg.FitWindow) + cfg.Horizon + 2;
+            raw = new double[cap, F];
+            closeRing = new double[cap];
+            scratch = new double[Math.Max(10, cfg.FitWindow)];
+            kDist = new double[Math.Max(1, cfg.Neighbors)];
+            kLab = new int[Math.Max(1, cfg.Neighbors)];
+            kBack = new int[Math.Max(1, cfg.Neighbors)];
+            int maxCand = cfg.Lookback / Math.Max(1, cfg.Stride) + 2;
+            nwD = new double[maxCand]; nwY = new double[maxCand]; nwScratch = new double[maxCand]; nwW = new double[maxCand];
+            atrRing = new double[cap];
+            volRing = new double[20]; tpvRing = new double[20];
+            predRing = new int[Math.Max(1, cfg.Horizon) + 1];
+            evalHit = new bool[Math.Max(10, cfg.EvalWindow)];
+            evalUp = new bool[Math.Max(10, cfg.EvalWindow)];
+            evalLong = new bool[Math.Max(10, cfg.EvalWindow)];
+            for (int f = 0; f < F; f++) { preSd[f] = 1; postSd[f] = 1; lam[f] = 1; }
+            Host.Trace(Id, "LOR_ATTACHED", "окно " + cfg.Lookback + ", K " + cfg.Neighbors + ", шаг " + cfg.Stride
+                + ", горизонт " + cfg.Horizon + (cfg.UseYeoJohnson ? ", Йео–Джонсон" : "") + ", роль " + Role);
+            if (cfg.ExpAgreeKernel && kernel == null)
+                Host.Trace(Id, "LOR_NO_KERNEL", "согласие с ядром включено, но [MOD9] не подключён — проверка пропускается");
+        }
+
+        public override void Compute(int bip)
+        {
+            if (Host.IsBarCloseOf(cfg.Slot, bip)) OnOwnBar();
+            if (bip != Host.ExecBip) return;
+
+            int bar = Host.CurrentBar;
+            if (!normReady || count < cfg.Horizon + cfg.Neighbors * cfg.Stride + 2)
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                return;
+            }
+
+            int d = dir, code = d != 0 ? 1 : 0;
+            double prec = Precision(), baseRate = BaseRate();
+            // Порог — абсолютная точность [L15] И превышение над эталоном «монетки».
+            if (d != 0 && cfg.ExpPrecisionGate && evalCnt >= evalHit.Length
+                && (prec < cfg.ExpPrecisionMin || !(prec > baseRate))) { d = 0; code = 2; }
+            if (d != 0 && cfg.ExpAgreeKernel && kernel != null)
+            {
+                int kd = KernelDir();
+                if (kd != 0 && kd != d) { d = 0; code = 3; }
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true; s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN; s.TrailTicksOverride = double.NaN;
+            s.Direction = d;
+            s.Verdict = d != 0 ? SwVerdict.Agree : SwVerdict.Neutral;
+            s.Confidence = d != 0 ? Math.Min(1.0, strength) : 0.0;
+
+            if (d != lastDir || code != lastCode)
+            {
+                lastDir = d; lastCode = code;
+                textCache = (code == 2 ? "Лоренц: точность ниже порога" : code == 3 ? "Лоренц: против ядра"
+                          : d > 0 ? "Лоренц: вверх" : d < 0 ? "Лоренц: вниз" : "Лоренц: нет перевеса")
+                          + ", перевес " + strength.ToString("F2");
+            }
+            s.Text = textCache;
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private int KernelDir()
+        {
+            // Направление ядра — по его последнему сигналу; модуль ядра голосует через ту же структуру.
+            return kernel.LastSignal.IsReady ? kernel.LastSignal.Direction : 0;
+        }
+
+        #region Бар своей серии: признаки, самопроверка, нормализация, классификация
+
+        private void OnOwnBar()
+        {
+            if (!Host.SlotReady(cfg.Slot, 22)) return;
+            double h = Host.HighOf(cfg.Slot, 0), l = Host.LowOf(cfg.Slot, 0), c = Host.CloseOf(cfg.Slot, 0);
+            double v = Host.VolumeOf(cfg.Slot, 0);
+            if (double.IsNaN(c) || c <= 0) return;
+
+            // --- признаки ---
+            double tr = double.IsNaN(prevClose) ? h - l : Math.Max(h - l, Math.Max(Math.Abs(h - prevClose), Math.Abs(l - prevClose)));
+            atr = double.IsNaN(prevClose) ? tr : atr + (tr - atr) / 14.0;
+            double chg = double.IsNaN(prevClose) ? 0 : c - prevClose;
+            rsiN++;
+            rsiUp += ((chg > 0 ? chg : 0) - rsiUp) / Math.Min(14, rsiN);
+            rsiDn += ((chg < 0 ? -chg : 0) - rsiDn) / Math.Min(14, rsiN);
+            double rsi = rsiDn > 0 ? 100 - 100 / (1 + rsiUp / rsiDn) : 100;
+
+            // Калман: уровень и скорость, модель постоянной скорости.
+            if (double.IsNaN(kx)) { kx = c; kv = 0; }
+            else
+            {
+                double xp = kx + kv, q = cfg.KalmanQ, r = cfg.KalmanR;
+                double a00 = p00 + 2 * p01 + p11 + q, a01 = p01 + p11, a11 = p11 + q;
+                double s = a00 + r, g0 = a00 / s, g1 = a01 / s, e = c - xp;
+                kx = xp + g0 * e; kv = kv + g1 * e;
+                p00 = (1 - g0) * a00; p01 = (1 - g0) * a01; p11 = a11 - g1 * a01;
+            }
+
+            volRing[volIdx] = v; tpvRing[volIdx] = v * (h + l + c) / 3.0;
+            volIdx = (volIdx + 1) % volRing.Length; if (volCnt < volRing.Length) volCnt++;
+            double vs = 0, tps = 0; for (int i = 0; i < volCnt; i++) { vs += volRing[i]; tps += tpvRing[i]; }
+            double vdens = vs > 0 ? v / (vs / volCnt) : 1.0;
+            double com = vs > 0 ? tps / vs : c;
+            if (vs > 0) zeroVolRun = 0;
+            else if (++zeroVolRun >= Math.Max(50, cfg.FitWindow) && !zeroVolTraced)
+            {
+                zeroVolTraced = true;
+                Host.Trace(Id, "LOR_NO_VOLUME", "объёма нет " + zeroVolRun + " баров: признаки объёма и центра масс "
+                    + "постоянны, классификатор работает на трёх признаках из пяти");
+            }
+            prevClose = c;
+
+            // --- запись в кольцо ---
+            head = (head + 1) % cap; if (count < cap) count++;
+            double a = atr > 0 ? atr : 1e-9;
+            raw[head, 0] = atr / c;
+            raw[head, 1] = kv / a;
+            raw[head, 2] = rsi;
+            raw[head, 3] = vdens;
+            raw[head, 4] = (c - com) / a;
+            closeRing[head] = c;
+            atrRing[head] = a;
+
+            Evaluate();
+            if (++sinceRefit >= cfg.RefitBars || !normReady) { if (Refit()) sinceRefit = 0; }
+            if (normReady) { Classify(); try { Observe(); } catch { } }
+        }
+
+        private int Idx(int back) { return (head - back + cap) % cap; }
+
+        /// <summary>L17. Исход сделки соседа в направлении dir тройным барьером: 1 — цель первой, 0 — стоп, оба одним баром
+        /// или без касания против направления (худший путь). Бары соседа доступны у хоста по barsAgo = back − k.</summary>
+        private int TripleOutcome(int back, int dir)
+        {
+            double entry = closeRing[Idx(back)], at = atrRing[Idx(back)];
+            if (!(at > 0) || double.IsNaN(entry)) return 0;
+            double tgt = entry + dir * cfg.ExpMetaAtr * at, stp = entry - dir * cfg.ExpMetaAtr * at;
+            for (int k = 1; k <= cfg.Horizon; k++)
+            {
+                double h = Host.HighOf(cfg.Slot, back - k), l = Host.LowOf(cfg.Slot, back - k);
+                if (double.IsNaN(h) || double.IsNaN(l)) return 0;
+                bool hitT = dir > 0 ? h >= tgt : l <= tgt, hitS = dir > 0 ? l <= stp : h >= stp;
+                if (hitS) return 0;
+                if (hitT) return 1;
+            }
+            return (closeRing[Idx(back - cfg.Horizon)] - entry) * dir > 0 ? 1 : 0;
+        }
+
+        private void Observe()
+        {
+            if (dir == 0 || !Host.VisualOn(SwVisualRole.LorentzVote)) return;
+            DateTime t = Host.TimeOf(cfg.Slot, 0);
+            if (t == DateTime.MinValue) return;
+            double px = Host.CloseOf(cfg.Slot, 0), tick = Host.TickSize > 0 ? Host.TickSize : 1.0;
+            EmitVisual(SwVisualEvent.Marker(dir > 0 ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown, SwVisualRole.LorentzVote, t,
+                dir > 0 ? px - 3 * tick : px + 3 * tick).WithVariant(dir).WithDetail("перевес " + strength.ToString("F2")).InRing("LV"));
+        }
+
+        /// <summary>
+        /// Причинная самопроверка: прогноз, сделанный H баров назад, сверяется с тем,
+        /// что произошло. Точность сравнивается с базовой частотой класса: при частоте
+        /// роста 60% точность 65% означает перевес всего в 5 пунктов.
+        /// </summary>
+        private void Evaluate()
+        {
+            if (predCnt > cfg.Horizon && count > cfg.Horizon)
+            {
+                int pred = predRing[(predHead - cfg.Horizon + predRing.Length) % predRing.Length];
+                bool up = closeRing[head] > closeRing[Idx(cfg.Horizon)];
+                if (pred != 0)
+                {
+                    evalHit[evalHead] = (pred > 0) == up;
+                    evalUp[evalHead] = up;          // фактический исход
+                    evalLong[evalHead] = pred > 0;  // направление прогноза
+                    evalHead = (evalHead + 1) % evalHit.Length; if (evalCnt < evalHit.Length) evalCnt++;
+                    predsTotal++;
+                }
+            }
+        }
+
+        public double Precision()
+        {
+            if (evalCnt == 0) return double.NaN;
+            int n = 0; for (int i = 0; i < evalCnt; i++) if (evalHit[i]) n++;
+            return (double)n / evalCnt;
+        }
+
+        /// <summary>
+        /// Эталон точности: «монетка» с рыночной частотой роста p и тем же соотношением
+        /// прогнозов вверх и вниз. Её точность = доля_вверх·p + доля_вниз·(1−p). Точность
+        /// классификатора имеет смысл только как превышение над этим числом.
+        /// </summary>
+        public double BaseRate()
+        {
+            if (evalCnt == 0) return double.NaN;
+            int up = 0, lng = 0;
+            for (int i = 0; i < evalCnt; i++) { if (evalUp[i]) up++; if (evalLong[i]) lng++; }
+            double p = (double)up / evalCnt, fl = (double)lng / evalCnt;
+            return fl * p + (1 - fl) * (1 - p);
+        }
+
+        #endregion
+
+        #region Нормализация: стандартизация → Йео–Джонсон → z-оценка
+
+        private static double YJ(double x, double l)
+        {

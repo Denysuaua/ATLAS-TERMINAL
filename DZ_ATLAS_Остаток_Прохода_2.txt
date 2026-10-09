@@ -1,0 +1,7 @@
+Э33: ссылка на [V47] — такого индекса нет в меню (DZ_SW_Mod_Kalman_S021.cs)
+Э34: SwGuardConfig.ExpSigmaDays (DZ_SW_Mod_Guard_S021.cs) — ядро не передаёт, всегда умолчание
+Э34: SwTimeConfig.BarZoneMode (DZ_SW_Mod_Time_S021.cs) — ядро не передаёт, всегда умолчание
+Э34: SwTimeConfig.ExplicitOffsetMinutes (DZ_SW_Mod_Time_S021.cs) — ядро не передаёт, всегда умолчание
+Э34: SwTimeConfig.AllowSaturday (DZ_SW_Mod_Time_S021.cs) — ядро не передаёт, всегда умолчание
+Э34: SwTimeConfig.AllowSunday (DZ_SW_Mod_Time_S021.cs) — ядро не передаёт, всегда умолчание
+Э34: SwTrfpLineConfig.Source (DZ_SW_Mod_Trfp_S021.cs) — ядро не передаёт, всегда умолчание

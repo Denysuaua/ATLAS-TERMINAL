@@ -1,0 +1,300 @@
+﻿                Print("[HUB] пробой: профиль " + DboWindowZone + ". Один экземпляр — один профиль — один счёт.");
+
+                if (Slot1Enabled)
+                    Print("[HUB-ВНИМАНИЕ] [MOD8][MOD1] включены два источника сигнала: структура и пробой. "
+                        + "Решение принимается голосованием, см. [D01].");
+
+                if (DboWindowZone != SwWindowZone.Chicago)
+                    Print("[HUB-ВНИМАНИЕ] [M81] пояс окон пробоя = " + DboWindowZone
+                        + ". Данные исследования — в поясе Chicago; иной пояс означает другую фазу рынка и отдельную, непроверенную гипотезу.");
+            }
+            if (Slot6Enabled) problems += CheckSlot("[M41] адаптивный стоп", AStopSlot);
+            if (Slot9Enabled) problems += CheckSlot("[K52] адаптивное ядро", KerSlot);
+            if (Slot11Enabled) problems += CheckSlot("[L01] классификатор Лоренца", LorSlot);
+            if (Slot10Enabled) problems += CheckSlot("[H01] ядро по Хёрсту", HkSlot);
+            if (Slot13Enabled) problems += CheckSlot("[C02] Калман, младшая серия", KalLowerSlot) + CheckSlot("[C04] Калман, старшая серия", KalHigherSlot);
+            if (Slot14Enabled) problems += CheckSlot("[B02] рычаг, серия анализа", LevAnalysisSlot) + CheckSlot("[B03] рычаг, серия кластеров", LevClusterSlot);
+            if (Slot15Enabled) problems += CheckSlot("[G01] масса, серия", HmSlot);
+
+            if (problems == 0)
+                Print("[HUB] ссылки модулей на слоты пула и окна: замечаний нет");
+            else
+                Print("[HUB-ВНИМАНИЕ] замечаний конфигурации (слоты, окна, конфликты модулей): " + problems
+                    + ". Невключённый слот уводит расчёт на серию графика.");
+            return problems;
+        }
+
+        /// <summary>
+        /// v1.1. ПУЛ СЕРИЙ ПОСЛЕ ЗАГРУЗКИ. Руководство NT, AddDataSeries (с. 1415): аргументы
+        /// должны быть заданы жёстко; серия, добавленная по вводу пользователя, «не
+        /// гарантирована». Пул [S50]-[S82] задаётся настройками и пресетом, поэтому после
+        /// загрузки фактические серии сверяются с заказанными: их число, тип и значение
+        /// периода по BarsPeriods (с. 1436, доступны с State.DataLoaded).
+        /// </summary>
+        private int ValidateSeriesPool()
+        {
+            int problems = 0, expected = 1;
+            bool[] use = { UseSeries1, UseSeries2, UseSeries3, UseSeries4 };
+            BarsPeriodType[] typ = { Series1Type, Series2Type, Series3Type, Series4Type };
+            int[] val = { Series1Value, Series2Value, Series3Value, Series4Value };
+            for (int k = 0; k < 4; k++) if (use[k]) expected++;
+
+            int loaded = BarsArray == null ? 0 : BarsArray.Length;
+            if (loaded != expected)
+            {
+                problems++;
+                Print("[HUB-ВНИМАНИЕ] пул серий: заказано " + expected + ", загружено " + loaded + ".");
+            }
+
+            for (int k = 0; k < 4; k++)
+            {
+                if (!use[k]) continue;
+                int bip = seriesBip[k];
+                if (bip <= 0 || bip >= loaded)
+                {
+                    problems++;
+                    Print("[HUB-ВНИМАНИЕ] слот пула " + (k + 1) + ": серия не загружена (bip=" + bip + ").");
+                    continue;
+                }
+                BarsPeriod bp = BarsPeriods[bip];
+                if (bp == null || bp.BarsPeriodType != typ[k] || bp.Value != val[k])
+                {
+                    problems++;
+                    Print("[HUB-ВНИМАНИЕ] слот пула " + (k + 1) + ": заказано " + typ[k] + " " + val[k]
+                        + ", загружено " + (bp == null ? "ничего" : bp.BarsPeriodType + " " + bp.Value) + ".");
+                }
+            }
+
+            if (problems == 0)
+                Print("[HUB] пул серий: загружено ровно заказанное, серий " + loaded);
+            return problems;
+        }
+
+        /// <summary>
+        /// v1.1. СТОРОЖ КОНФИГУРАЦИИ. Любое замечание в боевом режиме запрещает НОВЫЕ входы.
+        /// Выходы, стоп и сопровождение не трогаются: открытая позиция защищена как прежде.
+        /// В режиме без ордеров замечания только печатаются: проверять конфигурацию можно.
+        /// Серия исполнения не первая — замечание по руководству NT, SetStopLoss (с. 2350):
+        /// при нескольких сериях одного инструмента заявки подаются в первый контекст.
+        /// </summary>
+        private void ApplyConfigGuard(int slotProblems, int seriesProblems)
+        {
+            var why = new StringBuilder();
+            if (slotProblems > 0) why.Append("замечаний слотов и окон ").Append(slotProblems).Append("; ");
+            if (seriesProblems > 0) why.Append("пул серий не совпал с заказанным (").Append(seriesProblems).Append("); ");
+            if (execBip != 0) why.Append("серия исполнения bip=").Append(execBip)
+                .Append(" не первая: график в таймфрейме исполнения и [S90]=0; ");
+            if (presetFailReason.Length > 0) why.Append("пресет [U05] не применён (").Append(presetFailReason).Append("); ");
+
+            configBlockReason = why.ToString().TrimEnd(' ', ';');
+            configBlocked = configBlockReason.Length > 0 && !DryRunMode;
+            configBlockTraced = false;
+            if (configBlockReason.Length == 0) return;
+
+            if (configBlocked)
+                Print("[HUB-БЛОК] БОЕВОЙ РЕЖИМ: новые входы ЗАПРЕЩЕНЫ до исправления конфигурации — "
+                    + configBlockReason + ". Выходы, стоп и сопровождение работают.");
+            else
+                Print("[HUB-ВНИМАНИЕ] режим без ордеров: прогон идёт, но в боевом режиме новые входы были бы запрещены — "
+                    + configBlockReason + ".");
+        }
+
+        /// <summary>
+        /// Порядок границ сессии: база, затем окно сигналов, затем выход; без
+        /// перехода через полночь. Нарушение делает сессию молча нерабочей.
+        /// </summary>
+        private int CheckWindows(string who, bool on, int b0, int b1, int s0, int s1, int x)
+        {
+            if (!on) return 0;
+            bool ok = b0 < b1 && b1 < s0 && s0 <= s1 && s1 < x && x <= 235959;
+            if (ok) return 0;
+            Print("[HUB-ВНИМАНИЕ] " + who + " границы нарушают порядок «база < окно сигналов < выход» "
+                + "или переходят через полночь: " + b0 + "–" + b1 + " / " + s0 + "–" + s1 + " / " + x
+                + ". Сессия работать не будет.");
+            return 1;
+        }
+
+        private int CheckSlot(string who, int slot)
+        {
+            if (slot == 0) return 0;              // явная ссылка на график
+            if (IsSlotLoaded(slot)) return 0;
+
+            Print("[HUB-ВНИМАНИЕ] " + who + " ссылается на слот " + slot
+                + ", но этот слот пула выключен — расчёт уйдёт на серию графика.");
+            return 1;
+        }
+
+        /// <summary>
+        /// СВЕДЕНИЕ СИГНАЛОВ В РЕШЕНИЕ. Ядро не вычисляет направление само —
+        /// оно только сводит то, что отдали модули роли Signal, и применяет
+        /// вето модулей роли Filter.
+        /// </summary>
+        // Э32 — кандидаты мета-разметки: сигнал структуры и вердикты фильтров на баре решения.
+        private sealed class MetaCandidate
+        {
+            public int Bar, Dir; public double Entry, Upper, Lower; public bool Taken; public int[] Verdicts;
+            public DateTime Time; public string Votes;
+        }
+        private readonly List<MetaCandidate> metaOpen = new List<MetaCandidate>();
+        private string[] metaFilterIds = new string[0];
+        private int[,] metaConf = new int[0, 4];   // по фильтру: пропустил+прибыль, пропустил+убыток, отсёк+прибыль, отсёк+убыток
+        private int metaLabeled, metaPositive;
+        private string metaPath = string.Empty;
+
+        /// <summary>Э32: новый кандидат — каждый готовый сигнал структуры с направлением.</summary>
+        private void MetaRecord(int bar, bool taken)
+        {
+            if (!MetaLabels || refPac == null) return;
+            SwSignal p = refPac.LastSignal;
+            if (!p.IsReady || p.Direction == 0 || p.ProducedAtBar != bar) return;
+            if (metaFilterIds.Length == 0)
+            {
+                var ids = new List<string>();
+                foreach (SwModule m in modules) if (m.Role == SwRole.Filter) ids.Add(m.Id);
+                metaFilterIds = ids.ToArray();
+                metaConf = new int[metaFilterIds.Length, 4];
+            }
+            var c = new MetaCandidate();
+            c.Bar = bar; c.Dir = p.Direction; c.Entry = Closes[execBip][0]; c.Taken = taken;
+            try { c.Time = Times[execBip][0]; } catch { c.Time = DateTime.MinValue; }
+            double sl = Math.Max(1, Math.Round(HubInitialStopTicks)) * TickSize;
+            double pt = Math.Max(1, Math.Round(HubInitialStopTicks * Math.Max(0.1, MetaTargetR))) * TickSize;
+            c.Upper = c.Dir > 0 ? c.Entry + pt : c.Entry + sl;
+            c.Lower = c.Dir > 0 ? c.Entry - sl : c.Entry - pt;
+            c.Verdicts = new int[metaFilterIds.Length];
+            int k = 0;
+            foreach (SwModule m in modules)
+            {
+                if (m.Role != SwRole.Filter || k >= c.Verdicts.Length) continue;
+                SwSignal f = m.LastSignal;
+                c.Verdicts[k++] = !f.IsReady ? 0 : f.Verdict == SwVerdict.Veto || (f.Direction != 0 && f.Direction != c.Dir) ? -1 : 1;
+            }
+            c.Votes = ModuleVotes();
+            if (metaOpen.Count < 5000) metaOpen.Add(c);
+        }
+
+        /// <summary>
+        /// Э32: тройной барьер (AFML 3.4). Касание верхнего и нижнего на одном баре — худший
+        /// исход для стороны сигнала; вертикальный барьер — знак результата по закрытию.
+        /// </summary>
+        private void MetaResolve(int bar)
+        {
+            if (!MetaLabels || metaOpen.Count == 0) return;
+            double hi = Highs[execBip][0], lo = Lows[execBip][0], cl = Closes[execBip][0];
+            for (int i = metaOpen.Count - 1; i >= 0; i--)
+            {
+                MetaCandidate c = metaOpen[i];
+                if (bar <= c.Bar) continue;
+                bool up = hi >= c.Upper, dn = lo <= c.Lower;
+                int label;
+                if (up && dn) label = 0;                                   // худший исход
+                else if (up) label = c.Dir > 0 ? 1 : 0;
+                else if (dn) label = c.Dir < 0 ? 1 : 0;
+                else if (bar - c.Bar >= Math.Max(1, MetaVerticalBars)) label = (cl - c.Entry) * c.Dir > 0 ? 1 : 0;
+                else continue;
+                metaLabeled++; metaPositive += label;
+                for (int k = 0; k < c.Verdicts.Length && k < metaFilterIds.Length; k++)
+                {
+                    if (c.Verdicts[k] == 0) continue;
+                    int col = (c.Verdicts[k] > 0 ? 0 : 2) + (label == 1 ? 0 : 1);
+                    metaConf[k, col]++;
+                }
+                MetaWrite(c, label, bar);
+                if (!c.Taken) VisPushGhost(c.Bar, c.Dir, c.Entry, label);   // v1.16: призрак отвергнутого сигнала
+                metaOpen.RemoveAt(i);
+            }
+        }
+
+        private void MetaWrite(MetaCandidate c, int label, int bar)
+        {
+            try
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                if (metaPath.Length == 0)
+                {
+                    string folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+                        "NinjaTrader 8", "dz_export", "meta_labels");
+                    System.IO.Directory.CreateDirectory(folder);
+                    metaPath = System.IO.Path.Combine(folder, "meta_" + DateTime.Now.ToString("yyyyMMdd_HHmmss", inv) + ".csv");
+                    System.IO.File.WriteAllText(metaPath, "signal_time;dir;entry;taken;label;bars_to_label;modules\n", new UTF8Encoding(false));
+                }
+                System.IO.File.AppendAllText(metaPath, c.Time.ToString("yyyy-MM-dd HH:mm:ss", inv) + ";" + c.Dir + ";"
+                    + c.Entry.ToString("R", inv) + ";" + (c.Taken ? 1 : 0) + ";" + label + ";" + (bar - c.Bar) + ";" + c.Votes + "\n",
+                    new UTF8Encoding(false));
+            }
+            catch (Exception ex) { HubTrace("HUB", "META_JOURNAL_FAULT", ex.Message); }
+        }
+
+        /// <summary>Э32: строки сводки — базовая точность структуры и вклад каждого фильтра.</summary>
+        private string MetaSummary()
+        {
+            if (metaLabeled == 0) return "  мета-разметка: размеченных сигналов нет";
+            var sb = new StringBuilder(512);
+            sb.Append("  мета-разметка: сигналов ").Append(metaLabeled).Append(", прибыльных по тройному барьеру ")
+              .Append(((double)metaPositive / metaLabeled).ToString("P1"));
+            for (int k = 0; k < metaFilterIds.Length; k++)
+            {
+                int passWin = metaConf[k, 0], passLoss = metaConf[k, 1], cutWin = metaConf[k, 2], cutLoss = metaConf[k, 3];
+                int pass = passWin + passLoss, win = passWin + cutWin;
+                sb.Append("\n    ").Append(metaFilterIds[k]).Append(": пропустил ").Append(pass)
+                  .Append(" (точность ").Append(pass > 0 ? ((double)passWin / pass).ToString("P1") : "—")
+                  .Append("), отсёк ").Append(cutWin + cutLoss).Append(" (из них прибыльных ").Append(cutWin)
+                  .Append("), полнота ").Append(win > 0 ? ((double)passWin / win).ToString("P1") : "—");
+            }
+            return sb.ToString();
+        }
+
+        private void EvaluateEntry(int bar)
+        {
+        	if (remotePauseEntries) return;   // пульт: новые входы приостановлены
+            if (bufSignals.Count == 0) return;
+
+            int sum = 0, votes = 0;
+            double conf = 0;
+            bool anyNotReady = false;
+
+            foreach (SwSignal s in bufSignals)
+            {
+                if (!s.IsReady) { anyNotReady = true; continue; }
+                if (s.Direction == 0) continue;
+                sum += s.Direction; votes++; conf += s.Confidence;
+            }
+
+            if (votes == 0) return;
+            if (anyNotReady && RequireAllSignalsAgree) return;
+
+            int dir;
+            if (RequireAllSignalsAgree)
+                dir = Math.Abs(sum) == votes ? Math.Sign(sum) : 0;
+            else
+                dir = Math.Sign(sum);
+
+            if (dir == 0) return;
+
+            conf /= votes;
+
+            // v1.6 — РАССИНХРОН ПОЗИЦИИ и БАЙЕСОВСКИЙ СТОП-КРАН: новый вход запрещён.
+            if (desyncBlocked || craneBlocked)
+            {
+                entriesBlocked++;
+                lastDecisionText = desyncBlocked ? "вход запрещён: рассинхрон позиции — " + desyncText
+                                                 : "вход запрещён стоп-краном: P[p < p*] = " + craneProb.ToString("F3");
+                JournalDecision(desyncBlocked ? "DESYNC_BLOCK" : "CRANE_BLOCK", dir, votes, conf, 0, double.NaN);
+                return;
+            }
+
+            // v1.1 — СТОРОЖ КОНФИГУРАЦИИ: в боевом режиме при замечаниях новый вход запрещён.
+            if (configBlocked)
+            {
+                entriesBlocked++;
+                lastDecisionText = "вход запрещён конфигурацией: " + configBlockReason;
+                if (!configBlockTraced) { HubTrace("HUB", "CONFIG_BLOCK", configBlockReason); configBlockTraced = true; }
+                JournalDecision("CONFIG_BLOCK", dir, votes, conf, 0, double.NaN);
+                return;
+            }
+
+            if (conf < MinConfidence)
+            {
+                entriesBlocked++;
+                lastDecisionText = "объединённая уверенность " + conf.ToString("F2")
+                                 + " ниже порога " + MinConfidence.ToString("F2");

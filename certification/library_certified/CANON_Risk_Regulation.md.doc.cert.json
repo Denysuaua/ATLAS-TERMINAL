@@ -1,0 +1,12 @@
+{
+  "certificate": "DZ-LIBRARY-CERT-v1.0",
+  "issued_utc": "2026-09-28T14:35:14Z",
+  "document": "CANON_Risk_Regulation.md",
+  "sha256": "7c06a6e7bd2a56e83898f38f05c2e69edb157adaa50ec55bb6577828684e872b",
+  "author_declared": "LEADER",
+  "reviewer_declared": "OPUS_MAX",
+  "rank": "GREEN",
+  "basis": "перекрёстная проверка: OPUS_MAX",
+  "note": "автор и рецензент заявлены, а не доказаны",
+  "content_sha256": "e51f26b4a459297810e00d1282b8145ac48ddb3503feb0ba4d5cab676b4c5ad9"
+}

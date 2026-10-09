@@ -1,0 +1,300 @@
+﻿        /// Вес подбара — поровну на все цены, которые он прошёл. У тика высота
+        /// нулевая: весь вес на одну цену.
+        /// </summary>
+        private void Accumulate(Dictionary<int, double> prof, double h, double l, double v)
+        {
+            int kl = (int)Math.Round(l / tick), kh = (int)Math.Round(h / tick);
+            if (kh < kl) { int x = kl; kl = kh; kh = x; }
+            int n = kh - kl + 1;
+            if (n <= 0 || n > 5000) return;
+
+            double w;
+            if (cfg.Weight == SwLeverWeight.Volume)
+            {
+                if (!(v > 0)) return;
+                w = v / n;
+            }
+            else w = 1.0;
+
+            for (int k = kl; k <= kh; k++)
+            {
+                double cur;
+                prof.TryGetValue(k, out cur);
+                prof[k] = cur + w;
+            }
+        }
+
+        private void OnAnalysisClose()
+        {
+            anaIndex++;
+
+            // Запасной путь: поздний кластер так и не пришёл до следующей свечи.
+            if (pending) FinalizePending();
+
+            try { if (cfg.Research) ResolveResearch(); }
+            catch { }
+
+            SwLeverCandle c = new SwLeverCandle();
+            c.Index = anaIndex;
+            c.End = Host.TimeOf(cfg.AnalysisSlot, 0);
+            c.Start = Host.TimeOf(cfg.AnalysisSlot, 1);
+            c.Open = Host.OpenOf(cfg.AnalysisSlot, 0);
+            c.High = Host.HighOf(cfg.AnalysisSlot, 0);
+            c.Low = Host.LowOf(cfg.AnalysisSlot, 0);
+            c.Close = Host.CloseOf(cfg.AnalysisSlot, 0);
+
+            // Профиль закрытой свечи уходит в ожидающий, текущий начинается пустым.
+            Dictionary<int, double> closed = curProf;
+            curProf = pendProf;
+            curProf.Clear();
+            pendProf = closed;
+            lastClosedEnd = c.End;
+
+            if (firstCandle)
+            {
+                firstCandle = false;
+                pendProf.Clear();
+                return;
+            }
+
+            if (!FastMode() && lastSubTime < c.End)
+            {
+                pending = true;
+                pendSnap = c;
+                return;
+            }
+
+            FinalizeCandle(c, pendProf);
+            pendProf.Clear();
+        }
+
+        private void FinalizePending()
+        {
+            pending = false;
+            SwLeverCandle c = pendSnap;
+            pendSnap = null;
+            if (c != null) FinalizeCandle(c, pendProf);
+            pendProf.Clear();
+        }
+
+        #endregion
+
+        #region Взвешивание свечи
+
+        private static double ArmOf(double p, double g, double armUp, double armDn)
+        {
+            double a = p >= g ? (p - g) / armUp : (p - g) / armDn;
+            return a > 1 ? 1 : a < -1 ? -1 : a;
+        }
+
+        private void FinalizeCandle(SwLeverCandle c, Dictionary<int, double> prof)
+        {
+            if (double.IsNaN(c.High) || double.IsNaN(c.Low) || double.IsNaN(c.Close))
+            {
+                NoData(c, "нет цен свечи");
+                return;
+            }
+
+            int kL = (int)Math.Round(c.Low / tick), kH = (int)Math.Round(c.High / tick);
+            int nLev = kH - kL + 1;
+            c.Levels = nLev;
+            if (nLev < Math.Max(2, cfg.MinHeightTicks) || nLev > 5000)
+            {
+                NoData(c, "свеча ниже " + cfg.MinHeightTicks + " тиков [B17]");
+                return;
+            }
+
+            double[] w = new double[nLev];
+            double W = 0;
+            foreach (KeyValuePair<int, double> kv in prof)
+            {
+                int j = kv.Key - kL;
+                if (j < 0 || j >= nLev) { outsideWeight += kv.Value; continue; }
+                w[j] += kv.Value;
+                W += kv.Value;
+            }
+            if (!(W > 0))
+            {
+                NoData(c, "нет кластеров");
+                return;
+            }
+            totalWeight += W;
+
+            // --- опора и плечи ---
+            double g = cfg.Fulcrum == SwLeverFulcrum.BodyMid ? (c.Open + c.Close) / 2.0 : (c.High + c.Low) / 2.0;
+            double armUp = Math.Max(c.High - g, tick), armDn = Math.Max(g - c.Low, tick);
+
+            // --- медиана массы с интерполяцией внутри тика ---
+            double half = W / 2.0, cum = 0, p50 = c.High;
+            for (int j = 0; j < nLev; j++)
+            {
+                if (w[j] > 0 && cum + w[j] >= half)
+                {
+                    p50 = (kL + j) * tick - tick / 2.0 + tick * (half - cum) / w[j];
+                    break;
+                }
+                cum += w[j];
+            }
+
+            // --- кластеры по высоте ---
+            int nc = Math.Max(1, Math.Min(Math.Max(2, cfg.Clusters), nLev));
+            double[] dens = new double[nc], lo = new double[nc], hi = new double[nc], cen = new double[nc];
+            int[] cnt = new int[nc];
+            for (int b = 0; b < nc; b++)
+            {
+                int a0 = b * nLev / nc, a1 = (b + 1) * nLev / nc - 1;
+                double mass = 0;
+                for (int j = a0; j <= a1; j++) mass += w[j];
+                cnt[b] = a1 - a0 + 1;
+                dens[b] = mass / cnt[b];
+                lo[b] = (kL + a0) * tick - tick / 2.0;
+                hi[b] = (kL + a1) * tick + tick / 2.0;
+                cen[b] = (kL + (a0 + a1) / 2.0) * tick;
+            }
+            double md = MedianOf(dens, nc);
+
+            // --- рычаг богатых кластеров: момент избытка над медианной плотностью ---
+            double num = 0, den = 0;
+            bool[] rich = new bool[nc];
+            for (int b = 0; b < nc; b++)
+            {
+                double e = Math.Max(0, dens[b] - md) * cnt[b];
+                rich[b] = e > 0;
+                double d = ArmOf(cen[b], g, armUp, armDn);
+                num += e * d;
+                den += e * Math.Abs(d);
+            }
+
+            c.HasData = true;
+            c.Fulcrum = g;
+            c.Center = p50;
+            c.MedianOffset = ArmOf(p50, g, armUp, armDn);
+            c.Lever = den > 0 ? num / den : 0;
+            int jp = 0;
+            for (int j = 1; j < nLev; j++) if (w[j] > w[jp]) jp = j;
+            c.Poc = (kL + jp) * tick;
+            c.PocOffset = ArmOf(c.Poc, g, armUp, armDn);
+            c.Balance = cfg.ExpPocMeasure ? c.PocOffset     // Э22
+                      : cfg.Measure == SwLeverMeasure.Lever ? c.Lever
+                      : cfg.Measure == SwLeverMeasure.MedianCenter ? c.MedianOffset
+                      : 0.5 * (c.Lever + c.MedianOffset);
+            c.Weight = W;
+            c.Clusters = nc;
+            c.ClLo = lo; c.ClHi = hi; c.ClDensity = dens; c.ClRich = rich;
+            c.MedianDensity = md;
+
+            OnCandle(c);
+        }
+
+        private void NoData(SwLeverCandle c, string reason)
+        {
+            c.HasData = false;
+            c.NoDataReason = reason;
+            candlesSkipped++;
+            last = c;
+        }
+
+        #endregion
+
+        #region Временной ряд балансов и голос
+
+        private static void PushCapped(List<double> l, double v, int cap)
+        {
+            l.Add(v);
+            while (l.Count > cap) l.RemoveAt(0);
+        }
+
+        private static double MedianOf(double[] a, int n)
+        {
+            if (n <= 0) return double.NaN;
+            double[] b = new double[n];
+            Array.Copy(a, b, n);
+            Array.Sort(b);
+            return n % 2 == 1 ? b[n / 2] : 0.5 * (b[n / 2 - 1] + b[n / 2]);
+        }
+
+        /// <summary>Медиана последних n значений ряда.</summary>
+        private static double TailMedian(List<double> l, int n)
+        {
+            int m = Math.Min(n, l.Count);
+            if (m <= 0) return double.NaN;
+            double[] a = new double[m];
+            for (int i = 0; i < m; i++) a[i] = l[l.Count - m + i];
+            return MedianOf(a, m);
+        }
+
+        /// <summary>Медианное абсолютное отклонение последних n значений.</summary>
+        private static double TailMad(List<double> l, int n)
+        {
+            int m = Math.Min(n, l.Count);
+            if (m <= 1) return double.NaN;
+            double med = TailMedian(l, m);
+            double[] a = new double[m];
+            for (int i = 0; i < m; i++) a[i] = Math.Abs(l[l.Count - m + i] - med);
+            return MedianOf(a, m);
+        }
+
+        /// <summary>Взвешенная медиана последних n значений: веса — масса свечей.</summary>
+        private static double TailWeightedMedian(List<double> v, List<double> w, int n)
+        {
+            int m = Math.Min(n, Math.Min(v.Count, w.Count));
+            if (m <= 0) return double.NaN;
+            double[] vals = new double[m], wts = new double[m];
+            double tot = 0;
+            for (int i = 0; i < m; i++)
+            {
+                vals[i] = v[v.Count - m + i];
+                wts[i] = Math.Max(0, w[w.Count - m + i]);
+                tot += wts[i];
+            }
+            if (!(tot > 0)) return MedianOf(vals, m);
+            Array.Sort(vals, wts);
+            double half = tot / 2.0, cum = 0;
+            for (int i = 0; i < m; i++)
+            {
+                cum += wts[i];
+                if (cum >= half) return vals[i];
+            }
+            return vals[m - 1];
+        }
+
+        // Буферы Тейла–Сена: растут только при увеличении окна [B13], на свече
+        // память не выделяется. Значения за пределами текущего окна не читаются.
+        private double[] tsPairs = new double[0];
+        private double[] tsDiffs = new double[0];
+
+        /// <summary>
+        /// Направление тренда по Тейлу–Сену: медиана попарных наклонов закрытий.
+        /// Тренд засчитывается, если наклон за окно больше робастного шума
+        /// одного шага, умноженного на √окна: как у блуждания за то же время.
+        /// </summary>
+        private int TheilSenDir(List<double> c, int n)
+        {
+            int m = Math.Min(Math.Max(3, n), c.Count);
+            if (m < 3) return 0;
+            int off = c.Count - m;
+            int np = m * (m - 1) / 2, nd = m - 1;
+            if (tsPairs.Length < np) tsPairs = new double[np];
+            if (tsDiffs.Length < nd) tsDiffs = new double[nd];
+
+            int k = 0;
+            for (int i = 0; i < m; i++)
+            {
+                if (i > 0) tsDiffs[i - 1] = c[off + i] - c[off + i - 1];
+                for (int j = i + 1; j < m; j++) tsPairs[k++] = (c[off + j] - c[off + i]) / (j - i);
+            }
+
+            double slope = SortedMedian(tsPairs, np);
+            double med = SortedMedian(tsDiffs, nd);
+            for (int i = 0; i < nd; i++) tsDiffs[i] = Math.Abs(tsDiffs[i] - med);
+            double noise = 1.4826 * SortedMedian(tsDiffs, nd);
+
+            if (double.IsNaN(slope) || double.IsNaN(noise)) return 0;
+            if (Math.Abs(slope) * Math.Sqrt(m) < Math.Max(noise, 1e-12)) return 0;
+            return Math.Sign(slope);
+        }
+
+        /// <summary>Медиана первых n значений массива; сортирует их на месте, без выделения памяти.</summary>
+        private static double SortedMedian(double[] a, int n)
+        {
+            if (n <= 0) return double.NaN;

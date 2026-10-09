@@ -1,0 +1,191 @@
+{
+  "engine": "DZ_OPT_Engine_S021-v1.3 (2026-09-30)",
+  "task_id": "wfa_dev_20261001130938_w02_test",
+  "mode": "dev",
+  "space": {
+    "stop_ticks": [
+      40
+    ],
+    "be_trigger_ticks": [
+      15
+    ],
+    "be_offset_ticks": [
+      2
+    ],
+    "trail_morning_ticks": [
+      15
+    ],
+    "trail_evening_ticks": [
+      10
+    ],
+    "min_range_ticks": [
+      15
+    ],
+    "max_range_ticks": [
+      45
+    ],
+    "min_base_bars": [
+      50
+    ],
+    "flat_threshold": [
+      0.85
+    ],
+    "atr_fast": [
+      10
+    ],
+    "atr_slow": [
+      80
+    ],
+    "trend_bars": [
+      10
+    ],
+    "max_entries_per_session": [
+      0
+    ]
+  },
+  "trials_this_task": 1,
+  "trials_cumulative": 1449,
+  "grid_total": 1,
+  "objective": "SharpeDaily",
+  "best_raw": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 80,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "profile": "chicago"
+  },
+  "best_plateau": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 80,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "profile": "chicago"
+  },
+  "best_selected": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 80,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "profile": "chicago"
+  },
+  "metrics_best_raw": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 80,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "Trades": 136,
+    "NetProfit": -1346.52,
+    "GrossProfit": 3919.08,
+    "GrossLoss": -5265.6,
+    "ProfitFactor": 0.744,
+    "MaxDrawdown": -1468.56,
+    "SharpeDaily": -0.07559,
+    "SharpeAnnual": -1.2,
+    "SortinoAnnual": -1.499,
+    "UlcerIndex": 3.5608,
+    "WinRatePct": 59.56,
+    "AvgWin": 48.38,
+    "AvgLoss": -95.74,
+    "WinLossRatio": 0.505,
+    "MaxConsecWins": 5,
+    "MaxConsecLosses": 5,
+    "AvgMAE_Ticks": 21.63,
+    "AvgMFE_Ticks": 23.71
+  },
+  "metrics_best_plateau": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 80,
+    "trend_bars": 10,
+    "max_entries_per_session": 0,
+    "Trades": 136,
+    "NetProfit": -1346.52,
+    "GrossProfit": 3919.08,
+    "GrossLoss": -5265.6,
+    "ProfitFactor": 0.744,
+    "MaxDrawdown": -1468.56,
+    "SharpeDaily": -0.07559,
+    "SharpeAnnual": -1.2,
+    "SortinoAnnual": -1.499,
+    "UlcerIndex": 3.5608,
+    "WinRatePct": 59.56,
+    "AvgWin": 48.38,
+    "AvgLoss": -95.74,
+    "WinLossRatio": 0.505,
+    "MaxConsecWins": 5,
+    "MaxConsecLosses": 5,
+    "AvgMAE_Ticks": 21.63,
+    "AvgMFE_Ticks": 23.71
+  },
+  "deflated_sharpe": 0.1056,
+  "expected_max_sharpe_null": 0.0,
+  "pbo": null,
+  "verdict": "недостаточно данных для оценки переподгонки",
+  "nt_values": {
+    "StopLossTicks": 40,
+    "BreakevenAtR": 0.375,
+    "TrailActivateAtR": 0.375,
+    "BreakevenOffsetTicks": 2,
+    "DboMorningTrailTicks": 15,
+    "DboEveningTrailTicks": 10,
+    "DboMinRangeTicks": 15,
+    "DboMaxRangeTicks": 45,
+    "DboMinBaseBars": 50,
+    "DboFlatThreshold": 0.85,
+    "DboAtrFast": 10,
+    "DboAtrSlow": 80,
+    "DboTrendBars": 10,
+    "DboMaxEntries": 0
+  },
+  "data_sha256": "dd9fada66065fd49af3370603b0b57fcc4383b7c60f64848ce2c2bc80f607ef5",
+  "data_file": "data_certified\\MGC\\MGC_M1.npz",
+  "data_certificate": "data_certified\\MGC\\MGC_DATA_CERTIFICATE.json",
+  "period": [
+    "2020-01-01",
+    "2021-01-01"
+  ]
+}

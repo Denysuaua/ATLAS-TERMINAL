@@ -1,0 +1,18 @@
+{
+  "certificate": "DZ-TEMPLATE-CERT-v1.0",
+  "issued_utc": "2026-09-28T14:02:46Z",
+  "rank": "YELLOW",
+  "rank_meaning": "жёлтый: допуск к бэктесту и воспроизведению рынка",
+  "template_file": "S021_MGC.json",
+  "template_sha256": "e755a5dc835e20d712d581ffdee9f889e125cc07324a22736f88a2d37af8aeba",
+  "hub_source_sha256": "6c61ee841b8f330a5dedfaa415c56ccaa2eedd6d085b66bc3eb03be6c5f54cb6",
+  "instrument": "MGC",
+  "instrument_cert_sha256": "7cc3bd26833401c133092669e9603cb16752ecc5e211473db37e054477f5e785",
+  "properties_in_template": 14,
+  "ranges_checked": 4,
+  "errors": [],
+  "warnings": [
+    "[E01] режим без ордеров включён — для реального счёта его нужно выключить"
+  ],
+  "content_sha256": "e530fd02abbb7dd849520f2dc56f31814e140f2c62cf7d4dd310c7eacdcd9d5d"
+}

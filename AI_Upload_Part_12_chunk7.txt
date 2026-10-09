@@ -1,0 +1,300 @@
+﻿        }
+
+        private void EmitEscort(int bar, int pos)
+        {
+            if (!cfg.EscortStop) return;
+            SwKalmanTrack t = tr[escortTf];
+            if (!t.Ready) return;
+
+            double off = Math.Max(0, cfg.StopOffsetTicks) * Host.TickSize;
+            if (cfg.ExpEscortOffsetSigma > 0 && !double.IsNaN(t.Upper) && !double.IsNaN(t.Lower))        // Э72
+                off = cfg.ExpEscortOffsetSigma * Math.Max(Host.TickSize, 0.5 * (t.Upper - t.Lower));
+            double stop = pos > 0 ? t.Lower - off : t.Upper + off;
+            double px = Host.Close(0);
+            if (double.IsNaN(stop) || double.IsNaN(px)) return;
+
+            // Только по защитную сторону: иначе перенос увеличил бы риск.
+            if (pos > 0 ? stop >= px : stop <= px) return;
+
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.MoveStop;
+            a.Price = stop;
+            a.Reason = "Кальман " + t.Name + ": стоп по " + (pos > 0 ? "нижней" : "верхней") + " границе канала "
+                     + stop.ToString("F2");
+            stopRequests++;
+            Emit(a);
+        }
+
+        private void EmitExit(int bar)
+        {
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.FullExit;
+            a.Reason = exitReason;
+            Emit(a);
+            exitsRequested++;
+
+            try
+            {
+                if (exitShownBar != bar && Host.VisualOn(SwVisualRole.KalmanExit))
+                {
+                    exitShownBar = bar;
+                    int pos = Host.PositionSide;
+                    double y = pos > 0 ? Host.High(0) + 5 * Host.TickSize : Host.Low(0) - 5 * Host.TickSize;
+                    EmitVisual(SwVisualEvent.Label(SwVisualRole.KalmanExit, Host.Time, y, "KLM EXIT")
+                        .WithVariant(-pos));
+                }
+            }
+            catch { }
+        }
+
+        private void EmitSignalRole(int bar)
+        {
+            SwKalmanTrack t = tr[entryTf];
+            if (!t.Ready)
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            if (pendBarsLeft > 0 && cfg.ExpNisGate > 0 && !double.IsNaN(t.NisAvg) && t.NisAvg > cfg.ExpNisGate)
+            {
+                nisGated++;                       // Э21: сигнал при несогласованном фильтре снимается
+                pendBarsLeft = 0;
+            }
+
+            if (pendBarsLeft > 0)
+            {
+                pendBarsLeft--;
+
+                // Цена успела вернуться в диапазон — пробой не подтверждён.
+                double px = t.Close;
+                bool inside = !double.IsNaN(pendLevel) && (pendDir > 0 ? px <= pendLevel : px >= pendLevel);
+                if (inside)
+                {
+                    cancelledInside++;
+                    try { Host.RequestSignalJournalEntry(Id, t.Time, pendId, pendDir, pendConf, pendShort, "цена вернулась в диапазон"); }
+                    catch { }
+                    pendBarsLeft = 0;
+                    s.Direction = 0;
+                    s.Text = "пробой отменён: цена в диапазоне";
+                }
+                else
+                {
+                    s.Direction = pendDir;
+                    s.Confidence = pendConf;
+                    s.SignalId = pendId;
+                    s.ShortDescription = pendShort;
+                    s.Text = pendText;
+                }
+            }
+            else
+            {
+                s.Direction = 0;
+                s.Text = StatusShort();
+            }
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private int nisGated;   // Э21
+        private SwKalmanState expLastState; private int expStateBars;   // Э49
+
+        private void EmitFilterRole(int bar)
+        {
+            SwKalmanTrack t = tr[dirTf];
+            if (!t.Ready)
+            {
+                Health = SwHealth.Warmup;
+                SwSignal w = SwSignal.Empty(bar);
+                w.Text = "прогрев " + t.Name + ": " + t.BarsSeen + " баров";
+                Emit(w);
+                return;
+            }
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true;
+            s.ProducedAtBar = bar;
+            s.Direction = 0;
+            s.EntryStopPrice = double.NaN;
+            s.TrailTicksOverride = double.NaN;
+
+            // Уверенность — качество тренда: чем круче наклон относительно
+            // ширины канала, тем спокойнее тренд.
+            s.Confidence = Math.Min(1.0, Math.Abs(t.SmoothTilt) / Math.Max(0.01, 2 * cfg.TrendTilt));
+
+            bool trend = t.State == SwKalmanState.TrendUp || t.State == SwKalmanState.TrendDown;
+            int dir = t.State == SwKalmanState.TrendUp ? 1 : t.State == SwKalmanState.TrendDown ? -1 : 0;
+
+            switch (cfg.Policy)
+            {
+                case SwKalmanFilterPolicy.TrendOnly:
+                    if (trend) { s.Verdict = SwVerdict.Agree; s.Direction = dir; }
+                    else s.Verdict = SwVerdict.Veto;
+                    break;
+                case SwKalmanFilterPolicy.NoRange:
+                    s.Verdict = t.State == SwKalmanState.Range ? SwVerdict.Veto : SwVerdict.Neutral;
+                    break;
+                default:   // TrendDirection
+                    if (trend) { s.Verdict = SwVerdict.Agree; s.Direction = dir; }
+                    else s.Verdict = SwVerdict.Neutral;
+                    break;
+            }
+
+            if (t.State != expLastState) { expLastState = t.State; expStateBars = 0; } else expStateBars++;
+            if (cfg.ExpMinStateBars > 0 && expStateBars < cfg.ExpMinStateBars)
+            {
+                // Э49: новое состояние ещё не выдержано — мнение не выдаётся.
+                s.Verdict = SwVerdict.Neutral; s.Direction = 0;
+                s.Text = t.Name + ": состояние " + SwKalmanTrack.StateText(t.State) + " держится " + expStateBars + " из " + cfg.ExpMinStateBars;
+                Health = SwHealth.Ok;
+                Emit(s);
+                return;
+            }
+
+            if (cfg.ExpNisGate > 0 && !double.IsNaN(t.NisAvg) && t.NisAvg > cfg.ExpNisGate)
+            {
+                // Э21: модель фильтра не согласуется с данными — мнение канала снимается.
+                nisGated++;
+                s.Verdict = SwVerdict.Neutral; s.Direction = 0;
+                s.Text = t.Name + ": фильтр не согласован с данными, ν²/f " + t.NisAvg.ToString("F1");
+                Health = SwHealth.Ok;
+                Emit(s);
+                return;
+            }
+
+            s.Text = (s.Verdict == SwVerdict.Veto ? "вето: " : "") + t.Name + " " + SwKalmanTrack.StateText(t.State)
+                   + ", z " + t.SmoothZ.ToString("F1") + ", наклон " + t.SmoothTilt.ToString("F2")
+                   + ", дисб " + t.SmoothImbalance.ToString("+0.00;-0.00;0.00");
+
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        #endregion
+
+        #region Наблюдение: графики, боковики, пробои
+
+        /// <summary>
+        /// Линии канала отдаются ядру значениями для графиков стратегии: на
+        /// каждом баре графика одна точка на линию, без объектов рисования.
+        /// Боковик ТФ входа — прямоугольник, пока длится; пробой — стрелка.
+        /// </summary>
+        private void ObserveTrack(int i)
+        {
+            SwKalmanTrack t = tr[i];
+
+            if (t.Ready)
+            {
+                Host.SetChannelPlot(i, 0, t.Level, t.MidVariant);
+                Host.SetChannelPlot(i, 1, t.Upper, t.UpperVariant);
+                Host.SetChannelPlot(i, 2, t.Lower, t.LowerVariant);
+            }
+            else
+            {
+                for (int line = 0; line < 3; line++) Host.SetChannelPlot(i, line, double.NaN, 0);
+            }
+
+            if (i != entryTf) return;
+
+            string g = "RNG" + i;
+            if (Host.VisualOn(SwVisualRole.KalmanRange))
+            {
+                if (t.InRange && t.RangeStart != DateTime.MinValue)
+                    EmitVisual(SwVisualEvent.Rect(SwVisualRole.KalmanRange, t.RangeStart, t.Lower, t.Time, t.Upper)
+                        .AsState(g + "_" + t.RangeSeq, g));
+                else if (t.RangeEnded)
+                    EmitVisual(SwVisualEvent.RetireGroup(g));
+            }
+
+            if ((t.BreakUp || t.BreakDown) && Host.VisualOn(SwVisualRole.KalmanBreakout))
+            {
+                double pad = 3 * Host.TickSize;
+                EmitVisual(SwVisualEvent.Marker(t.BreakUp ? SwVisualKind.ArrowUp : SwVisualKind.ArrowDown,
+                        SwVisualRole.KalmanBreakout, t.Time, t.BreakUp ? t.Low - pad : t.High + pad)
+                    .WithVariant(t.BreakUp ? 1 : -1));
+            }
+
+            if (cfg.Research && t.Ready) ResearchEntryBar(t);
+        }
+
+        #endregion
+
+        #region Экспериментальный блок
+
+        private sealed class PendingEval
+        {
+            public int Type;
+            public int Dir;
+            public double Start;
+            public double Norm;
+            public int Due;
+        }
+
+        private sealed class RangeCheck
+        {
+            public int M;
+            public double Up, Lo;
+            public int Due;
+        }
+
+        private static readonly string[] EventNames =
+        {
+            "база: каждый бар, в сторону роста",                     // 0
+            "цена пересекла середину вверх",                         // 1
+            "цена пересекла середину вниз",                          // 2
+            "касание верхней границы без закрытия за ней",           // 3
+            "касание нижней границы без закрытия за ней",            // 4
+            "закрытие выше верхней границы вне боковика",            // 5
+            "закрытие ниже нижней границы вне боковика",             // 6
+            "пробой боковика вверх",                                 // 7
+            "пробой боковика вниз",                                  // 8
+            "начало сжатия, по знаку дисбаланса",                    // 9
+            "начало расширения, по знаку наклона",                   // 10
+            "середина МЛ пересекла середину СТ вверх",               // 11
+            "середина МЛ пересекла середину СТ вниз",                // 12
+            "верхняя граница МЛ вышла над верхней СТ",               // 13
+            "нижняя граница МЛ вышла под нижнюю СТ",                 // 14
+            "середина МЛ вышла над верхней границей СТ",             // 15
+            "середина МЛ вышла под нижнюю границу СТ",               // 16
+            "наклон МЛ повернул по наклону СТ",                      // 17
+            "наклон МЛ повернул против наклона СТ",                  // 18
+            "боковик МЛ внутри тренда СТ, по тренду СТ"              // 19
+        };
+
+        private readonly SwKalmanStat[] stats = CreateStats(20);
+        private readonly int[] stDirSum = new int[20];
+        private readonly List<PendingEval> pend = new List<PendingEval>();
+        private readonly List<RangeCheck> checks = new List<RangeCheck>();
+        private const int MaxM = 30;
+        private readonly int[] reached = new int[MaxM + 1];
+        private readonly int[] held = new int[MaxM + 1];
+
+        // предыдущие значения пары МЛ/СТ
+        private bool prevPairValid;
+        private double pLMid, pLUp, pLLo, pHMid, pHUp, pHLo;
+        private int pLVar;
+
+        private static SwKalmanStat[] CreateStats(int n)
+        {
+            SwKalmanStat[] a = new SwKalmanStat[n];
+            for (int i = 0; i < n; i++) a[i] = new SwKalmanStat();
+            return a;
+        }
+
+        private void AddEval(int type, int dir, double start, double norm, int nowBar)
+        {
+            if (dir == 0 || double.IsNaN(start) || !(norm > 0)) return;
+            if (pend.Count >= 20000) return;   // предохранитель памяти
+            PendingEval e = new PendingEval();
+            e.Type = type; e.Dir = dir; e.Start = start; e.Norm = norm;
+            e.Due = nowBar + Math.Max(1, cfg.ResearchHorizon);
+            pend.Add(e);
+        }

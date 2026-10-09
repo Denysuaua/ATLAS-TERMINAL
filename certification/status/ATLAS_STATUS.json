@@ -1,0 +1,49 @@
+[
+  {
+    "kind": "инструмент",
+    "name": "MGC",
+    "status": "YELLOW",
+    "reasons": [],
+    "templates": {}
+  },
+  {
+    "kind": "стратегия",
+    "name": "DZ_S021",
+    "status": "YELLOW",
+    "reasons": [],
+    "elements": {
+      "DOC1_TZ": {
+        "file": "DZ_SW_S021_05_Соответствие_ТЗ.md",
+        "sha256": "d9e7e759c071b768c82dde72a9c5cd9912ee6e48d1242742c7ddfe1973972d81"
+      },
+      "DOC2_MANUAL": {
+        "file": "DZ_SW_S021_01_Справочное_Руководство.md",
+        "sha256": "5957ae8e4e0301c3f6b2ec041144bb2dda04d656c5a774c333f5f763e60b6416"
+      },
+      "DOC3_DEV_GUIDE": {
+        "file": "DZ_SW_S021_02_Руководство_Разработчика.md",
+        "sha256": "c29020fe00747dc488af04d73419a99ef3a345b01dd860624bcdc5f9b65eb429"
+      },
+      "DOC4_SETTINGS_DICT": {
+        "file": "DZ_SW_S021_03_Справочник_Меню_Настроек.md",
+        "sha256": "9b02841837faa0794ee6d46cf3114bb0b532447f77be20eba84d7f13f100e446"
+      },
+      "DOC5_SETTINGS_LINKS": {
+        "file": "DZ_SW_S021_11_Карта_Связей_Настроек.md",
+        "sha256": "bf653ff510eaf79cdafd165bedabc96d31de8eff45e6212e0abadabf3c4bfe9b"
+      },
+      "DOC6_MODULES": {
+        "file": "DZ_SW_S021_12_Перечень_Модулей.md",
+        "sha256": "17b8dd58119c4358bbfc2af72896a93265ae562ff46f607a03ad1a0ab8cc1374"
+      },
+      "DOC7_TRADING_CERTIFICATE": {
+        "file": "DZ_SW_S021_Trading_Certificate.cert.json",
+        "sha256": "e62e7279a6498568109c7fe69c2c586f53c3c421d6a84d640a6f2fa920a0c1b6"
+      },
+      "DOC8_ENGINE_CS": {
+        "file": "DZ_SW_Hub_S021.cs",
+        "sha256": "40b78f03d1cc8f40e818bf72010d44d36d421f3caac5563aebfddfd761c49890"
+      }
+    }
+  }
+]

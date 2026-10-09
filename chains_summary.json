@@ -1,0 +1,116 @@
+{
+  "version": "DZ_PORT_Chains_S021-v1.0 (2026-10-04)",
+  "start": "2015-01-01",
+  "end": "2019-01-01",
+  "candidates": 24457,
+  "chains": {
+    "A: PAC без фильтров, стоп 40 + 22:30": {
+      "n": 2091,
+      "pnl_sum": -7710.0,
+      "pnl_mean": -3.69,
+      "pf": 0.857,
+      "win": 0.329,
+      "mfe_med": 33.0,
+      "mae_med": 31.0,
+      "capture_winners_med": 0.595,
+      "capture_total": -0.069,
+      "reasons": {
+        "стоп": 1254,
+        "22:30": 837
+      }
+    },
+    "B: PAC ∧ MOD14 ∧ MOD11 (валидация)": {
+      "n": 1987,
+      "pnl_sum": -8469.3,
+      "pnl_mean": -4.26,
+      "pf": 0.836,
+      "win": 0.323,
+      "mfe_med": 33.0,
+      "mae_med": 31.0,
+      "capture_winners_med": 0.597,
+      "capture_total": -0.08,
+      "reasons": {
+        "стоп": 1200,
+        "22:30": 787
+      }
+    },
+    "C: PAC ∧ MOD9 (ядро M15)": {
+      "n": 1963,
+      "pnl_sum": -5075.7,
+      "pnl_mean": -2.59,
+      "pf": 0.898,
+      "win": 0.335,
+      "mfe_med": 34.0,
+      "mae_med": 31.0,
+      "capture_winners_med": 0.599,
+      "capture_total": -0.047,
+      "reasons": {
+        "стоп": 1160,
+        "22:30": 803
+      }
+    },
+    "D: PAC ∧ MOD13-направление M60": {
+      "n": 1984,
+      "pnl_sum": -4526.0,
+      "pnl_mean": -2.28,
+      "pf": 0.91,
+      "win": 0.336,
+      "mfe_med": 35.0,
+      "mae_med": 31.0,
+      "capture_winners_med": 0.611,
+      "capture_total": -0.042,
+      "reasons": {
+        "стоп": 1175,
+        "22:30": 809
+      }
+    },
+    "E: PAC → сопровождение MOD13 (канал M5)": {
+      "n": 6370,
+      "pnl_sum": -15618.4,
+      "pnl_mean": -2.45,
+      "pf": 0.775,
+      "win": 0.326,
+      "mfe_med": 12.0,
+      "mae_med": 10.0,
+      "capture_winners_med": 0.427,
+      "capture_total": -0.104,
+      "reasons": {
+        "стоп": 4880,
+        "наклон": 1337,
+        "22:30": 153
+      }
+    },
+    "F: PAC ∧ MOD14 ∧ MOD11 ∧ MOD9 → MOD13": {
+      "n": 4075,
+      "pnl_sum": -6897.1,
+      "pnl_mean": -1.69,
+      "pf": 0.854,
+      "win": 0.339,
+      "mfe_med": 16.0,
+      "mae_med": 11.0,
+      "capture_winners_med": 0.422,
+      "capture_total": -0.063,
+      "reasons": {
+        "стоп": 3842,
+        "наклон": 132,
+        "22:30": 101
+      }
+    },
+    "G: PAC ∧ MOD9 ∧ MOD13-напр. → MOD13": {
+      "n": 4126,
+      "pnl_sum": -5663.9,
+      "pnl_mean": -1.37,
+      "pf": 0.882,
+      "win": 0.344,
+      "mfe_med": 17.0,
+      "mae_med": 11.0,
+      "capture_winners_med": 0.427,
+      "capture_total": -0.049,
+      "reasons": {
+        "стоп": 3873,
+        "наклон": 152,
+        "22:30": 101
+      }
+    }
+  }
+}

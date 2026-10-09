@@ -1,0 +1,47 @@
+{
+  "H: PAC по тренду структуры 240m": {
+    "n": 1762,
+    "pnl_sum": 1078.7,
+    "pnl_mean": 0.61,
+    "pf": 1.025,
+    "win": 0.362,
+    "mfe_med": 34.0,
+    "mae_med": 30.0,
+    "capture_winners_med": 0.628,
+    "capture_total": 0.011,
+    "reasons": {
+      "стоп": 990,
+      "22:30": 772
+    }
+  },
+  "I: PAC по тренду 240m ∧ H(240m) > 0,5": {
+    "n": 853,
+    "pnl_sum": 2070.7,
+    "pnl_mean": 2.43,
+    "pf": 1.106,
+    "win": 0.4,
+    "mfe_med": 36.0,
+    "mae_med": 29.0,
+    "capture_winners_med": 0.608,
+    "capture_total": 0.044,
+    "reasons": {
+      "стоп": 449,
+      "22:30": 404
+    }
+  },
+  "J: PAC ∧ H(240m) > 0,5": {
+    "n": 1050,
+    "pnl_sum": -6047.0,
+    "pnl_mean": -5.76,
+    "pf": 0.776,
+    "win": 0.325,
+    "mfe_med": 32.0,
+    "mae_med": 31.0,
+    "capture_winners_med": 0.579,
+    "capture_total": -0.114,
+    "reasons": {
+      "стоп": 623,
+      "22:30": 427
+    }
+  }
+}

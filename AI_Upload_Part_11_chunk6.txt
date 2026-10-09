@@ -1,0 +1,300 @@
+﻿            else if (State == State.Terminated)
+            {
+            	if (remoteTimer != null)
+            	{
+            		try { remoteTimer.Stop(); remoteTimer.Tick -= OnRemoteTimerTick; remoteTimer.Dispose(); } catch { }
+            		remoteTimer = null;
+            	}
+            	if (ws != null) { ws.Stop(); ws = null; }
+                if (AnalyzerJournal && InAnalyzer) WriteAnalyzerIteration();
+                PrintSummary();
+                try { RemoveDrawObject(PanelTag); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// СБОРКА СЛОТОВ. Здесь оркестратор заменяет демонстрационные модули
+        /// своими. Ничего, кроме этого метода, для подключения менять не нужно.
+        /// </summary>
+        private void BuildSlots()
+        {
+            modules.Clear();
+            refPac = null; refTrfp = null; refTime = null;
+            refRegime = null; refAStop = null; refEscort = null; refGuard = null; refDbo = null; refKer = null; refLor = null; refHk = null; refFs = null; refKal = null; refLev = null; refHm = null;
+
+            // ================================================================
+            //  СБОРКА КОНВЕЙЕРА.
+            //
+            //  Порядок добавления не влияет на результат: ядро опрашивает все
+            //  модули и сводит вердикты. Но порядок влияет на читаемость
+            //  панели, поэтому идёт по конвейеру: сигнал, фильтры, риск,
+            //  сопровождение, выход.
+            //
+            //  ЗАВИСИМОСТИ, КОТОРЫЕ НЕЛЬЗЯ НАРУШИТЬ.
+            //    выход по линии    требует модуля линий;
+            //    риск-модуль       требует модуля времени для новостных пауз.
+            //  Оба получают ссылку и сообщают о застое, если зависимость
+            //  не опрашивается.
+            // ================================================================
+
+            // ---------- СИГНАЛ ----------
+            if (Slot1Enabled)
+            {
+                SwPacConfig pac = new SwPacConfig();
+                pac.LowInternalBos = PacLowInternalBos;
+                pac.LowInternalChoch = PacLowInternalChoch;
+                pac.LowInternalChochPlus = PacLowInternalChochPlus;
+                pac.LowSwingBos = PacLowSwingBos;
+                pac.LowSwingChoch = PacLowSwingChoch;
+                pac.LowSwingChochPlus = PacLowSwingChochPlus;
+                pac.HighInternalBos = PacHighInternalBos;
+                pac.HighInternalChoch = PacHighInternalChoch;
+                pac.HighInternalChochPlus = PacHighInternalChochPlus;
+                pac.HighSwingBos = PacHighSwingBos;
+                pac.HighSwingChoch = PacHighSwingChoch;
+                pac.HighSwingChochPlus = PacHighSwingChochPlus;
+                pac.ConfidenceBos = PacConfidenceBos;
+                pac.ConfidenceChoch = PacConfidenceChoch;
+                pac.ConfidenceChochPlus = PacConfidenceChochPlus;
+                pac.HigherTimeframeBonus = PacHigherTimeframeBonus;
+                pac.LowerSlot = PacLowerSlot;
+                pac.HigherSlot = PacHigherSlot;
+                pac.UseHigherTimeframe = PacUseHigher;
+                pac.InternalStrength = PacInternalStrength;
+                pac.SwingStrength = PacSwingStrength;
+                pac.BreakBy = PacBreakBy;
+                pac.ExpBreakAtr = PacExpBreakAtr; pac.ExpBreakVolMult = PacExpBreakVol; pac.ExpBreakWindow = PacExpBreakWindow;   // Э37, Э38
+                pac.ExpMinBarsBetweenSignals = PacExpMinBarsBetween;   // Э42
+                pac.ExpChochPlusFailedExtreme = PacExpChochPlusFailed; pac.ExpStrongWeak = PacExpStrongWeak; pac.ExpStrongBonus = PacExpStrongBonus;   // Э76, Э77
+
+                refPac = new SwPacStructureModule("SIG-Структура", pac);
+                modules.Add(refPac);
+            }
+
+            // ---------- СИГНАЛ: пробой диапазона двух сессий ----------
+            if (Slot8Enabled)
+            {
+                SwDualBreakoutConfig dc = new SwDualBreakoutConfig();
+                dc.M1BarMinutes = DboM1BarMinutes;
+                dc.Zone = DboWindowZone;
+                dc.Morning.Enabled = DboUseMorning;
+                dc.Evening.Enabled = DboUseEvening;
+                dc.M1Slot = DboM1Slot;
+                dc.M15Slot = DboM15Slot;
+                dc.H4Slot = DboH4Slot;
+
+                dc.Morning.BaseStart = DboMorningBaseStart;   dc.Morning.BaseEnd = DboMorningBaseEnd;
+                dc.Morning.SignalStart = DboMorningSignalStart; dc.Morning.SignalEnd = DboMorningSignalEnd;
+                dc.Morning.SessionEnd = DboMorningSessionEnd; dc.Morning.TrailTicks = DboMorningTrailTicks;
+                dc.Evening.BaseStart = DboEveningBaseStart;   dc.Evening.BaseEnd = DboEveningBaseEnd;
+                dc.Evening.SignalStart = DboEveningSignalStart; dc.Evening.SignalEnd = DboEveningSignalEnd;
+                dc.Evening.SessionEnd = DboEveningSessionEnd; dc.Evening.TrailTicks = DboEveningTrailTicks;
+
+                dc.MinRangeTicks = DboMinRangeTicks; dc.MaxRangeTicks = DboMaxRangeTicks;
+                dc.MinBaseBars = DboMinBaseBars; dc.FlatThreshold = DboFlatThreshold;
+                dc.AtrFast = DboAtrFast; dc.AtrSlow = DboAtrSlow; dc.TrendBars = DboTrendBars;
+                dc.EntryOffsetTicks = DboEntryOffsetTicks; dc.MaxEntriesPerSession = DboMaxEntries;
+                dc.EveningDir = DboEveningDir; dc.CloseAtSessionEnd = DboCloseAtSessionEnd;
+
+                // Имя несёт профиль: в журнале и на панели сразу видно, какой счёт это.
+                dc.ExpRetestEntry = DboExpRetest; dc.ExpRetestBeyondBars = DboExpRetestBars;   // Э15
+                dc.ExpAtrWidth = DboExpAtrWidth; dc.ExpAtrMin = DboExpAtrMin; dc.ExpAtrMax = DboExpAtrMax;   // Э16
+                refDbo = new SwDualBreakoutModule("SIG-Пробой-" + DboWindowZone, dc);
+                modules.Add(refDbo);
+            }
+
+            // ---------- АДАПТИВНОЕ ЯДРО: фильтр либо исследовательский сигнал ----------
+            if (Slot9Enabled)
+            {
+                SwAdaptiveKernelConfig kc = new SwAdaptiveKernelConfig();
+                kc.AdaptMin = KerAdaptMin;
+                kc.AdaptMax = KerAdaptMax;
+                kc.SkillWindow = KerSkillWindow;
+                kc.Kernel = KerKernel; kc.Regression = KerRegression; kc.Slot = KerSlot;
+                kc.Bandwidth = KerBandwidth; kc.AdaptiveBandwidth = KerAdaptive;
+                kc.VolumeWeighting = KerVolumeWeighting; kc.VolumeGamma = KerVolumeGamma;
+                kc.VolumeScale = KerVolumeScale; kc.VolumeWindow = KerVolumeWindow;
+                kc.SlopeThresholdTicks = KerSlopeThreshold; kc.Divergence = KerDivergence;
+                kc.ExpSlopeTGate = KerExpTGate; kc.ExpTMin = KerExpTMin;
+                kc.ExpFastSlowCross = KerExpFastSlow; kc.ExpSkillCheck = KerExpSkill; kc.ExpShrinkTauTicks = KerExpShrinkTau;   // Э45
+                kc.ExpThrSigma = KerExpThrSigma; kc.ExpTrendScan = KerExpTrendScan;   // Э65, Э66
+                kc.SignalMode = KerSignalMode;
+                refKer = new SwAdaptiveKernelModule(KerSignalMode ? "SIG-Ядро" : "FLT-Ядро", kc);
+                modules.Add(refKer);
+            }
+
+            // ---------- СИГНАЛ С ПК ----------
+            // ---------- КАНАЛ КАЛМАНА [MOD13], РЫЧАГ СВЕЧИ [MOD14], ИЕРАРХИЧЕСКАЯ МАССА [MOD15] ----------
+            if (Slot13Enabled)
+            {
+            	SwKalmanConfig kalc = new SwKalmanConfig();
+            	kalc.Bands = KalBands;
+            	kalc.EntryWindowMin = KalEntryWindowMin;
+            	kalc.EntryWindowMax = KalEntryWindowMax;
+            	kalc.EscortWindowMin = KalEscortWindowMin;
+            	kalc.EscortWindowMax = KalEscortWindowMax;
+            	kalc.FlatTilt = KalFlatTilt;
+            	kalc.SymmetryMax = KalSymmetryMax;
+            	kalc.RangeConfirmBars = KalRangeConfirmBars;
+            	kalc.TrendZ = KalTrendZ;
+            	kalc.TrendTilt = KalTrendTilt;
+            	kalc.CompressionRatio = KalCompressionRatio;
+            	kalc.ExpansionRatio = KalExpansionRatio;
+            	kalc.DirectionTf = KalDirectionTf;
+            	kalc.EscortTf = KalEscortTf;
+            	kalc.RequireHigherAgreement = KalRequireHigherAgreement;
+            	kalc.SignalBars = KalSignalBars;
+            	kalc.EscortStop = KalEscortStop;
+            	kalc.StopOffsetTicks = KalStopOffsetTicks;
+            	kalc.ExitOnSlopeFlip = KalExitOnSlopeFlip;
+            	kalc.ExitConfirmBars = KalExitConfirmBars;
+            	kalc.Research = KalResearch;
+            	kalc.ResearchHorizon = KalResearchHorizon;
+            	kalc.RangeHoldBars = KalRangeHoldBars;
+            	kalc.WarmupPeriods = KalWarmupPeriods;
+            	kalc.ProvisionalDisplay = KalProvisionalDisplay;
+            	kalc.Role = KalRole; kalc.LowerSlot = KalLowerSlot; kalc.CurrentSlot = KalCurrentSlot; kalc.HigherSlot = KalHigherSlot;
+            	kalc.Period = KalPeriod; kalc.BandSigma = KalBandSigma; kalc.Policy = KalPolicy;
+            	kalc.ExpNisGate = KalExpNisGate; kalc.ExpMinStateBars = KalExpMinStateBars;   // Э21, Э49
+            	kalc.ExpEscortOffsetSigma = KalExpEscortOffsetSigma;   // Э72
+            	refKal = new SwKalmanChannelModule("KAL-Канал", kalc);
+            	modules.Add(refKal);
+            }
+            if (Slot14Enabled)
+            {
+            	SwLeverConfig levc = new SwLeverConfig();
+            	levc.Weight = LevWeight;
+            	levc.Fulcrum = LevFulcrum;
+            	levc.Measure = LevMeasure;
+            	levc.SmoothCandles = LevSmoothCandles;
+            	levc.ScaleWindow = LevScaleWindow;
+            	levc.SignalWithTrend = LevSignalWithTrend;
+            	levc.TrendWindow = LevTrendWindow;
+            	levc.SignalBars = LevSignalBars;
+            	levc.ExitAgainst = LevExitAgainst;
+            	levc.ExitConfirm = LevExitConfirm;
+            	levc.MinHeightTicks = LevMinHeightTicks;
+            	levc.Finalize = LevFinalize;
+            	levc.Research = LevResearch;
+            	levc.ResearchHorizon = LevResearchHorizon;
+            	levc.Role = LevRole; levc.AnalysisSlot = LevAnalysisSlot; levc.ClusterSlot = LevClusterSlot;
+            	levc.Clusters = LevClusters; levc.VoteZ = LevVoteZ; levc.Policy = LevPolicy;
+            	levc.ExpPocMeasure = LevExpPoc;   // Э22
+            	levc.ExpClrMin = LevExpClrMin; levc.ExpVolZMin = LevExpVolZMin;   // Э69
+            	refLev = new SwLeverModule("LEV-Рычаг", levc);
+            	modules.Add(refLev);
+            }
+            if (Slot15Enabled)
+            {
+            	SwHierarchicalMassConfig hmc = new SwHierarchicalMassConfig();
+            	hmc.SqueezeLookback = HmSqueezeLookback;
+            	hmc.Slot = HmSlot; hmc.WindowMinutes = HmWindow; hmc.Weight5 = HmWeight5; hmc.Weight15 = HmWeight15;
+            	hmc.Percentile = HmPercentile; hmc.BiasThresholdTicks = HmBiasThreshold; hmc.SignalMode = HmSignalMode;
+            	hmc.ExpSqueezeGate = HmExpSqueeze; hmc.ExpSqueezeRatio = HmExpSqueezeRatio; hmc.ExpPersistBars = HmExpPersist;
+            	hmc.ExpTrendScan = HmExpTrendScan; hmc.ExpScanMin = HmExpScanMin; hmc.ExpScanT = HmExpScanT;   // Э19
+            	refHm = new SwHierarchicalMassModule(HmSignalMode ? "SIG-Масса" : "FLT-Масса", hmc);
+            	modules.Add(refHm);
+            }
+
+            if (Slot12Enabled)
+            {
+                SwFileSignalConfig fc = new SwFileSignalConfig();
+                fc.Path = FsPath; fc.MaxAgeSeconds = FsMaxAge; fc.MaxLagBars = FsMaxLag;
+                fc.SignalMode = FsSignalMode; fc.MinConfidence = FsMinConfidence;
+                fc.ExpBetSize = FsExpBetSize;   // Э20
+                refFs = new SwFileSignalModule(FsSignalMode ? "SIG-ПК" : "FLT-ПК", fc);
+                modules.Add(refFs);
+            }
+
+            // ---------- ЯДРО С ШИРИНОЙ ПО ХЁРСТУ ----------
+            if (Slot10Enabled)
+            {
+                SwHurstKernelConfig hc = new SwHurstKernelConfig();
+                hc.Slot = HkSlot; hc.Regression = HkRegression; hc.Kernel = HkKernel; hc.HurstPeriod = HkHurstPeriod;
+                hc.MinBandwidth = HkMinBandwidth; hc.MaxBandwidth = HkMaxBandwidth; hc.HLow = HkHLow; hc.HHigh = HkHHigh;
+                hc.RwLevel = HkRwLevel; hc.SlopeThresholdTicks = HkSlopeThreshold; hc.SignalMode = HkSignalMode;
+                hc.ExpRandomWalkGate = HkExpGate; hc.ExpGateBand = HkExpGateBand; hc.ExpInverseMap = HkExpInverse;
+                hc.ExpHurstConfidence = HkExpConfidence; hc.ExpPriorObs = HkExpPriorObs;   // Э46
+                hc.ExpThrSigma = HkExpThrSigma; hc.ExpVrGateZ = HkExpVrGateZ;   // Э65, Э73
+                refHk = new SwHurstKernelModule(HkSignalMode ? "SIG-Хёрст" : "FLT-Хёрст", hc);
+                modules.Add(refHk);
+            }
+
+            // ---------- КЛАССИФИКАТОР ЛОРЕНЦА: после ядра, чтобы получить ссылку на него ----------
+            if (Slot11Enabled)
+            {
+                SwLorentzianConfig lc = new SwLorentzianConfig();
+                lc.EvalWindow = LorEvalWindow;
+                lc.Slot = LorSlot; lc.Lookback = LorLookback; lc.Neighbors = LorNeighbors; lc.Stride = LorStride;
+                lc.Horizon = LorHorizon; lc.VoteThreshold = LorVoteThreshold; lc.UseYeoJohnson = LorYeoJohnson;
+                lc.RefitBars = LorRefitBars; lc.FitWindow = LorFitWindow; lc.KalmanQ = LorKalmanQ; lc.KalmanR = LorKalmanR;
+                lc.SignalMode = LorSignalMode; lc.ExpKernelVote = LorExpKernelVote; lc.ExpPrecisionGate = LorExpPrecisionGate;
+                lc.ExpPrecisionMin = LorExpPrecisionMin; lc.ExpAgreeKernel = LorExpAgreeKernel;
+                lc.Method = LorMethod; lc.NwKernel = LorNwKernel; lc.NwBandMult = LorNwBandMult;
+                lc.NwThreshold = LorNwThreshold; lc.NwMinEff = LorNwMinEff;
+                lc.ExpEmbargoBars = LorExpEmbargo; lc.ExpDecayHalfLife = LorExpHalfLife;   // Э17, Э18
+                lc.ExpMetaLabels = LorExpMetaLabels; lc.ExpMetaAtr = LorExpMetaAtr;   // L17
+                refLor = new SwLorentzianModule(LorSignalMode ? "SIG-Лоренц" : "FLT-Лоренц", lc, refKer);
+                modules.Add(refLor);
+            }
+
+            // ---------- ФИЛЬТРЫ ----------
+            if (Slot2Enabled)
+            {
+                SwTrfpConfig t = new SwTrfpConfig();
+                t.NeutralPolicy = TrfpPeriodNeutralPolicy;
+                t.Line1.Slot = TrfpLine1Slot; t.Line1.Period = TrfpPeriod; t.Line1.Multiplier = TrfpMultiplier;
+                t.Line2.Slot = TrfpLine2Slot; t.Line2.Period = TrfpPeriod; t.Line2.Multiplier = TrfpMultiplier;
+                t.Line3.Slot = TrfpLine3Slot; t.Line3.Period = TrfpPeriod; t.Line3.Multiplier = TrfpMultiplier;
+                t.Line3.Enabled = TrfpUseLine3;
+                t.WarmupBarsPerLine = TrfpPeriod;
+                t.ExpMinBarsAfterFlip = TrfpExpMinBarsAfterFlip;   // Э40
+
+                refTrfp = new SwTrfpVoteModule("FLT-Линии", t);
+                modules.Add(refTrfp);
+            }
+
+            if (Slot3Enabled)
+            {
+                SwTimeConfig tc = new SwTimeConfig();
+                tc.OutsidePolicy = TimeForceFlatten
+                    ? SwTimeOutsidePolicy.RequestFlatten
+                    : SwTimeOutsidePolicy.BlockNewEntriesOnly;
+                tc.Window1 = new SwTimeWindow(TimeWin1On, TimeWin1Start, TimeWin1End);
+                tc.Window2 = new SwTimeWindow(TimeWin2On, TimeWin2Start, TimeWin2End);
+                tc.EscortUntilHhmmss = TimeEntriesUntil;
+                tc.UseForceClose = TimeForceCloseOn; tc.ForceCloseHhmmss = TimeForceCloseAt;
+                tc.AllowMonday = TimeMon; tc.AllowTuesday = TimeTue; tc.AllowWednesday = TimeWed;
+                tc.AllowThursday = TimeThu; tc.AllowFriday = TimeFri;
+                tc.ExpActiveShare = TimeExpActiveShare; tc.ActivitySlot = ExecSeriesSlot;   // Э39
+                refTime = new SwTimeWindowModule("FLT-Время", tc);
+                modules.Add(refTime);
+            }
+
+            if (Slot4Enabled)
+            {
+                SwRegimeConfig rc = new SwRegimeConfig();
+                rc.AggregationQ = RegimeAggregationQ;
+                rc.VarianceMode = RegimeVarianceMode;
+                rc.ZThreshold = RegimeZThreshold;
+                rc.ExpHamiltonMinProb = RegimeExpHamiltonProb; rc.ExpHamiltonStay = RegimeExpHamiltonStay;   // Э41
+                rc.ExpHamiltonStep = RegimeExpHamiltonStep;   // Э52
+                rc.RequireDriftAgreement = RegimeRequireDriftAgreement;
+                rc.DriftZThreshold = RegimeDriftZThreshold;
+                rc.Slot = RegimeSlot;
+                rc.WindowLength = RegimeWindow;
+                rc.Allow = RegimeAllow;
+
+                refRegime = new SwRegimeModule("FLT-Режим", rc);
+                modules.Add(refRegime);
+            }
+
+            // ---------- РИСК ----------
+            if (Slot5Enabled)
+            {
+                SwGuardConfig gc = new SwGuardConfig();
+                gc.UseDailyGuard = GuardUseDailyGuard;
+                if (GuardBlack1Start != GuardBlack1End) gc.DailyBlackouts.Add(new int[] { GuardBlack1Start, GuardBlack1End });
+                if (GuardBlack2Start != GuardBlack2End) gc.DailyBlackouts.Add(new int[] { GuardBlack2Start, GuardBlack2End });
+                gc.ExpLossSigma = GuardExpLossSigma;   // Э47
+                gc.UseProfitLock = GuardUseProfitLock;

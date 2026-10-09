@@ -1,0 +1,37 @@
+{
+  "certificate": "DZ-INSTRUMENT-CERT-v1.0",
+  "issued_utc": "2026-09-28T13:55:59Z",
+  "status": "CERTIFIED",
+  "symbol": "MGC",
+  "nt_instrument": "MGC 12-26",
+  "currency": "USD",
+  "verified_in_nt": true,
+  "nt_manifest_sha256": "7b1dec8875bc44cc4031b9ab9592d121394cbcb13e730e40ec096c805f0b5206",
+  "market_mathematics": {
+    "tick_size": 0.1,
+    "point_value": 10.0,
+    "tick_value": 1.0
+  },
+  "costs_per_contract": {
+    "commission_per_side": 0.22,
+    "fees_per_side": 0.0,
+    "round_turn": 0.44,
+    "slippage_ticks_per_fill": 1.0,
+    "min_breakeven_offset_ticks_costs": 1,
+    "min_breakeven_offset_ticks_costs_and_slippage": 2
+  },
+  "risk_limits": {
+    "stop_usd_per_contract": [
+      5.0,
+      1000.0
+    ],
+    "max_qty": 10,
+    "daily_loss_usd": 1500.0
+  },
+  "session": {
+    "tz": "America/Chicago",
+    "open": "17:00",
+    "close": "16:00"
+  },
+  "content_sha256": "7cc3bd26833401c133092669e9603cb16752ecc5e211473db37e054477f5e785"
+}

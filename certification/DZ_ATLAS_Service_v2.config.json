@@ -1,0 +1,40 @@
+{
+  "port": 8090,
+  "workers": 0,
+  "python": "",
+  "nt_root": "~/Documents/NinjaTrader 8",
+  "engine": "DZ_OPT_Engine_S021.py",
+  "wfa": "DZ_OPT_WFA.py",
+  "reference": "DZ_BT_DualBreakout_S021.py",
+  "graph": "DZ_OPT_Graph_DualBreakout.json",
+  "registry": "trials_registry.csv",
+  "data_roots": [
+    "data_certified",
+    "data_certified_v2"
+  ],
+  "strategy_dir": "strategies_vault/DZ_S021",
+  "holdout_from": "2022-01-01",
+  "holdout_policy": "clip",
+  "task_timeout_min": 1440,
+  "allow_uncertified_data": false,
+  "min_trades_for_evidence": 150,
+  "dogma_guard": true,
+  "emergency": {
+    "enabled": true,
+    "wait_sec": 10,
+    "flat_wait_sec": 15
+  },
+  "budget_lock": {
+    "enabled": false,
+    "sigma": 4.0,
+    "budgets": {}
+  },
+  "desync_watch": {
+    "enabled": false,
+    "ws_port": 8088,
+    "account": "",
+    "instrument_prefix": "MGC",
+    "grace_sec": 20,
+    "action": "alarm"
+  }
+}

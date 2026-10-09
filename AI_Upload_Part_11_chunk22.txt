@@ -1,0 +1,261 @@
+﻿            }
+            try
+            {
+                Order o = hub.HubExit(pos, qty, "SW_EXIT_REMOTE", pos > 0 ? SigLong : SigShort);
+                if (o == null) { Rejected++; hub.HubTrace("EXEC", "REMOTE_FLAT_REJECTED", reason); return; }
+                ExitsSent++; lastExitBar = bar;
+                StatusText = "ПУЛЬТ: выход x" + qty;
+                hub.HubTrace("EXEC", "REMOTE_EXIT_SENT", StatusText + " | " + reason);
+            }
+            catch (Exception ex) { Rejected++; hub.HubTrace("EXEC", "REMOTE_FLAT_FAULT", ex.Message); }
+        }
+
+        public void OnLiveEntryFilled(int dir, double avgPrice)
+        {
+            if (hub.HubDryRun || !(avgPrice > 0)) return;
+            double d = Math.Max(1, Math.Round(hub.HubInitialStopTicks)) * hub.HubTickSize;
+            lastStop = hub.HubRoundTick(dir > 0 ? avgPrice - d : avgPrice + d);
+            side = dir;
+            StatusText = "вход исполнен " + (dir > 0 ? "LONG" : "SHORT") + " @ " + avgPrice.ToString("F2")
+                       + ", стоп " + lastStop.ToString("F2");
+        }
+
+        public void OnVirtualStopEntryFilled(int dir, double stopPx, int bar)
+        {
+            EntriesSent++;
+            side = dir; entryBar = bar; lastStop = stopPx;
+            StatusText = "DRY стоп-вход исполнен " + (dir > 0 ? "LONG" : "SHORT") + ", стоп " + stopPx.ToString("F2");
+        }
+
+        public void RequestEntry(int dir, int qty, int bar, string reason)
+        {
+            RequestEntry(dir, qty, bar, reason, double.NaN, double.NaN);
+        }
+
+        public void RequestEntry(int dir, int qty, int bar, string reason, double entryStop, double trailOverride)
+        {
+            if (hub.HubPositionSide != 0) { ArbitrationBlocks++; return; }
+            if (qty < 1) qty = 1;
+
+            hub.HubPendingTrailOverride = trailOverride > 0 ? trailOverride : double.NaN;
+            hub.HubEntryTrailOverride = hub.HubPendingTrailOverride;   // v1.1: для частичных исполнений
+
+            // ---------- ОТЛОЖЕННЫЙ СТОП-ВХОД ----------
+            if (entryStop > 0 && !double.IsNaN(entryStop))
+            {
+                double lvl = hub.HubRoundTick(entryStop);
+
+                // Уровень обязан быть по нужную сторону рынка: стоп на покупку
+                // выше цены, на продажу ниже. Иначе платформа отклонит ордер,
+                // а если он уже пройден — это не вход на пробое, а погоня.
+                double px = hub.HubClose(0);
+                bool valid = dir > 0 ? lvl > px : lvl < px;
+                if (!valid)
+                {
+                    StatusText = "стоп-вход пропущен: уровень " + lvl.ToString("F2") + " уже пройден ценой " + px.ToString("F2");
+                    hub.HubTrace("EXEC", "STOP_ENTRY_SKIPPED", StatusText);
+                    return;
+                }
+
+                if (hub.HubDryRun)
+                {
+                    hub.HubVirtualArmEntry(dir, qty, lvl, bar);
+                    StopEntryRefreshes++;
+                    StatusText = "DRY стоп-вход " + (dir > 0 ? "LONG" : "SHORT") + " @ " + lvl.ToString("F2");
+                    return;
+                }
+
+                string ssig = dir > 0 ? SigLong : SigShort;
+                double sdist = Math.Round(hub.HubInitialStopTicks) * hub.HubTickSize;
+                double sstop = hub.HubRoundTick(dir > 0 ? lvl - sdist : lvl + sdist);   // оценка до исполнения
+                try
+                {
+                    // v1.4: стоп задаётся до входа в ТИКАХ от цены исполнения (SetStopLoss,
+                    // с. 2349–2350). На разрыве вход хуже уровня, и стоп от уровня дал бы риск
+                    // больше расчётного R финансового модуля; эталон тоже ведёт стоп от исполнения.
+                    hub.HubSetStopTicks(ssig, hub.HubInitialStopTicks);
+                    Order so = hub.HubEnterStop(dir, qty, lvl, ssig);
+                    if (so == null) { Rejected++; hub.HubTrace("EXEC", "ENTRY_REJECTED", "стоп-вход не создан"); return; }
+
+                    StopEntryRefreshes++;
+                    lastStop = sstop; side = dir; entryBar = bar;
+                    StatusText = "стоп-вход " + (dir > 0 ? "LONG" : "SHORT") + " @ " + lvl.ToString("F2") + ", стоп " + sstop.ToString("F2");
+                }
+                catch (Exception ex)
+                {
+                    Rejected++;
+                    hub.HubTrace("EXEC", "ENTRY_FAULT", "стоп-вход: " + ex.Message);
+                }
+                return;
+            }
+
+            if (hub.HubDryRun)
+            {
+                // v1.4: рыночный вход без ордеров исполняется по открытию следующего бара —
+                // как в NinjaTrader и в эталоне; прежде — по закрытию бара решения. Финансовый
+                // модуль получает подтверждение при исполнении, как в бою.
+                hub.HubVirtualQueueEntry(dir, qty, bar);
+                StatusText = "DRY рыночный вход " + (dir > 0 ? "LONG" : "SHORT") + " x" + qty + " — по открытию следующего бара";
+                hub.HubTrace("EXEC", "DRY_ENTRY_QUEUED", StatusText + " | " + reason);
+                return;
+            }
+
+            string sig = dir > 0 ? SigLong : SigShort;
+            double stopPx = hub.HubRoundTick(
+                dir > 0 ? hub.HubClose(0) - hub.HubInitialStopTicks * hub.HubTickSize
+                        : hub.HubClose(0) + hub.HubInitialStopTicks * hub.HubTickSize);
+
+            try
+            {
+                // v1.4: стоп в тиках от цены исполнения — рыночный вход исполнится на
+                // следующем баре, а не по закрытию бара решения (SetStopLoss, с. 2349–2350).
+                hub.HubSetStopTicks(sig, hub.HubInitialStopTicks);
+                Order o = hub.HubEnter(dir, qty, sig);
+
+                if (o == null)
+                {
+                    Rejected++;
+                    StatusText = "ОТКАЗ: заявка не создана";
+                    hub.HubTrace("EXEC", "ENTRY_REJECTED", reason);
+                    return;
+                }
+
+                EntriesSent++;
+                side = dir; entryBar = bar; lastStop = stopPx;
+                StatusText = "вход " + (dir > 0 ? "LONG" : "SHORT") + " x" + qty
+                           + ", стоп " + stopPx.ToString("F2");
+                hub.HubTrace("EXEC", "ENTRY_SENT", StatusText);
+            }
+            catch (Exception ex)
+            {
+                Rejected++;
+                StatusText = "ИСКЛЮЧЕНИЕ: " + ex.Message;
+                hub.HubTrace("EXEC", "ENTRY_FAULT", ex.Message);
+            }
+        }
+
+        /// <summary>Обработка требования модуля Escort или Exit.</summary>
+        public void Handle(SwAction a, int bar)
+        {
+            int pos = hub.HubPositionSide;
+            if (pos == 0) return;
+
+            // v1.6 [E07]: при рассинхроне выход или перенос стопа, способный перевернуть счёт, не отправляется.
+            if (hub.HubDesyncBlocked && !hub.HubExitsSafe)
+            {
+                if (!desyncExitTraced) { hub.HubTrace("EXEC", "DESYNC_EXIT_BLOCK", "выход стратегии перевернул бы счёт — заявки не отправляются"); desyncExitTraced = true; }
+                return;
+            }
+
+            // Общий арбитраж: один выход на бар.
+            if (a.Kind == SwActionKind.FullExit || a.Kind == SwActionKind.PartialExit)
+            {
+                if (bar - entryBar < hub.HubMinBars) { ArbitrationBlocks++; return; }
+                if (lastExitBar == bar)
+                {
+                    ArbitrationBlocks++;
+                    hub.HubTrace("EXEC", "ARBITRATION", "выход уже инициирован на баре " + bar);
+                    return;
+                }
+                if (hub.HubExitPending)
+                {
+                    ArbitrationBlocks++;
+                    hub.HubTrace("EXEC", "ARBITRATION", "работает предыдущий выход");
+                    return;
+                }
+            }
+
+            switch (a.Kind)
+            {
+                case SwActionKind.MoveStop:
+                {
+                    if (double.IsNaN(a.Price) || a.Price <= 0) return;
+
+                    // Стоп двигается ТОЛЬКО в сторону сокращения риска.
+                    if (!double.IsNaN(lastStop))
+                    {
+                        bool better = pos > 0 ? a.Price > lastStop : a.Price < lastStop;
+                        if (!better) return;
+                    }
+
+                    double px = hub.HubRoundTick(a.Price);
+
+                    if (hub.HubDryRun)
+                    {
+                        StopMoves++; lastStop = px;
+                        hub.HubVirtualSetStop(px);
+                        StatusText = "DRY стоп → " + px.ToString("F2");
+                        hub.HubTrace("EXEC", "DRY_STOP", StatusText + " | " + a.Reason);
+                        return;
+                    }
+
+                    try
+                    {
+                        hub.HubSetStop(pos > 0 ? SigLong : SigShort, px);
+                        StopMoves++; lastStop = px;
+                        StatusText = "стоп → " + px.ToString("F2");
+                        hub.HubTrace("EXEC", "STOP_MOVED", StatusText + " | " + a.Reason);
+                    }
+                    catch (Exception ex)
+                    {
+                        Rejected++;
+                        hub.HubTrace("EXEC", "STOP_FAULT", ex.Message);
+                    }
+                    return;
+                }
+
+                case SwActionKind.PartialExit:
+                case SwActionKind.FullExit:
+                {
+                    int qty = a.Kind == SwActionKind.FullExit
+                        ? hub.HubPositionQty
+                        : Math.Max(1, Math.Min(a.Quantity, hub.HubPositionQty - 1));
+
+                    if (qty <= 0) return;
+
+                    if (hub.HubDryRun)
+                    {
+                        // v1.4: рыночный выход без ордеров исполняется по открытию следующего
+                        // бара, как в NinjaTrader и эталоне. Номер ступени извлекается из
+                        // метки: без него подтверждение не с чем связать.
+                        ExitsSent++; lastExitBar = bar;
+                        bool full = a.Kind == SwActionKind.FullExit;
+                        hub.HubVirtualQueueExit(full, qty, full ? 0 : ParseStepTag(a.Tag),
+                            (full ? "полный выход: " : "частичный выход: ") + a.Reason, bar);
+                        StatusText = "DRY выход x" + qty + " (" + a.Kind + ") — по открытию следующего бара";
+                        hub.HubTrace("EXEC", "DRY_EXIT_QUEUED", StatusText + " | " + a.Reason);
+                        return;
+                    }
+
+                    try
+                    {
+                        string exitName = "SW_EXIT_" + a.Kind
+                            + (string.IsNullOrEmpty(a.Tag) ? "" : "_" + a.Tag);
+
+                        Order o = hub.HubExit(pos, qty, exitName,
+                                              pos > 0 ? SigLong : SigShort);
+                        if (o == null) { Rejected++; return; }
+
+                        ExitsSent++; lastExitBar = bar;
+                        StatusText = "выход x" + qty + " (" + a.Kind + ")";
+                        hub.HubTrace("EXEC", "EXIT_SENT", StatusText + " | " + a.Reason);
+                    }
+                    catch (Exception ex)
+                    {
+                        Rejected++;
+                        hub.HubTrace("EXEC", "EXIT_FAULT", ex.Message);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    // Класс SwPositionManager удалён: его заменил SwFinancialManager
+    // из файла DZ_SW_Financial_S021.cs. Простое сопровождение безубытком и
+    // трейлингом вошло в него как частный случай.
+
+}
+

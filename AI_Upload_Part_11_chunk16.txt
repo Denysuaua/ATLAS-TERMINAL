@@ -1,0 +1,300 @@
+﻿
+        [NinjaScriptProperty]
+        [Display(Name = "[V02] Отладочная визуализация", Order = 2, GroupName = "13 · Визуализация",
+        	Description = "Дополнительные отладочные события модулей. Требует [V01].")]
+        public bool VisualDebugEnabled { get; set; }
+        #endregion
+
+        #region Свойства — слоты
+
+        [NinjaScriptProperty] [Display(Name = "[MOD1] Слот 1 — структура, сигнал", Order = 1, GroupName = "01 · Слоты модулей",
+            Description = "Включение первого слота. Подключение конкретного модуля выполняется в методе BuildSlots.")]
+        public bool Slot1Enabled { get; set; }
+        [NinjaScriptProperty] [Display(Name = "[MOD2] Слот 2 — линии, фильтр", Order = 2, GroupName = "01 · Слоты модулей",
+            Description = "Включение второго слота.")]
+        public bool Slot2Enabled { get; set; }
+        [NinjaScriptProperty] [Display(Name = "[MOD3] Слот 3 — время, фильтр", Order = 3, GroupName = "01 · Слоты модулей",
+            Description = "Включение третьего слота. По умолчанию пуст: подключите свой модуль в BuildSlots.")]
+        public bool Slot3Enabled { get; set; }
+        [NinjaScriptProperty] [Display(Name = "[MOD5] Слот 5 — риск, фильтр", Order = 5, GroupName = "01 · Слоты модулей",
+            Description = "Дневные лимиты убытка и прибыли, новостные паузы, блокировка после перезапуска. Последний барьер: ни один сигнальный модуль его не обходит.")]
+        public bool Slot5Enabled { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[MOD6] Слот 6 — адаптивный стоп, сопровождение", Order = 6, GroupName = "01 · Слоты модулей",
+            Description = "Сопровождение линией, расширяющейся с волатильностью. Ордеров не создаёт: просит о переносе стопа.")]
+        public bool Slot6Enabled { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[MOD8] Слот 8 — пробой диапазона двух сессий, сигнал", Order = 8, GroupName = "01 · Слоты модулей",
+            Description = "Утренний и вечерний пробой базы с фильтрами 4H и 15M по выводам исследования GC 2007–2026. Входит отложенным стоп-ордером до пробоя. ТРЕБУЕТ серий M1, M15 и 4H в пуле [S50]-[S80]. С модулем времени [MOD3] конфликтует по окнам.")]
+        public bool Slot8Enabled { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[MOD7] Слот 7 — выход по линии", Order = 7, GroupName = "01 · Слоты модулей",
+            Description = "Закрытие при развороте линии против позиции. ТРЕБУЕТ включённого слота 2: без модуля линий не подключается, о чём сообщает при загрузке.")]
+        public bool Slot7Enabled { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[MOD4] Слот 4 — режим рынка, фильтр", Order = 4, GroupName = "01 · Слоты модулей",
+            Description = "Включение четвёртого слота. По умолчанию пуст.")]
+        public bool Slot4Enabled { get; set; }
+        [NinjaScriptProperty] [Display(Name = "[S50] Серия 1 включена", Order = 1, GroupName = "00 · Пул серий данных",
+            Description = "Слот 1 пула дополнительных серий. Объявляется в State.Configure и после запуска не меняется: AddDataSeries работает только там. Порядок слотов фиксирует индексы, перестановка заставит модули читать чужие бары.")]
+        public bool UseSeries1 { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S51] Серия 1 — тип", Order = 2, GroupName = "00 · Пул серий данных",
+            Description = "Тип периода серии слота 1.")]
+        public BarsPeriodType Series1Type { get; set; }
+
+        [NinjaScriptProperty] [Range(1, int.MaxValue)]
+        [Display(Name = "[S52] Серия 1 — значение", Order = 3, GroupName = "00 · Пул серий данных",
+            Description = "Значение периода серии слота 1.")]
+        public int Series1Value { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S60] Серия 2 включена", Order = 4, GroupName = "00 · Пул серий данных",
+            Description = "Слот 2 пула дополнительных серий. Объявляется в State.Configure и после запуска не меняется: AddDataSeries работает только там. Порядок слотов фиксирует индексы, перестановка заставит модули читать чужие бары.")]
+        public bool UseSeries2 { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S61] Серия 2 — тип", Order = 5, GroupName = "00 · Пул серий данных",
+            Description = "Тип периода серии слота 2.")]
+        public BarsPeriodType Series2Type { get; set; }
+
+        [NinjaScriptProperty] [Range(1, int.MaxValue)]
+        [Display(Name = "[S62] Серия 2 — значение", Order = 6, GroupName = "00 · Пул серий данных",
+            Description = "Значение периода серии слота 2.")]
+        public int Series2Value { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S70] Серия 3 включена", Order = 7, GroupName = "00 · Пул серий данных",
+            Description = "Слот 3 пула дополнительных серий. Объявляется в State.Configure и после запуска не меняется: AddDataSeries работает только там. Порядок слотов фиксирует индексы, перестановка заставит модули читать чужие бары.")]
+        public bool UseSeries3 { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S71] Серия 3 — тип", Order = 8, GroupName = "00 · Пул серий данных",
+            Description = "Тип периода серии слота 3.")]
+        public BarsPeriodType Series3Type { get; set; }
+
+        [NinjaScriptProperty] [Range(1, int.MaxValue)]
+        [Display(Name = "[S72] Серия 3 — значение", Order = 9, GroupName = "00 · Пул серий данных",
+            Description = "Значение периода серии слота 3.")]
+        public int Series3Value { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S80] Серия 4 включена", Order = 10, GroupName = "00 · Пул серий данных",
+            Description = "Слот 4 пула дополнительных серий. Объявляется в State.Configure и после запуска не меняется: AddDataSeries работает только там. Порядок слотов фиксирует индексы, перестановка заставит модули читать чужие бары.")]
+        public bool UseSeries4 { get; set; }
+
+        [NinjaScriptProperty] [Display(Name = "[S81] Серия 4 — тип", Order = 11, GroupName = "00 · Пул серий данных",
+            Description = "Тип периода серии слота 4.")]
+        public BarsPeriodType Series4Type { get; set; }
+
+        [NinjaScriptProperty] [Range(1, int.MaxValue)]
+        [Display(Name = "[S82] Серия 4 — значение", Order = 12, GroupName = "00 · Пул серий данных",
+            Description = "Значение периода серии слота 4.")]
+        public int Series4Value { get; set; }
+
+        [NinjaScriptProperty] [Range(0, 4)]
+        [Display(Name = "[S90] Серия исполнения — слот", Order = 13, GroupName = "00 · Пул серий данных",
+            Description = "Какая серия обслуживает такт решения и отправку заявок. Ноль — серия графика, 1..4 — слоты пула. Обычно это самая быстрая из загруженных: от неё зависит момент входа.")]
+        public int ExecSeriesSlot { get; set; }
+
+        #endregion
+
+        #region Свойства — пробой: окна и фильтры
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W11] Утро: база, начало", Order = 1, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboMorningBaseStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W12] Утро: база, конец", Order = 2, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboMorningBaseEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W13] Утро: окно сигналов, начало", Order = 3, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboMorningSignalStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W14] Утро: окно сигналов, конец", Order = 4, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboMorningSignalEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W15] Утро: выход по времени", Order = 5, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара. Выход — принудительное закрытие позиции сессии.")]
+        public int DboMorningSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1.0, 10000.0)]
+        [Display(Name = "[W16] Утро: трейлинг, тиков", Order = 6, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Расстояние трейлинга сделок этой сессии. Передаётся финансовому модулю с сигналом.")]
+        public double DboMorningTrailTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W21] Вечер: база, начало", Order = 7, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboEveningBaseStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W22] Вечер: база, конец", Order = 8, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboEveningBaseEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W23] Вечер: окно сигналов, начало", Order = 9, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboEveningSignalStart { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W24] Вечер: окно сигналов, конец", Order = 10, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара.")]
+        public int DboEveningSignalEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 235959)]
+        [Display(Name = "[W25] Вечер: выход по времени", Order = 11, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Время ЧЧММСС в поясе окон [M81], по времени открытия бара. Выход — принудительное закрытие позиции сессии.")]
+        public int DboEveningSessionEnd { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1.0, 10000.0)]
+        [Display(Name = "[W26] Вечер: трейлинг, тиков", Order = 12, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Расстояние трейлинга сделок этой сессии. Передаётся финансовому модулю с сигналом.")]
+        public double DboEveningTrailTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "[W31] Ширина базы, минимум, тиков", Order = 13, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Уже — рынок спит, вход запрещён.")]
+        public double DboMinRangeTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10000.0)]
+        [Display(Name = "[W32] Ширина базы, максимум, тиков", Order = 14, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Шире — рынок перерастянут, вход запрещён.")]
+        public double DboMaxRangeTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 1000)]
+        [Display(Name = "[W33] Минимум баров базы", Order = 15, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Меньше — данные неполны, сессия блокируется.")]
+        public int DboMinBaseBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 5.0)]
+        [Display(Name = "[W34] Порог NormVol", Order = 16, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "ATR быстрый / ATR медленный на 15M ниже порога — боковик, вход запрещён.")]
+        public double DboFlatThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "[W35] ATR быстрый, баров 15M", Order = 17, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Простая средняя истинного диапазона.")]
+        public int DboAtrFast { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 500)]
+        [Display(Name = "[W36] ATR медленный, баров 15M", Order = 18, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Простая средняя истинного диапазона.")]
+        public int DboAtrSlow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(2, 200)]
+        [Display(Name = "[W37] Баров 4H для наклона", Order = 19, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Число доходностей закрытых баров 4H в расчёте направления.")]
+        public int DboTrendBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "[W38] Отступ входа от границы базы, тиков", Order = 20, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Стоп-ордер ставится на экстремум базы плюс отступ.")]
+        public int DboEntryOffsetTicks { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 100)]
+        [Display(Name = "[W39] Предел входов за сессию", Order = 21, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "0 — без ограничения. Повторный вход — только после возврата цены за уровень.")]
+        public int DboMaxEntries { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[W40] Направление вечера", Order = 22, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "DayTrend — по тренду дня, как в исследовании. H4 — по наклону 4H. Both — оба обязаны совпасть.")]
+        public SwEveningDir DboEveningDir { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[W41] Закрывать позицию по окончании сессии", Order = 23, GroupName = "08 · Пробой: окна и фильтры",
+            Description = "Выход по времени [W15] и [W25].")]
+        public bool DboCloseAtSessionEnd { get; set; }
+
+        #endregion
+
+        [NinjaScriptProperty]
+        [Display(Name = "[F34] Безубыток и трейлинг по максимуму", Order = 25, GroupName = "05 · Финансовый модуль",
+            Description = "Включено — порог безубытка и включения трейлинга считается по лучшей цене позиции (MFE), как в исследовании и контрольном бэктесте. Выключено — по закрытию бара, позже и реже.")]
+        public bool BreakevenOnBestPrice { get; set; }
+
+        #region Свойства — адаптивное ядро
+
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD9] Слот 9 — адаптивное ядро", Order = 9, GroupName = "01 · Слоты модулей",
+            Description = "Локальная линейная регрессия цены с ядром компактного носителя. Роль — фильтр, либо сигнал при [K65].")]
+        public bool Slot9Enabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K50] Ядро", Order = 1, GroupName = "09 · Адаптивное ядро",
+            Description = "Epanechnikov — минимальная среднеквадратичная ошибка. Остальные отличаются по эффективности на 1–2%. Автовыбор по таймфрейму не предусмотрен: запаздывание определяет ширина окна и тип регрессии, а не форма ядра.")]
+        public SwKernelType KerKernel { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K51] Тип регрессии", Order = 2, GroupName = "09 · Адаптивное ядро",
+            Description = "LocalLinear — локальная прямая, без смещения на краю при линейном тренде. NadarayaWatson — взвешенное среднее; на тренде отстаёт на несколько баров.")]
+        public SwRegressionType KerRegression { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[K52] Слот серии", Order = 3, GroupName = "09 · Адаптивное ядро",
+            Description = "0 — график, 1–4 — слоты пула [S50]–[S80]. Подгонка — на закрытии бара этой серии.")]
+        public int KerSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(5, 200)]
+        [Display(Name = "[K53] Ширина окна, баров", Order = 4, GroupName = "09 · Адаптивное ядро",
+            Description = "Базовая ширина носителя ядра.")]
+        public int KerBandwidth { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K54] Адаптивная ширина окна", Order = 5, GroupName = "09 · Адаптивное ядро",
+            Description = "Окно умножается на ATR(20)/ATR(5) в пределах 0,5–2: при всплеске волатильности короче, в затишье длиннее.")]
+        public bool KerAdaptive { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K55] Вес по объёму", Order = 6, GroupName = "09 · Адаптивное ядро",
+            Description = "Множитель веса 1 + γ·z, ограниченный от 0,1 до 4. Выключено: тяготение подгонки к барам с высоким объёмом — обычно к новостным всплескам — не проверено.")]
+        public bool KerVolumeWeighting { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 5.0)]
+        [Display(Name = "[K56] Множитель γ веса объёма", Order = 7, GroupName = "09 · Адаптивное ядро",
+            Description = "0 — вес не зависит от объёма.")]
+        public double KerVolumeGamma { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K57] Нормировка объёма", Order = 8, GroupName = "09 · Адаптивное ядро",
+            Description = "Robust — медиана и MAD, не искажается одиночными всплесками. Standard — среднее и СКО.")]
+        public SwVolumeScale KerVolumeScale { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(5, 500)]
+        [Display(Name = "[K58] Окно статистики объёма, баров", Order = 9, GroupName = "09 · Адаптивное ядро",
+            Description = "По скольким барам считаются центр и разброс объёма.")]
+        public int KerVolumeWindow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10.0)]
+        [Display(Name = "[K59] Порог наклона, тиков на бар", Order = 10, GroupName = "09 · Адаптивное ядро",

@@ -1,0 +1,135 @@
+{
+  "certificate": "DZ-DATA-CERT-v1.0",
+  "issued_utc": "2026-09-28T13:59:35Z",
+  "status": "SEALED_READONLY",
+  "symbol": "MGC",
+  "tick_size": 0.1,
+  "point_value": 10.0,
+  "source": {
+    "clean_cache": "gc-1m.npz",
+    "clean_cache_sha256": "3c2eb62469f3a01a3f348eba58c11007d97f957afa5ab15efa60d55b9af35589",
+    "clean_arrays_sha256": "3c2eb62469f3a01a3f348eba58c11007d97f957afa5ab15efa60d55b9af35589",
+    "raw_sha256": null,
+    "time": "UTC, наносекунды, время открытия бара"
+  },
+  "resample": {
+    "function": "DZ_DATA_Sanitizer.resample",
+    "anchor_hours_chicago": 17,
+    "sanitizer_sha256": "4b55428579e2fe4bd6975dafd1ee078a3e0636ce6895d32a328b5b8e0bfc4d1c"
+  },
+  "series": {
+    "M1": {
+      "file": "MGC_M1.npz",
+      "sha256": "eadd21ad94854b5f78660ff89e3d3a5d2efdff931768e4a96e011636bc71c48a",
+      "bars": 6622249,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 05:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 201480,
+        "total_ticks": 10573358.0,
+        "total_currency": 10573358.0,
+        "avg_ticks": 52.5
+      }
+    },
+    "M5": {
+      "file": "MGC_M5.npz",
+      "sha256": "7d90c2493b9f6bd1f389e291813b3779b653db76193ae01638666a29a2ff1709",
+      "bars": 1360315,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 05:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 105576,
+        "total_ticks": 6488650.0,
+        "total_currency": 6488650.0,
+        "avg_ticks": 61.5
+      }
+    },
+    "M15": {
+      "file": "MGC_M15.npz",
+      "sha256": "7cea9387deabc7be504123fba4a38265e2062a28945425fc7ceb713cf717a0db",
+      "bars": 455821,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 05:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 60644,
+        "total_ticks": 4398418.0,
+        "total_currency": 4398418.0,
+        "avg_ticks": 72.5
+      }
+    },
+    "M30": {
+      "file": "MGC_M30.npz",
+      "sha256": "0030268497f7d56733b2767c0a1376780a6b43bf0fad3ef597d679fb31484f67",
+      "bars": 229431,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 05:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 40660,
+        "total_ticks": 3359207.0,
+        "total_currency": 3359207.0,
+        "avg_ticks": 82.6
+      }
+    },
+    "M45": {
+      "file": "MGC_M45.npz",
+      "sha256": "a92acff60681bd5b4d06ed6b09f5e729bb63fc5fe3a025319da2bcfad7fad84a",
+      "bars": 156375,
+      "first_open_utc": "2007-04-01 21:45:00+00:00",
+      "last_open_utc": "2026-07-22 04:30:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 31842,
+        "total_ticks": 2877685.0,
+        "total_currency": 2877685.0,
+        "avg_ticks": 90.4
+      }
+    },
+    "M60": {
+      "file": "MGC_M60.npz",
+      "sha256": "69a65914ad3392b2e77b61ed990604021f9ab80868c8712102e6f95b27f9dd15",
+      "bars": 115957,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 05:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 26330,
+        "total_ticks": 2547044.0,
+        "total_currency": 2547044.0,
+        "avg_ticks": 96.7
+      }
+    },
+    "M120": {
+      "file": "MGC_M120.npz",
+      "sha256": "67c3f70293432468b41547a777b750b3d08d60c25385d847eea858e341bc4087",
+      "bars": 59645,
+      "first_open_utc": "2007-04-01 22:00:00+00:00",
+      "last_open_utc": "2026-07-22 04:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 16488,
+        "total_ticks": 1924656.0,
+        "total_currency": 1924656.0,
+        "avg_ticks": 116.7
+      }
+    },
+    "M240": {
+      "file": "MGC_M240.npz",
+      "sha256": "dcb85be09c6b970a5e803605d95c4d9795f4211b42c22daf80e5065b01eb7b92",
+      "bars": 30856,
+      "first_open_utc": "2007-04-01 20:00:00+00:00",
+      "last_open_utc": "2026-07-22 04:00:00+00:00",
+      "swings": {
+        "threshold_ticks": 20.0,
+        "count": 10062,
+        "total_ticks": 1436458.0,
+        "total_currency": 1436458.0,
+        "avg_ticks": 142.8
+      }
+    }
+  },
+  "content_sha256": "50edc46bb3bc46f079de346fb005cf79f015df2eb28dae697d7649c747b9aade"
+}

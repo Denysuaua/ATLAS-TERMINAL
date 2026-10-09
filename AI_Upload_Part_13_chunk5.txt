@@ -1,0 +1,300 @@
+﻿| 4060–4079 | метод | `DZ_SW_Hub_S021.TrackBetsHub` | · | · | · | · | · | · | · | | |
+| 4091–4117 | метод | `DZ_SW_Hub_S021.EvaluateCrane` | · | · | · | · | · | · | · | | |
+| 4120–4130 | метод | `DZ_SW_Hub_S021.ImpliedPrecision` | · | · | · | · | · | · | · | | |
+| 4135–4142 | метод | `DZ_SW_Hub_S021.LnGamma` | · | · | · | · | · | · | · | | |
+| 4145–4151 | метод | `DZ_SW_Hub_S021.RegIncBeta` | · | · | · | · | · | · | · | | |
+| 4154–4177 | метод | `DZ_SW_Hub_S021.BetaCf` | · | · | · | · | · | · | · | | |
+| 4184–4196 | метод | `DZ_SW_Hub_S021.BetPsr` | · | · | · | · | · | · | · | | |
+| 4202–4206 | метод | `DZ_SW_Hub_S021.Concentration` | · | · | · | · | · | · | · | | |
+| 4208–4214 | метод | `DZ_SW_Hub_S021.BetStatsLine` | · | · | · | · | · | · | · | | |
+| 4217–4226 | метод | `DZ_SW_Hub_S021.RiskLine` | · | · | · | · | · | · | · | | |
+| 4232–4247 | метод | `DZ_SW_Hub_S021.ProcessRemoteCommands` | · | · | · | · | · | · | · | | |
+| 4250–4254 | метод | `DZ_SW_Hub_S021.OnRemoteTimerTick` | · | · | · | · | · | · | · | | |
+| 4256–4259 | метод | `DZ_SW_Hub_S021.RemoteCustomEvent` | · | · | · | · | · | · | · | | |
+| 4261–4264 | метод | `DZ_SW_Hub_S021.WsEsc` | · | · | · | · | · | · | · | | |
+| 4266 | метод | `DZ_SW_Hub_S021.WsNum` | · | · | · | · | · | · | · | | |
+| 4269–4304 | метод | `DZ_SW_Hub_S021.PublishSnapshot` | · | · | · | · | · | · | · | | |
+| 4323 | регион | Визуальный слой — приём и отрисовка событий модулей | · | · | · | · | · | · | · | | |
+| 4335–4363 | метод | `DZ_SW_Hub_S021.HubVisual` | · | · | · | · | · | · | · | | |
+| 4367–4383 | метод | `DZ_SW_Hub_S021.VisPalette` | · | · | · | · | · | · | · | | |
+| 4385–4453 | метод | `DZ_SW_Hub_S021.RenderVisualEvent` | · | · | · | · | · | · | · | | |
+| 4455–4482 | метод | `DZ_SW_Hub_S021.RenderModuleVisuals` | · | · | · | · | · | · | · | | |
+| 4484–4487 | метод | `DZ_SW_Hub_S021.HubChannelPlot` | · | · | · | · | · | · | · | | |
+| 4502 | регион | Свойства — слоты | · | · | · | · | · | · | · | | |
+| 4591 | регион | Свойства — пробой: окна и фильтры | · | · | · | · | · | · | · | | |
+| 4736 | регион | Свойства — адаптивное ядро | · | · | · | · | · | · | · | | |
+| 4831 | регион | Свойства — классификатор Лоренца | · | · | · | · | · | · | · | | |
+| 4959 | регион | Свойства — ядро по Хёрсту | · | · | · | · | · | · | · | | |
+| 5052 | регион | Свойства — сигнал с ПК | · | · | · | · | · | · | · | | |
+| 5089 | регион | Свойства — настройки модулей | · | · | · | · | · | · | · | | |
+| 5276 | регион | Свойства — решение | · | · | · | · | · | · | · | | |
+| 5293 | регион | Свойства — исполнение | · | · | · | · | · | · | · | | |
+| 5351 | регион | Свойства — финансовый модуль | · | · | · | · | · | · | · | | |
+| 5527 | регион | Свойства — управление позицией | · | · | · | · | · | · | · | | |
+| 5550 | регион | Свойства — диагностика | · | · | · | · | · | · | · | | |
+| 6026 | регион | Внутренний доступ для исполнителя | · | · | · | · | · | · | · | | |
+| 6123–6126 | метод | `DZ_SW_Hub_S021.HubEnter` | · | · | · | · | · | · | · | | |
+| 6135–6139 | метод | `DZ_SW_Hub_S021.HubEnterStop` | · | · | · | · | · | · | · | | |
+| 6141–6145 | метод | `DZ_SW_Hub_S021.HubExit` | · | · | · | · | · | · | · | | |
+| 6152–6155 | метод | `DZ_SW_Hub_S021.HubSetStopTicks` | · | · | · | · | · | · | · | | |
+| 6157–6160 | метод | `DZ_SW_Hub_S021.HubSetStop` | · | · | · | · | · | · | · | | |
+| 6162–6165 | метод | `DZ_SW_Hub_S021.HubRoundTick` | · | · | · | · | · | · | · | | |
+| 6193 | регион | Исполнитель — ЕДИНСТВЕННАЯ точка ордеров | · | · | · | · | · | · | · | | |
+| 6210–6220 | class | `SwMath` | · | · | · | · | · | · | · | | |
+| 6212–6219 | метод | `SwMath.Phi` | · | · | · | · | · | · | · | | |
+| 6222–6546 | class | `SwExecutionModule` | · | · | · | · | · | · | · | | |
+| 6237 | конструктор | `SwExecutionModule.SwExecutionModule` | · | · | · | · | · | · | · | | |
+| 6240–6247 | метод | `SwExecutionModule.ParseStepTag` | · | · | · | · | · | · | · | | |
+| 6278–6305 | метод | `SwExecutionModule.EmergencyFlatten` | · | · | · | · | · | · | · | | |
+| 6307–6315 | метод | `SwExecutionModule.OnLiveEntryFilled` | · | · | · | · | · | · | · | | |
+| 6317–6322 | метод | `SwExecutionModule.OnVirtualStopEntryFilled` | · | · | · | · | · | · | · | | |
+| 6324–6327 | метод | `SwExecutionModule.RequestEntry` | · | · | · | · | · | · | · | | |
+| 6329–6429 | метод | `SwExecutionModule.RequestEntry` | · | · | · | · | · | · | · | | |
+| 6432–6545 | метод | `SwExecutionModule.Handle` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_AdaptiveKernel_S021.cs` — 534 строк, `a0b7881ef3bd`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 56 | enum | `SwKernelType` | · | · | · | · | · | · | · | | |
+| 59 | enum | `SwRegressionType` | · | · | · | · | · | · | · | | |
+| 62 | enum | `SwVolumeScale` | · | · | · | · | · | · | · | | |
+| 65 | enum | `SwKernelDivergenceAction` | · | · | · | · | · | · | · | | |
+| 70–93 | class | `SwAdaptiveKernelConfig` | · | · | · | · | · | · | · | | |
+| 100–177 | class | `SwAdaptiveKernelEngine` | · | · | · | · | · | · | · | | |
+| 109–125 | метод | `SwAdaptiveKernelEngine.K` | · | · | · | · | · | · | · | | |
+| 133–176 | метод | `SwAdaptiveKernelEngine.Fit` | · | · | · | · | · | · | · | | |
+| 179–532 | class | `SwAdaptiveKernelModule` | · | · | · | · | · | · | · | | |
+| 213–218 | конструктор | `SwAdaptiveKernelModule.SwAdaptiveKernelModule` | · | · | · | · | · | · | · | | |
+| 220–236 | метод | `SwAdaptiveKernelModule.Attach` | · | · | · | · | · | · | · | | |
+| 238–335 | метод | `SwAdaptiveKernelModule.Compute` | · | · | · | · | · | · | · | | |
+| 337–347 | метод | `SwAdaptiveKernelModule.CodeText` | · | · | · | · | · | · | · | | |
+| 349 | регион | Подгонка на закрытии бара своей серии | · | · | · | · | · | · | · | | |
+| 351–442 | метод | `SwAdaptiveKernelModule.UpdateFit` | · | · | · | · | · | · | · | | |
+| 444–455 | метод | `SwAdaptiveKernelModule.Observe` | · | · | · | · | · | · | · | | |
+| 463–490 | метод | `SwAdaptiveKernelModule.FillVolumeWeights` | · | · | · | · | · | · | · | | |
+| 493–497 | метод | `SwAdaptiveKernelModule.Median` | · | · | · | · | · | · | · | | |
+| 499–508 | метод | `SwAdaptiveKernelModule.MedianInPlace` | · | · | · | · | · | · | · | | |
+| 512 | регион | Диагностика | · | · | · | · | · | · | · | | |
+| 515–518 | метод | `SwAdaptiveKernelModule.SkillScore` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_AdaptiveStop_S021.cs` — 415 строк, `81c8ec8b6ed7`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 47–51 | enum | `SwAdaptiveWidth` | · | · | · | · | · | · | · | | |
+| 56–86 | class | `SwAdaptiveStopConfig` | · | · | · | · | · | · | · | | |
+| 88–413 | class | `SwAdaptiveStopModule` | · | · | · | · | · | · | · | | |
+| 113–118 | конструктор | `SwAdaptiveStopModule.SwAdaptiveStopModule` | · | · | · | · | · | · | · | | |
+| 120–132 | метод | `SwAdaptiveStopModule.Attach` | · | · | · | · | · | · | · | | |
+| 134–142 | метод | `SwAdaptiveStopModule.Compute` | · | · | · | · | · | · | · | | |
+| 144–205 | метод | `SwAdaptiveStopModule.ComputeCore` | · | · | · | · | · | · | · | | |
+| 207 | регион | Расчёт линии | · | · | · | · | · | · | · | | |
+| 213–301 | метод | `SwAdaptiveStopModule.UpdateLine` | · | · | · | · | · | · | · | | |
+| 303–307 | метод | `SwAdaptiveStopModule.prevCloseBeyondUpper` | · | · | · | · | · | · | · | | |
+| 308–312 | метод | `SwAdaptiveStopModule.prevCloseBeyondLower` | · | · | · | · | · | · | · | | |
+| 314–320 | метод | `SwAdaptiveStopModule.PushAtr` | · | · | · | · | · | · | · | | |
+| 327–341 | метод | `SwAdaptiveStopModule.ResolveMultiplier` | · | · | · | · | · | · | · | | |
+| 345 | регион | Наблюдение (v1.1) | · | · | · | · | · | · | · | | |
+| 351–389 | метод | `SwAdaptiveStopModule.Observe` | · | · | · | · | · | · | · | | |
+| 393 | регион | Диагностика | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_DualBreakout_S021.cs` — 646 строк, `73bc3726508c`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 72 | enum | `SwWindowZone` | · | · | · | · | · | · | · | | |
+| 75 | enum | `SwBreakoutPhase` | · | · | · | · | · | · | · | | |
+| 78–83 | enum | `SwEveningDir` | · | · | · | · | · | · | · | | |
+| 89–97 | class | `SwSessionSpec` | · | · | · | · | · | · | · | | |
+| 99–136 | class | `SwDualBreakoutConfig` | · | · | · | · | · | · | · | | |
+| 139–163 | class | `SwSessionState` | · | · | · | · | · | · | · | | |
+| 155–162 | метод | `SwSessionState.ResetFor` | · | · | · | · | · | · | · | | |
+| 172–189 | class | `SwHtfSnap` | · | · | · | · | · | · | · | | |
+| 177–181 | метод | `SwHtfSnap.Push` | · | · | · | · | · | · | · | | |
+| 183–188 | метод | `SwHtfSnap.Get` | · | · | · | · | · | · | · | | |
+| 191–644 | class | `SwDualBreakoutModule` | · | · | · | · | · | · | · | | |
+| 221–226 | конструктор | `SwDualBreakoutModule.SwDualBreakoutModule` | · | · | · | · | · | · | · | | |
+| 228–240 | метод | `SwDualBreakoutModule.Attach` | · | · | · | · | · | · | · | | |
+| 242–247 | метод | `SwDualBreakoutModule.Span` | · | · | · | · | · | · | · | | |
+| 249 | метод | `SwDualBreakoutModule.Hm` | · | · | · | · | · | · | · | | |
+| 251 | регион | Время | · | · | · | · | · | · | · | | |
+| 253–277 | метод | `SwDualBreakoutModule.ResolveZones` | · | · | · | · | · | · | · | | |
+| 280–290 | метод | `SwDualBreakoutModule.ToZone` | · | · | · | · | · | · | · | | |
+| 293–296 | метод | `SwDualBreakoutModule.BarOpenZ` | · | · | · | · | · | · | · | | |
+| 298 | метод | `SwDualBreakoutModule.Hms` | · | · | · | · | · | · | · | | |
+| 299 | метод | `SwDualBreakoutModule.In` | · | · | · | · | · | · | · | | |
+| 300 | метод | `SwDualBreakoutModule.ToSpan` | · | · | · | · | · | · | · | | |
+| 304–415 | метод | `SwDualBreakoutModule.Compute` | · | · | · | · | · | · | · | | |
+| 417 | регион | 4H и 15M | · | · | · | · | · | · | · | | |
+| 419–442 | метод | `SwDualBreakoutModule.UpdateH4` | · | · | · | · | · | · | · | | |
+| 448–475 | метод | `SwDualBreakoutModule.UpdateM15` | · | · | · | · | · | · | · | | |
+| 479 | регион | Сессии | · | · | · | · | · | · | · | | |
+| 481–497 | метод | `SwDualBreakoutModule.UpdateSessions` | · | · | · | · | · | · | · | | |
+| 499–536 | метод | `SwDualBreakoutModule.Step` | · | · | · | · | · | · | · | | |
+| 539–599 | метод | `SwDualBreakoutModule.Decide` | · | · | · | · | · | · | · | | |
+| 601–610 | метод | `SwDualBreakoutModule.Rearm` | · | · | · | · | · | · | · | | |
+| 612–617 | метод | `SwDualBreakoutModule.Block` | · | · | · | · | · | · | · | | |
+| 619–626 | метод | `SwDualBreakoutModule.SessionEndReached` | · | · | · | · | · | · | · | | |
+| 630 | регион | Диагностика | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_EscortLine_S021.cs` — 351 строк, `0021439b3283`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 46–51 | enum | `SwEscortExitTrigger` | · | · | · | · | · | · | · | | |
+| 56–83 | class | `SwEscortLineConfig` | · | · | · | · | · | · | · | | |
+| 85–349 | class | `SwEscortLineExitModule` | · | · | · | · | · | · | · | | |
+| 102–108 | конструктор | `SwEscortLineExitModule.SwEscortLineExitModule` | · | · | · | · | · | · | · | | |
+| 110–123 | метод | `SwEscortLineExitModule.Attach` | · | · | · | · | · | · | · | | |
+| 125–132 | метод | `SwEscortLineExitModule.Compute` | · | · | · | · | · | · | · | | |
+| 134–277 | метод | `SwEscortLineExitModule.ComputeCore` | · | · | · | · | · | · | · | | |
+| 279 | регион | Наблюдение (v1.1) | · | · | · | · | · | · | · | | |
+| 284–323 | метод | `SwEscortLineExitModule.Observe` | · | · | · | · | · | · | · | | |
+| 327 | регион | Диагностика | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_FileSignal_S021.cs` — 184 строк, `e630368d25ee`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 44–52 | class | `SwFileSignalConfig` | · | · | · | · | · | · | · | | |
+| 54–182 | class | `SwFileSignalModule` | · | · | · | · | · | · | · | | |
+| 65–70 | конструктор | `SwFileSignalModule.SwFileSignalModule` | · | · | · | · | · | · | · | | |
+| 72–79 | метод | `SwFileSignalModule.Attach` | · | · | · | · | · | · | · | | |
+| 81–102 | метод | `SwFileSignalModule.Compute` | · | · | · | · | · | · | · | | |
+| 104–166 | метод | `SwFileSignalModule.TryRead` | · | · | · | · | · | · | · | | |
+| 169–176 | метод | `SwFileSignalModule.NormCdf` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_Guard_S021.cs` — 688 строк, `a6e0681ea971`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 72–76 | enum | `SwGuardBreachAction` | · | · | · | · | · | · | · | | |
+| 79–83 | enum | `SwGuardRestartPolicy` | · | · | · | · | · | · | · | | |
+| 89–94 | class | `SwNewsEvent` | · | · | · | · | · | · | · | | |
+| 96–130 | class | `SwGuardConfig` | · | · | · | · | · | · | · | | |
+| 132–686 | class | `SwRiskGuardModule` | · | · | · | · | · | · | · | | |
+| 165–171 | конструктор | `SwRiskGuardModule.SwRiskGuardModule` | · | · | · | · | · | · | · | | |
+| 173–185 | метод | `SwRiskGuardModule.Attach` | · | · | · | · | · | · | · | | |
+| 187 | регион | Новостной календарь | · | · | · | · | · | · | · | | |
+| 194–250 | метод | `SwRiskGuardModule.LoadNews` | · | · | · | · | · | · | · | | |
+| 253–294 | метод | `SwRiskGuardModule.InNewsPause` | · | · | · | · | · | · | · | | |
+| 298–305 | метод | `SwRiskGuardModule.Compute` | · | · | · | · | · | · | · | | |
+| 307–507 | метод | `SwRiskGuardModule.ComputeCore` | · | · | · | · | · | · | · | | |
+| 509 | регион | Наблюдение (v1.1) | · | · | · | · | · | · | · | | |
+| 529–586 | метод | `SwRiskGuardModule.Observe` | · | · | · | · | · | · | · | | |
+| 588–597 | метод | `SwRiskGuardModule.ClearLimitLines` | · | · | · | · | · | · | · | | |
+| 599–614 | метод | `SwRiskGuardModule.DrawLimit` | · | · | · | · | · | · | · | | |
+| 618 | регион | Диагностика | · | · | · | · | · | · | · | | |
+| 627–644 | метод | `SwRiskGuardModule.TrackBets` | · | · | · | · | · | · | · | | |
+| 651–667 | метод | `SwRiskGuardModule.TrackShock` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_HierarchicalMass_S021.cs` — 254 строк, `0d51113817b5`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 49–64 | class | `SwHierarchicalMassConfig` | · | · | · | · | · | · | · | | |
+| 66–252 | class | `SwHierarchicalMassModule` | · | · | · | · | · | · | · | | |
+| 77–82 | конструктор | `SwHierarchicalMassModule.SwHierarchicalMassModule` | · | · | · | · | · | · | · | | |
+| 84–93 | метод | `SwHierarchicalMassModule.Attach` | · | · | · | · | · | · | · | | |
+| 95 | метод | `SwHierarchicalMassModule.Idx` | · | · | · | · | · | · | · | | |
+| 97–126 | метод | `SwHierarchicalMassModule.Compute` | · | · | · | · | · | · | · | | |
+| 128–190 | метод | `SwHierarchicalMassModule.OnOwnBar` | · | · | · | · | · | · | · | | |
+| 196–217 | метод | `SwHierarchicalMassModule.TrendScanT` | · | · | · | · | · | · | · | | |
+| 220–229 | метод | `SwHierarchicalMassModule.AddEchelon` | · | · | · | · | · | · | · | | |
+| 231–234 | метод | `SwHierarchicalMassModule.Sort` | · | · | · | · | · | · | · | | |
+| 237–246 | метод | `SwHierarchicalMassModule.TelemetryJson` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_HurstKernel_S021.cs` — 301 строк, `bba9050f8d62`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 49–71 | class | `SwHurstKernelConfig` | · | · | · | · | · | · | · | | |
+| 73–299 | class | `SwHurstKernelModule` | · | · | · | · | · | · | · | | |
+| 89–94 | конструктор | `SwHurstKernelModule.SwHurstKernelModule` | · | · | · | · | · | · | · | | |
+| 96–117 | метод | `SwHurstKernelModule.Attach` | · | · | · | · | · | · | · | | |
+| 124–130 | метод | `SwHurstKernelModule.ExpectedRS` | · | · | · | · | · | · | · | | |
+| 132–172 | метод | `SwHurstKernelModule.Compute` | · | · | · | · | · | · | · | | |
+| 174–217 | метод | `SwHurstKernelModule.OnOwnBar` | · | · | · | · | · | · | · | | |
+| 220–236 | метод | `SwHurstKernelModule.VarianceRatio` | · | · | · | · | · | · | · | | |
+| 238–248 | метод | `SwHurstKernelModule.Observe` | · | · | · | · | · | · | · | | |
+| 254–284 | метод | `SwHurstKernelModule.HurstRS` | · | · | · | · | · | · | · | | |
+| 287 | метод | `SwHurstKernelModule.Ret` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_Kalman_S021.cs` — 1471 строк, `06713f2dfb0e`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 115–119 | enum | `SwKalmanRole` | · | · | · | · | · | · | · | | |
+| 122–126 | enum | `SwKalmanBands` | · | · | · | · | · | · | · | | |
+| 129–134 | enum | `SwKalmanFilterPolicy` | · | · | · | · | · | · | · | | |
+| 137–141 | enum | `SwKalmanTfChoice` | · | · | · | · | · | · | · | | |
+| 144–151 | enum | `SwKalmanState` | · | · | · | · | · | · | · | | |
+| 156–207 | class | `SwKalmanConfig` | · | · | · | · | · | · | · | | |
+| 210–233 | class | `SwRing` | · | · | · | · | · | · | · | | |
+| 215 | конструктор | `SwRing.SwRing` | · | · | · | · | · | · | · | | |
+| 219–224 | метод | `SwRing.Push` | · | · | · | · | · | · | · | | |
+| 226–232 | метод | `SwRing.Get` | · | · | · | · | · | · | · | | |
+| 241–275 | class | `SwFloatingWindow` | · | · | · | · | · | · | · | | |
+| 248–254 | конструктор | `SwFloatingWindow.SwFloatingWindow` | · | · | · | · | · | · | · | | |
+| 259–274 | метод | `SwFloatingWindow.Update` | · | · | · | · | · | · | · | | |
+| 283–659 | class | `SwKalmanTrack` | · | · | · | · | · | · | · | | |
+| 311–343 | конструктор | `SwKalmanTrack.SwKalmanTrack` | · | · | · | · | · | · | · | | |
+| 381–596 | метод | `SwKalmanTrack.Update` | · | · | · | · | · | · | · | | |
+| 603–628 | метод | `SwKalmanTrack.Peek` | · | · | · | · | · | · | · | | |
+| 631–646 | метод | `SwKalmanTrack.OlsSlope` | · | · | · | · | · | · | · | | |
+| 648–658 | метод | `SwKalmanTrack.StateText` | · | · | · | · | · | · | · | | |
+| 662–688 | class | `SwKalmanStat` | · | · | · | · | · | · | · | | |
+| 667–672 | метод | `SwKalmanStat.Add` | · | · | · | · | · | · | · | | |
+| 690–1469 | class | `SwKalmanChannelModule` | · | · | · | · | · | · | · | | |
+| 717–722 | конструктор | `SwKalmanChannelModule.SwKalmanChannelModule` | · | · | · | · | · | · | · | | |
+| 724–767 | метод | `SwKalmanChannelModule.Attach` | · | · | · | · | · | · | · | | |
+| 769–772 | метод | `SwKalmanChannelModule.Usable` | · | · | · | · | · | · | · | | |
+| 774–790 | метод | `SwKalmanChannelModule.Compute` | · | · | · | · | · | · | · | | |
+| 792 | регион | Шаг таймфрейма | · | · | · | · | · | · | · | | |
+| 794–826 | метод | `SwKalmanChannelModule.StepTrack` | · | · | · | · | · | · | · | | |
+| 832–878 | метод | `SwKalmanChannelModule.OnBreakout` | · | · | · | · | · | · | · | | |
+| 887–916 | метод | `SwKalmanChannelModule.StepExit` | · | · | · | · | · | · | · | | |
+| 920 | регион | Такт исполнения | · | · | · | · | · | · | · | | |
+| 922–948 | метод | `SwKalmanChannelModule.ExecTick` | · | · | · | · | · | · | · | | |
+| 950–973 | метод | `SwKalmanChannelModule.EmitEscort` | · | · | · | · | · | · | · | | |
+| 975–995 | метод | `SwKalmanChannelModule.EmitExit` | · | · | · | · | · | · | · | | |
+| 997–1052 | метод | `SwKalmanChannelModule.EmitSignalRole` | · | · | · | · | · | · | · | | |
+| 1057–1126 | метод | `SwKalmanChannelModule.EmitFilterRole` | · | · | · | · | · | · | · | | |
+| 1130 | регион | Наблюдение: графики, боковики, пробои | · | · | · | · | · | · | · | | |
+| 1137–1173 | метод | `SwKalmanChannelModule.ObserveTrack` | · | · | · | · | · | · | · | | |
+| 1177 | регион | Экспериментальный блок | · | · | · | · | · | · | · | | |
+| 1179–1186 | class | `PendingEval` | · | · | · | · | · | · | · | | |
+| 1188–1193 | class | `RangeCheck` | · | · | · | · | · | · | · | | |
+| 1232–1237 | метод | `SwKalmanChannelModule.CreateStats` | · | · | · | · | · | · | · | | |
+| 1239–1247 | метод | `SwKalmanChannelModule.AddEval` | · | · | · | · | · | · | · | | |
+| 1254–1297 | метод | `SwKalmanChannelModule.ResearchEntryBar` | · | · | · | · | · | · | · | | |
+| 1303–1362 | метод | `SwKalmanChannelModule.OnLowerClose` | · | · | · | · | · | · | · | | |
+| 1364–1370 | метод | `SwKalmanChannelModule.Mark` | · | · | · | · | · | · | · | | |
+| 1374 | регион | Отчёт и панель | · | · | · | · | · | · | · | | |
+| 1377–1410 | метод | `SwKalmanChannelModule.ResearchReport` | · | · | · | · | · | · | · | | |
+| 1417–1429 | метод | `SwKalmanChannelModule.SuggestM` | · | · | · | · | · | · | · | | |
+| 1431–1434 | метод | `SwKalmanChannelModule.F3` | · | · | · | · | · | · | · | | |
+| 1461–1466 | метод | `SwKalmanChannelModule.StatusShort` | · | · | · | · | · | · | · | | |
+
+### `DZ_SW_Mod_Lever_S021.cs` — 1205 строк, `a0b490bb73e4`
+
+| Строки | Вид | Блок | Э1 | Э2 | Э3 | Э4 | Э5 | Э6 | Э7 | Правила | Действие |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | регион | Using declarations | · | · | · | · | · | · | · | | |
+| 88–92 | enum | `SwLeverRole` | · | · | · | · | · | · | · | | |
+| 95–99 | enum | `SwLeverWeight` | · | · | · | · | · | · | · | | |
+| 102–106 | enum | `SwLeverFulcrum` | · | · | · | · | · | · | · | | |
+| 109–114 | enum | `SwLeverMeasure` | · | · | · | · | · | · | · | | |
+| 117–121 | enum | `SwLeverPolicy` | · | · | · | · | · | · | · | | |
+| 124–129 | enum | `SwLeverFinalize` | · | · | · | · | · | · | · | | |
+| 132–138 | enum | `SwLeverState` | · | · | · | · | · | · | · | | |

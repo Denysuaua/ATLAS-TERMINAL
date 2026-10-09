@@ -1,0 +1,10 @@
+{
+  "DOC1_TZ": "DZ_SW_S021_05_Соответствие_ТЗ.md",
+  "DOC2_MANUAL": "DZ_SW_S021_01_Справочное_Руководство.md",
+  "DOC3_DEV_GUIDE": "DZ_SW_S021_02_Руководство_Разработчика.md",
+  "DOC4_SETTINGS_DICT": "DZ_SW_S021_03_Справочник_Меню_Настроек.md",
+  "DOC5_SETTINGS_LINKS": "DZ_SW_S021_11_Карта_Связей_Настроек.md",
+  "DOC6_MODULES": "DZ_SW_S021_12_Перечень_Модулей.md",
+  "DOC7_TRADING_CERTIFICATE": "DZ_SW_S021_Trading_Certificate.cert.json",
+  "DOC8_ENGINE_CS": "DZ_SW_Hub_S021.cs"
+}

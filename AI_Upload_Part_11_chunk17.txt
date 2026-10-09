@@ -1,0 +1,300 @@
+﻿            Description = "Ниже — нейтраль; выше — согласие в сторону наклона, вход против него запрещается.")]
+        public double KerSlopeThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K60] Действие при развороте наклона против позиции", Order = 11, GroupName = "09 · Адаптивное ядро",
+            Description = "Neutral — только запись в трассировку. Veto — запрет нового входа, пока разворот длится. RequestPartialExit — требование закрыть 2/3 позиции один раз за эпизод; не проверено на истории.")]
+        public SwKernelDivergenceAction KerDivergence { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K61] Значимость наклона", Order = 12, GroupName = "09 · Адаптивное ядро",
+            Description = "Направление учитывается, только если t-статистика наклона выше [K62]. t приближённая: остатки автокоррелированы, и значимость завышена. ЭКСПЕРИМЕНТ: выключено по умолчанию, требует проверки на истории.")]
+        public bool KerExpTGate { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 20.0)]
+        [Display(Name = "[K62] Порог t-статистики", Order = 13, GroupName = "09 · Адаптивное ядро",
+            Description = "Для [K61].")]
+        public double KerExpTMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K63] Пересечение быстрой и медленной прямых", Order = 14, GroupName = "09 · Адаптивное ядро",
+            Description = "Направление — знак разности быстрой (окно вдвое короче) и медленной прямых вместо знака наклона. ЭКСПЕРИМЕНТ: выключено по умолчанию, требует проверки на истории.")]
+        public bool KerExpFastSlow { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K64] Самопроверка предсказательной силы", Order = 15, GroupName = "09 · Адаптивное ядро",
+            Description = "Прогноз прямой на бар вперёд сравнивается с наивным «цена не изменится». Не лучше наивного — модуль уходит в нейтраль. На случайном блуждании наивный прогноз оптимален. ЭКСПЕРИМЕНТ: выключено по умолчанию, требует проверки на истории.")]
+        public bool KerExpSkill { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[K65] Режим сигнала", Order = 16, GroupName = "09 · Адаптивное ядро",
+            Description = "Выключено — роль фильтра. Включено — роль сигнала: модуль голосует за направление наравне с другими сигнальными модулями.")]
+        public bool KerSignalMode { get; set; }
+
+        #endregion
+
+        #region Свойства — классификатор Лоренца
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L17] Метод решения", Order = 17, GroupName = "10 · Классификатор Лоренца",
+            Description = "KnnVote — K ближайших, голос по знаку исхода. NadarayaWatson — взвешенное ядром среднее будущей доходности всех допустимых ситуаций. Consensus — направление, только если оба согласны.")]
+        public SwLorentzMethod LorMethod { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L18] Ядро Надарая–Ватсона", Order = 18, GroupName = "10 · Классификатор Лоренца",
+            Description = "Gaussian по умолчанию; компактные ядра обнуляют дальние ситуации.")]
+        public SwKernelType LorNwKernel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.05, 10.0)]
+        [Display(Name = "[L19] Ширина ядра, доля медианы расстояний", Order = 19, GroupName = "10 · Классификатор Лоренца",
+            Description = "σ ядра = множитель × медиана расстояний Лоренца. Меньше — решение по ближайшим, больше — по всем.")]
+        public double LorNwBandMult { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 5.0)]
+        [Display(Name = "[L20] Порог прогноза, ATR", Order = 20, GroupName = "10 · Классификатор Лоренца",
+            Description = "|прогноз доходности за H баров| в ATR ниже порога — нейтраль.")]
+        public double LorNwThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1.0, 1000.0)]
+        [Display(Name = "[L21] Минимальный эффективный объём", Order = 21, GroupName = "10 · Классификатор Лоренца",
+            Description = "(Σw)²/Σw² ниже порога — нейтраль: решение держалось бы на одной-двух ситуациях.")]
+        public double LorNwMinEff { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD11] Слот 11 — классификатор Лоренца", Order = 11, GroupName = "01 · Слоты модулей",
+            Description = "K ближайших по расстоянию Лоренца на нормализованных признаках. Роль — фильтр, подтверждающий входы; сигнал при [L12].")]
+        public bool Slot11Enabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[L01] Слот серии", Order = 1, GroupName = "10 · Классификатор Лоренца",
+            Description = "0 — график, 1–4 — слоты пула.")]
+        public int LorSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(100, 10000)]
+        [Display(Name = "[L02] Окно поиска, баров", Order = 2, GroupName = "10 · Классификатор Лоренца",
+            Description = "Сколько баров прошлого просматривается в поиске соседей.")]
+        public int LorLookback { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[L03] Число соседей K", Order = 3, GroupName = "10 · Классификатор Лоренца",
+            Description = "Сколько ближайших ситуаций голосует.")]
+        public int LorNeighbors { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 50)]
+        [Display(Name = "[L04] Шаг выборки соседей", Order = 4, GroupName = "10 · Классификатор Лоренца",
+            Description = "Соседние бары делят будущее окно и голосуют почти одинаково; шаг снижает эту зависимость.")]
+        public int LorStride { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[L05] Горизонт метки, баров", Order = 5, GroupName = "10 · Классификатор Лоренца",
+            Description = "Метка соседа — знак приращения за H баров вперёд. Сосед допускается, только если его исход уже известен.")]
+        public int LorHorizon { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[L06] Порог перевеса голосов", Order = 6, GroupName = "10 · Классификатор Лоренца",
+            Description = "Доля перевеса 0–1, ниже которой модуль нейтрален.")]
+        public double LorVoteThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L07] Нормализация Йео–Джонсона", Order = 7, GroupName = "10 · Классификатор Лоренца",
+            Description = "λ по максимуму правдоподобия на прошлом окне; работает и с отрицательными значениями, в отличие от Бокса–Кокса.")]
+        public bool LorYeoJohnson { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(10, 5000)]
+        [Display(Name = "[L08] Пересчёт нормализации, баров", Order = 8, GroupName = "10 · Классификатор Лоренца",
+            Description = "Как часто пересчитываются параметры — только по прошлым данным.")]
+        public int LorRefitBars { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(50, 5000)]
+        [Display(Name = "[L09] Окно нормализации, баров", Order = 9, GroupName = "10 · Классификатор Лоренца",
+            Description = "По скольким барам оцениваются λ и масштаб.")]
+        public int LorFitWindow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.000001, 100.0)]
+        [Display(Name = "[L10] Калман: шум процесса Q", Order = 10, GroupName = "10 · Классификатор Лоренца",
+            Description = "Больше — скорость реагирует быстрее.")]
+        public double LorKalmanQ { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.000001, 1000.0)]
+        [Display(Name = "[L11] Калман: шум измерения R", Order = 11, GroupName = "10 · Классификатор Лоренца",
+            Description = "Больше — фильтр сильнее сглаживает.")]
+        public double LorKalmanR { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L12] Режим сигнала", Order = 12, GroupName = "10 · Классификатор Лоренца",
+            Description = "Выключено — фильтр; включено — голосует за направление как сигнал.")]
+        public bool LorSignalMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L13] Голос с гауссовым весом", Order = 13, GroupName = "10 · Классификатор Лоренца",
+            Description = "Вес соседа exp(−d²/2h²) по расстоянию Лоренца вместо равного. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool LorExpKernelVote { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L14] Самопроверка точности", Order = 14, GroupName = "10 · Классификатор Лоренца",
+            Description = "Причинная скользящая точность против эталона «монетки» с той же частотой исхода; ниже порога или не выше эталона — нейтраль. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool LorExpPrecisionGate { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[L15] Порог точности", Order = 15, GroupName = "10 · Классификатор Лоренца",
+            Description = "Для [L14].")]
+        public double LorExpPrecisionMin { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[L16] Согласие с адаптивным ядром", Order = 16, GroupName = "10 · Классификатор Лоренца",
+            Description = "Направление против тренда [MOD9] — нейтраль. Требует включённого [MOD9]. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool LorExpAgreeKernel { get; set; }
+
+        #endregion
+
+        #region Свойства — ядро по Хёрсту
+
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD10] Слот 10 — ядро с шириной по Хёрсту", Order = 10, GroupName = "01 · Слоты модулей",
+            Description = "Ядерная регрессия MOD9 с шириной окна по исправленному показателю Хёрста. Роль — фильтр; сигнал при [H10].")]
+        public bool Slot10Enabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[H01] Слот серии", Order = 1, GroupName = "11 · Ядро по Хёрсту",
+            Description = "0 — график, 1–4 — слоты пула.")]
+        public int HkSlot { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H02] Тип регрессии", Order = 2, GroupName = "11 · Ядро по Хёрсту",
+            Description = "LocalLinear — без запаздывания на тренде; NadarayaWatson — отстаёт.")]
+        public SwRegressionType HkRegression { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H03] Ядро", Order = 3, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Епанечников по умолчанию.")]
+        public SwKernelType HkKernel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(16, 4096)]
+        [Display(Name = "[H04] Окно Хёрста, доходностей", Order = 4, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Разброс оценки при 128 — 0,08, равен эффекту режима. Для устойчивости — 256 и больше.")]
+        public int HkHurstPeriod { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(3, 500)]
+        [Display(Name = "[H05] Ширина окна, минимум", Order = 5, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Баров.")]
+        public int HkMinBandwidth { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(4, 1000)]
+        [Display(Name = "[H06] Ширина окна, максимум", Order = 6, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Баров.")]
+        public int HkMaxBandwidth { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[H07] Хёрст, нижняя граница отображения", Order = 7, GroupName = "11 · Ядро по Хёрсту",
+            Description = "H ниже — минимальная ширина.")]
+        public double HkHLow { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[H08] Хёрст, верхняя граница отображения", Order = 8, GroupName = "11 · Ядро по Хёрсту",
+            Description = "H выше — максимальная ширина.")]
+        public double HkHHigh { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[H15] Уровень блуждания оценщика", Order = 15, GroupName = "11 · Ядро по Хёрсту",
+            Description = "0,47 при окне 128 по моделированию; для другого окна — откалибровать на перемешанных данных.")]
+        public double HkRwLevel { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 10.0)]
+        [Display(Name = "[H09] Порог наклона, тиков на бар", Order = 9, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Ниже — нейтраль.")]
+        public double HkSlopeThreshold { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H10] Режим сигнала", Order = 10, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Выключено — фильтр.")]
+        public bool HkSignalMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H11] Шлюз блуждания", Order = 11, GroupName = "11 · Ядро по Хёрсту",
+            Description = "H в полосе [H12] вокруг уровня блуждания — нейтраль. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool HkExpGate { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 0.5)]
+        [Display(Name = "[H12] Полоса шлюза", Order = 12, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Для [H11].")]
+        public double HkExpGateBand { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H13] Обратное отображение", Order = 13, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Антиперсистентный рынок — окно шире. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool HkExpInverse { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[H14] Уверенность по Хёрсту", Order = 14, GroupName = "11 · Ядро по Хёрсту",
+            Description = "Уверенность наклона умножается на силу персистентности. ЭКСПЕРИМЕНТ: выключено по умолчанию.")]
+        public bool HkExpConfidence { get; set; }
+
+        #endregion
+
+        #region Свойства — сигнал с ПК
+
+        [NinjaScriptProperty]
+        [Display(Name = "[MOD12] Слот 12 — сигнал с ПК", Order = 12, GroupName = "01 · Слоты модулей",
+            Description = "Сигнал, записанный Python на ПК. Ордеров с ПК нет. Устаревший сигнал закрывает вход.")]
+        public bool Slot12Enabled { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[Q01] Файл сигнала", Order = 1, GroupName = "12 · Сигнал с ПК",
+            Description = "Полный путь к файлу, который пишет DZ_PC_SignalBridge.py.")]
+        public string FsPath { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 86400)]
+        [Display(Name = "[Q02] Свежесть, секунд", Order = 2, GroupName = "12 · Сигнал с ПК",
+            Description = "Сигнал старше — отвергается: ПК остановился.")]
+        public int FsMaxAge { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(1, 100)]
+        [Display(Name = "[Q03] Отставание, баров", Order = 3, GroupName = "12 · Сигнал с ПК",
+            Description = "Сигнал с ПК всегда на бар позже; больше допуска — отвергается.")]
+        public int FsMaxLag { get; set; }
+
+        [NinjaScriptProperty]
+        [Display(Name = "[Q04] Режим сигнала", Order = 4, GroupName = "12 · Сигнал с ПК",
+            Description = "Выключено — фильтр.")]
+        public bool FsSignalMode { get; set; }
+
+        [NinjaScriptProperty]
+        [Range(0.0, 1.0)]
+        [Display(Name = "[Q05] Минимальная уверенность", Order = 5, GroupName = "12 · Сигнал с ПК",
+            Description = "Ниже — направление обнуляется.")]
+        public double FsMinConfidence { get; set; }
+
+        #endregion
+
+        #region Свойства — настройки модулей
+
+        [NinjaScriptProperty]
+        [Range(0, 4)]
+        [Display(Name = "[M01] Структура: слот младшего ТФ", Order = 1, GroupName = "04 · Настройки модулей",
+            Description = "Слот пула для младшего таймфрейма структуры.")]

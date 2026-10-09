@@ -1,0 +1,300 @@
+#region Using declarations
+using System;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Mod_HurstKernel_S021 — ЯДРО С ШИРИНОЙ ОКНА ПО ХЁРСТУ, [MOD10], v1.2 (2026-10-05)
+//
+//  v1.2 — РЕВИЗИЯ ВЕТКИ ИССЛЕДОВАНИЙ (карточка MOD10). Расчёт умолчаний не изменён.
+//    Наблюдение: линия ядра на закрытии бара своей серии (роль HurstKernelLine, кольцо «H»), подпись с H.
+//    Эксперименты, выключены: Э65 ExpThrSigma — порог наклона в σ приращений (AFML 3.3), σ — выборочное
+//    отклонение лог-доходностей окна, в тиках через цену; Э73 ExpVrGateZ — шлюз по z-статистике отношения
+//    дисперсий Ло–Маккинлея (q = 4) на окне Хёрста: направление только при z ≥ порога (Чан гл. 2, с. 45:
+//    проверять гипотезу H = 0,5 тестом, а не точечной оценкой) — замена полосе ExpGateBand.
+//
+//  v1.1 — ПРОХОД 2 ПОЛНОЙ ПРОВЕРКИ. Расчёт не изменён. По догме проекта в роли Signal модуль
+//    не голосует — его место фильтр.
+//    Эксперимент Э46 [H16], выключен нулём: H С АПРИОРНЫМИ НАБЛЮДЕНИЯМИ. Банковская книга,
+//    гл. 1–2: априорное распределение действует как добавочные наблюдения. Оценка Хёрста по
+//    R/S на окне [H04] шумна; априорно рынок — блуждание (H = [RwLevel]) весом [H16]
+//    наблюдений: H* = RwLevel + (H − RwLevel) × N / (N + [H16]). Ширина окна и пороги
+//    режимов считаются по H*: случайный выброс H меньше двигает ширину.
+//  Роль Filter по умолчанию, Signal при [H10].
+//
+//  СОСТАВ
+//    регрессия  НЕ переписана: вычислитель SwAdaptiveKernelEngine из MOD9, уже
+//               сверенный с numpy до десятого знака (постулат «одна величина — один
+//               источник»). Епанечников, локальная прямая либо Надарая–Ватсон,
+//               ранний выход по компактному носителю — в нём.
+//    ширина     по показателю Хёрста: персистентный рынок — окно шире, антиперсистентный —
+//               уже; отображение [H07]–[H08] → [H05]–[H06].
+//
+//  ПОКАЗАТЕЛЬ ХЁРСТА ИСПРАВЛЕН. Формула ТЗ H = ln(R/S)/ln(N) на одном окне смещена: для
+//  случайного блуждания даёт не 0.5, а около 0.55, и имеет большой разброс. Здесь R/S
+//  считается на нескольких масштабах n = N, N/2, N/4 … ≥ 8, из каждого вычитается
+//  ожидаемое для независимых приращений E[R/S]ₙ (Anis–Lloyd с поправкой Peters), и
+//  H = 0.5 + наклон регрессии (ln R/S − ln E[R/S]) по ln n. Для блуждания — 0.5.
+//
+//  ZERO-GC. Все буферы — в Attach; ожидаемые E[R/S] по масштабам — тоже, один раз.
+//
+//  ЭКСПЕРИМЕНТЫ — выключены по умолчанию:
+//    [H11]/[H12] шлюз блуждания: |H − 0.5| меньше полосы — нейтраль, трендовой информации нет;
+//    [H13] обратное отображение: антиперсистентный рынок — окно шире (подавить шум);
+//    [H14] уверенность по Хёрсту: уверенность наклона умножается на силу персистентности.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    public class SwHurstKernelConfig
+    {
+        public int Slot = 1;
+        public SwRegressionType Regression = SwRegressionType.LocalLinear;
+        public SwKernelType Kernel = SwKernelType.Epanechnikov;
+        public int HurstPeriod = 128;
+        public int MinBandwidth = 8, MaxBandwidth = 40;
+        // Уровень случайного блуждания ЭТОГО оценщика при окне 128 — 0.47 по моделированию
+        // (400 рядов), а не 0.5: поправка Аниса–Ллойда на малых масштабах перекомпенсирует.
+        // Разброс оценки на 128 доходностях — 0.08, столько же, сколько эффект режима (±0.06):
+        // на коротком окне ширина следует шуму. Для устойчивости — окно 256 и больше.
+        public double RwLevel = 0.47;
+        public double HLow = 0.37, HHigh = 0.57;
+        public double SlopeThresholdTicks = 0.5;
+        public bool SignalMode = false;
+        public bool ExpRandomWalkGate = false;
+        public double ExpGateBand = 0.03;
+        public bool ExpInverseMap = false;
+        public bool ExpHurstConfidence = false;
+        public int ExpPriorObs = 0;          // Э46: априорные наблюдения блуждания
+        public double ExpThrSigma = 0;       // Э65: порог наклона в σ приращений; 0 — тиковый порог [H09]
+        public double ExpVrGateZ = 0;        // Э73: шлюз по z отношения дисперсий; 0 — выключено
+    }
+
+    public class SwHurstKernelModule : SwModule
+    {
+        private readonly SwHurstKernelConfig cfg;
+        private readonly SwAdaptiveKernelEngine eng = new SwAdaptiveKernelEngine();
+
+        private double[] closeRing, retRing, yBuf, mult;
+        private int cap, cCount, cHead, rCount, rHead;
+
+        private int[] scaleN; private double[] logN, logE; private int nScales;
+
+        private double hurst = 0.5, alpha = double.NaN, beta = double.NaN, prevAlpha = double.NaN;
+        private int hUsed, fits;
+        private string textCache = ""; private int lastDir = int.MinValue, lastCode = -1;
+        private double retSd = double.NaN, vrZ = double.NaN;                               // v1.2: Э65, Э73
+        private DateTime visPrevT = DateTime.MinValue; private double visPrevA = double.NaN;
+
+        public SwHurstKernelModule(string id, SwHurstKernelConfig config)
+        {
+            Id = id;
+            cfg = config ?? new SwHurstKernelConfig();
+            Role = cfg.SignalMode ? SwRole.Signal : SwRole.Filter;
+        }
+
+        public override void Attach(SwHostView host)
+        {
+            base.Attach(host);
+            int N = Math.Max(16, cfg.HurstPeriod);
+            cap = Math.Max(cfg.MaxBandwidth, N) + 2;
+            closeRing = new double[cap];
+            retRing = new double[N];
+            yBuf = new double[cfg.MaxBandwidth + 2];
+            mult = new double[cfg.MaxBandwidth + 2];
+            for (int i = 0; i < mult.Length; i++) mult[i] = 1.0;
+
+            // Масштабы n = N, N/2, … ≥ 8 и ожидаемое E[R/S]ₙ для независимых приращений.
+            int cnt = 0; for (int n = N; n >= 8; n /= 2) cnt++;
+            scaleN = new int[cnt]; logN = new double[cnt]; logE = new double[cnt];
+            nScales = 0;
+            for (int n = N; n >= 8; n /= 2)
+            {
+                scaleN[nScales] = n; logN[nScales] = Math.Log(n); logE[nScales] = Math.Log(ExpectedRS(n)); nScales++;
+            }
+            Host.Trace(Id, "HK_ATTACHED", "окно Хёрста " + N + ", масштабов " + nScales + ", ширина " + cfg.MinBandwidth + "–"
+                + cfg.MaxBandwidth + ", " + cfg.Regression + ", роль " + Role);
+        }
+
+        /// <summary>
+        /// E[R/S]ₙ = ((n − ½)/n) · Γ((n−1)/2) / (√π·Γ(n/2)) · Σᵢ₌₁ⁿ⁻¹ √((n−i)/i) — Anis–Lloyd, Peters.
+        /// Отношение гамма-функций — точной рекурсией r(n+2) = r(n)·(n−1)/n без логарифма гаммы:
+        /// в .NET Framework его нет. Вызывается только в Attach.
+        /// </summary>
+        private static double ExpectedRS(int n)
+        {
+            double r = (n % 2 == 0) ? Math.Sqrt(Math.PI) : 2.0 / Math.Sqrt(Math.PI);
+            for (int m = (n % 2 == 0) ? 2 : 3; m < n; m += 2) r *= (m - 1.0) / m;
+            double s = 0; for (int i = 1; i < n; i++) s += Math.Sqrt((double)(n - i) / i);
+            return ((n - 0.5) / n) * (r / Math.Sqrt(Math.PI)) * s;
+        }
+
+        public override void Compute(int bip)
+        {
+            if (Host.IsBarCloseOf(cfg.Slot, bip)) OnOwnBar();
+            if (bip != Host.ExecBip) return;
+
+            int bar = Host.CurrentBar;
+            if (fits == 0 || rCount < retRing.Length)
+            {
+                Health = SwHealth.Warmup;
+                Emit(SwSignal.Empty(bar));
+                return;
+            }
+
+            double tick = Host.TickSize > 0 ? Host.TickSize : 1.0;
+            double slopeT = double.IsNaN(beta) ? 0.0 : beta / tick;
+            double thr = cfg.SlopeThresholdTicks;                                                            // Э65
+            if (cfg.ExpThrSigma > 0 && !double.IsNaN(retSd)) thr = cfg.ExpThrSigma * retSd * Host.CloseOf(cfg.Slot, 0) / tick;
+            int dir = Math.Abs(slopeT) >= thr ? Math.Sign(slopeT) : 0;
+            int code = dir != 0 ? 1 : 0;
+            if (dir != 0 && cfg.ExpRandomWalkGate && Math.Abs(hurst - cfg.RwLevel) < cfg.ExpGateBand) { dir = 0; code = 2; }
+            if (dir != 0 && cfg.ExpVrGateZ > 0 && !(vrZ >= cfg.ExpVrGateZ)) { dir = 0; code = 3; }                 // Э73
+
+            double conf = dir != 0 ? Math.Min(1.0, Math.Abs(slopeT) / Math.Max(1e-9, 4.0 * thr)) : 0.0;
+            if (cfg.ExpHurstConfidence) conf *= Math.Max(0.0, Math.Min(1.0, (hurst - cfg.RwLevel) / 0.1));
+
+            SwSignal s = new SwSignal();
+            s.IsReady = true; s.ProducedAtBar = bar;
+            s.EntryStopPrice = double.NaN; s.TrailTicksOverride = double.NaN;
+            s.Direction = dir;
+            s.Verdict = dir != 0 ? SwVerdict.Agree : SwVerdict.Neutral;
+            s.Confidence = conf;
+            if (dir != lastDir || code != lastCode)
+            {
+                lastDir = dir; lastCode = code;
+                textCache = (code == 2 ? "Хёрст: блуждание" : code == 3 ? "Хёрст: VR незначим" : dir > 0 ? "Хёрст-ядро: вверх" : dir < 0 ? "Хёрст-ядро: вниз" : "Хёрст-ядро: плоско")
+                          + ", H " + hurst.ToString("F2") + ", окно " + hUsed;
+            }
+            s.Text = textCache;
+            Health = SwHealth.Ok;
+            Emit(s);
+        }
+
+        private void OnOwnBar()
+        {
+            if (!Host.SlotReady(cfg.Slot, 2)) return;
+            double c = Host.CloseOf(cfg.Slot, 0);
+            if (double.IsNaN(c) || c <= 0) return;
+
+            double prev = cCount > 0 ? closeRing[cHead] : double.NaN;
+            cHead = (cHead + 1) % cap; closeRing[cHead] = c; if (cCount < cap) cCount++;
+            if (!double.IsNaN(prev) && prev > 0)
+            {
+                rHead = (rHead + 1) % retRing.Length; retRing[rHead] = Math.Log(c / prev);
+                if (rCount < retRing.Length) rCount++;
+            }
+            if (rCount >= retRing.Length)
+            {
+                hurst = HurstRS();
+                VarianceRatio();                                                           // v1.2: Э65, Э73
+                if (cfg.ExpPriorObs > 0 && !double.IsNaN(hurst))                     // Э46
+                {
+                    double n = retRing.Length;
+                    hurst = cfg.RwLevel + (hurst - cfg.RwLevel) * n / (n + cfg.ExpPriorObs);
+                }
+            }
+
+            // Отображение Хёрста в ширину окна.
+            double t = (hurst - cfg.HLow) / Math.Max(1e-9, cfg.HHigh - cfg.HLow);
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            if (cfg.ExpInverseMap) t = 1.0 - t;
+            int hb = (int)Math.Round(cfg.MinBandwidth + t * (cfg.MaxBandwidth - cfg.MinBandwidth));
+            hb = Math.Max(3, Math.Min(Math.Min(cCount, yBuf.Length - 1), hb));
+            if (hb < 3) return;
+            hUsed = hb;
+
+            for (int i = 0; i < hb; i++) yBuf[i] = closeRing[(cHead - i + cap) % cap];
+            eng.Fit(yBuf, mult, hb, hb, cfg.Kernel, cfg.Regression);
+            if (!eng.Ok) return;
+
+            alpha = eng.Alpha;
+            beta = cfg.Regression == SwRegressionType.NadarayaWatson
+                 ? (double.IsNaN(prevAlpha) ? 0.0 : alpha - prevAlpha) : eng.Beta;
+            prevAlpha = alpha;
+            fits++;
+            try { Observe(); } catch { }                                                 // v1.2: наблюдение
+        }
+
+        /// <summary>v1.2. Выборочное отклонение доходностей окна (Э65) и z отношения дисперсий q = 4 (Э73).</summary>
+        private void VarianceRatio()
+        {
+            int N = retRing.Length, q = 4;
+            double s1 = 0, ss1 = 0;
+            for (int k = 0; k < N; k++) { double r = Ret(k); s1 += r; ss1 += r * r; }
+            double m1 = s1 / N, v1 = ss1 / N - m1 * m1;
+            retSd = v1 > 0 ? Math.Sqrt(v1) : double.NaN;
+            double sq = 0, ssq = 0; int nq = 0;
+            for (int k = q - 1; k < N; k++)
+            {
+                double acc = 0; for (int i = 0; i < q; i++) acc += Ret(k - i);
+                sq += acc; ssq += acc * acc; nq++;
+            }
+            if (nq < 8 || !(v1 > 0)) { vrZ = double.NaN; return; }
+            double mq = sq / nq, vq = ssq / nq - mq * mq, vr = vq / (q * v1);
+            vrZ = (vr - 1.0) / Math.Sqrt(2.0 * (2 * q - 1) * (q - 1) / (3.0 * q * N));
+        }
+
+        private void Observe()
+        {
+            if (!Host.VisualOn(SwVisualRole.HurstKernelLine)) return;
+            DateTime t = Host.TimeOf(cfg.Slot, 0);
+            if (t == DateTime.MinValue || double.IsNaN(alpha)) return;
+            if (visPrevT != DateTime.MinValue && !double.IsNaN(visPrevA))
+                EmitVisual(SwVisualEvent.Segment(SwVisualRole.HurstKernelLine, visPrevT, visPrevA, t, alpha)
+                    .WithVariant(double.IsNaN(beta) ? 0 : Math.Sign(beta)).InRing("H"));
+            EmitVisual(SwVisualEvent.Label(SwVisualRole.HurstKernelLine, t, alpha, "H " + hurst.ToString("F2") + " окно " + hUsed).AsState("HLBL"));
+            visPrevT = t; visPrevA = alpha;
+        }
+
+        /// <summary>
+        /// Показатель Хёрста по нескольким масштабам с вычетом ожидаемого R/S блуждания.
+        /// Окна одного масштаба не перекрываются; R/S масштаба — среднее по окнам.
+        /// </summary>
+        private double HurstRS()
+        {
+            int N = retRing.Length;
+            double sx = 0, sy = 0, sxx = 0, sxy = 0; int m = 0;
+            for (int j = 0; j < nScales; j++)
+            {
+                int n = scaleN[j], windows = N / n;
+                double acc = 0; int ok = 0;
+                for (int w = 0; w < windows; w++)
+                {
+                    double mean = 0;
+                    for (int i = 0; i < n; i++) mean += Ret(w * n + i);
+                    mean /= n;
+                    double cum = 0, mn = 0, mx = 0, ss = 0;
+                    for (int i = 0; i < n; i++)
+                    {
+                        double d = Ret(w * n + i) - mean;
+                        cum += d; ss += d * d;
+                        if (cum < mn) mn = cum; if (cum > mx) mx = cum;
+                    }
+                    double sd = Math.Sqrt(ss / n);
+                    if (sd > 0) { acc += (mx - mn) / sd; ok++; }
+                }
+                if (ok == 0) continue;
+                double x = logN[j], y = Math.Log(acc / ok) - logE[j];
+                sx += x; sy += y; sxx += x * x; sxy += x * y; m++;
+            }
+            if (m < 2) return 0.5;
+            double den = m * sxx - sx * sx;
+            return den > 0 ? 0.5 + (m * sxy - sx * sy) / den : 0.5;
+        }
+
+        /// <summary>k-я доходность окна по порядку времени, от старой к новой.</summary>
+        private double Ret(int k) { return retRing[(rHead - (retRing.Length - 1) + k + 2 * retRing.Length) % retRing.Length]; }
+
+        public string StateLine
+        {
+            get
+            {
+                double tick = Host != null && Host.TickSize > 0 ? Host.TickSize : 1.0;
+                return string.Format("H {0:F3} → окно {1} | {2} | наклон {3:F2} т/бар",
+                    hurst, hUsed, cfg.Regression == SwRegressionType.LocalLinear ? "LL" : "NW",
+                    double.IsNaN(beta) ? 0.0 : beta / tick);
+            }
+        }
+    }
+}

@@ -1,0 +1,2905 @@
+﻿
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_PORT_Chains_S021.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_PORT_Chains_S021.py — перенос вычислительных ядер модулей на Python и измерение эстафетных
+связок на реальных данных, v1.0 (2026-10-04)
+
+СТАТУС. Это ПЕРЕНОС ядер C#-модулей v1.17 (структура PAC, адаптивное ядро MOD9, Лоренц MOD11, рычаг
+MOD14, канал Калмана MOD13) формула в формулу по исходникам. Тождество с NinjaTrader НЕ доказано:
+паритет проверяется командой parity-dump на вашей машине против журнала [T13]. До паритета каждое
+число — «гипотеза, требует теста на машине пользователя». Вторая реализация логики допускается
+только с перекрёстной сверкой (протокол доверия, раздел 6) — она здесь встроена, а не обещана.
+
+КОНФИГУРАЦИЯ ЦЕПОЧКИ (слоты по карте эстафеты, остальные настройки — умолчания модулей):
+  серия исполнения M5; структура: младший M5, старший M15; ядро MOD9 — M15; Лоренц — M5 (окно 2000,
+  K = 16, шаг 4, горизонт 4); рычаг — свеча M5, кластеры из M1; Калман — младший M1, текущий M5,
+  старший M60; направление по старшему, сопровождение по текущему.
+  Порядок тактов NinjaTrader: при равной метке первой обрабатывается основная серия, поэтому при
+  решении на закрытии M5 в момент t старшие серии видны только с закрытием < t, текущая — ≤ t.
+
+ИСПОЛНЕНИЕ: рынок по открытию следующего бара, проскальзывание 1 тик, стоп [E03] 40 тиков по худшему
+пути (касание на баре входа — выбит), окна входов и закрытие 22:30 по Берлину — умолчания [MOD3],
+комиссия 0,44 $ за круг. Одна позиция за раз.
+
+ЭКСПЕРИМЕНТЫ (цепочки в выдаче run)
+  Э58 цепочка E2: сопровождение по старшему каналу M60 вместо текущего M5 — гипотеза, что стоп по нижней
+      границе канала M5 с отступом 2 тика слишком тесен (в модуле — выбор [C1x] EscortTf = Higher).
+  Э59 --meta-horizon N: вертикальный барьер мета-разметки N баров (по умолчанию 60, как [T29]); с N = 4 метка
+      совпадает по горизонту с меткой Лоренца — проверка, не расходятся ли фильтр и разметка по горизонту.
+
+КОМАНДЫ
+  run          --npz M1.npz --volume-nt папка --start 2015-01-01 --end 2019-01-01 --out ms/chains
+  parity-dump  те же аргументы, --days 2 — состояния модулей по барам для сверки с [T13]
+==========================================================================================
+"""
+import argparse, importlib.util, json, math, os, sys, time
+import numpy as np
+import pandas as pd
+
+VERSION = "DZ_PORT_Chains_S021-v1.0 (2026-10-04)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+TICK = 0.1; TICK_USD = 1.0; COST_RT = 0.44; SLIP = 1
+TZB = "Europe/Berlin"
+
+
+def ms():
+    s = importlib.util.spec_from_file_location("dz_ms", os.path.join(HERE, "DZ_MS_Market_S021.py"))
+    m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+
+
+def log(m): print(time.strftime("%H:%M:%S"), m, flush=True)
+
+
+# ============================================================== PAC (DZ_SW_Mod_Pac_S021 v1.4)
+class PacState:
+    def __init__(self, k):
+        self.k = k; self.last_h = math.nan; self.last_h_bar = -1; self.prev_h = math.nan
+        self.last_l = math.nan; self.last_l_bar = -1; self.prev_l = math.nan
+        self.trend = 0; self.h_broken = False; self.l_broken = False
+
+
+def pac_series(h, l, c, k_int=3, k_sw=10, higher=False, permit=None):
+    """События структуры по барам серии: список (bar, scope, event, dir, conf, rank). Пивот: строго > слева, ≥ справа.
+    Пробой — по закрытию; оба экстремума одним баром — события нет."""
+    n = len(c); out = [[] for _ in range(n)]
+    for scope, k in (("int", k_int), ("sw", k_sw)):
+        st = PacState(k)
+        for i in range(n):
+            # пивоты: центр = бар i−k, окно i−2k … i
+            if i >= 2 * k:
+                cI = i - k; hC, lC = h[cI], l[cI]
+                isH = isL = True
+                for j in range(1, k + 1):
+                    hL, hR, lL, lR = h[cI - j], h[cI + j], l[cI - j], l[cI + j]
+                    if hC <= hL or hC < hR: isH = False
+                    if lC >= lL or lC > lR: isL = False
+                    if not isH and not isL: break
+                if isH and cI != st.last_h_bar:
+                    st.prev_h = st.last_h; st.last_h = hC; st.last_h_bar = cI; st.h_broken = False
+                if isL and cI != st.last_l_bar:
+                    st.prev_l = st.last_l; st.last_l = lC; st.last_l_bar = cI; st.l_broken = False
+            probe = c[i]
+            up = (not math.isnan(st.last_h)) and (not st.h_broken) and probe > st.last_h
+            dn = (not math.isnan(st.last_l)) and (not st.l_broken) and probe < st.last_l
+            if up and dn:
+                st.h_broken = st.l_broken = True; continue
+            if up:
+                st.h_broken = True
+                if st.trend == 0: st.trend = 1; continue
+                ev = "BOS" if st.trend > 0 else ("CHOCH+" if (not math.isnan(st.prev_h) and probe > st.prev_h) else "CHOCH")
+                st.trend = 1
+                out[i].append((scope, ev, 1))
+            if dn:
+                st.l_broken = True
+                if st.trend == 0: st.trend = -1; continue
+                ev = "BOS" if st.trend < 0 else ("CHOCH+" if (not math.isnan(st.prev_l) and probe < st.prev_l) else "CHOCH")
+                st.trend = -1
+                out[i].append((scope, ev, -1))
+    return out
+
+
+CONF = {"BOS": 0.40, "CHOCH": 0.65, "CHOCH+": 0.85}
+RANK = {"BOS": 100, "CHOCH": 200, "CHOCH+": 300}
+
+
+def pac_candidates(ev_low, ev_high_map, n_exec):
+    """Сильнейшее допущенное событие на такте исполнения: младший — все шесть, старший — три свинговых."""
+    cand = {}
+    for i in range(n_exec):
+        best = None
+        for (scope, ev, d) in ev_low[i]:
+            rank = RANK[ev] + (20 if scope == "sw" else 0); conf = CONF[ev]
+            if best is None or rank > best[0]: best = (rank, d, conf, f"МЛ {scope} {ev}")
+        for (scope, ev, d) in ev_high_map.get(i, []):
+            if scope != "sw": continue
+            rank = RANK[ev] + 40 + 20; conf = CONF[ev] + 0.10
+            if best is None or rank > best[0]: best = (rank, d, conf, f"СТ {scope} {ev}")
+        if best: cand[i] = best
+    return cand
+
+
+# ============================================================== MOD9 (SwAdaptiveKernelEngine)
+def kernel_fit(y, hb):
+    """Епанечников, локальная прямая, x = −i; возвращает (alpha, beta, t)."""
+    i = np.arange(hb); u = i / hb; w = np.where(u < 1, 1 - u * u, 0.0)
+    x = -i.astype(float); yy = y[:hb]
+    s0 = w.sum(); s1 = (w * x).sum(); s2 = (w * x * x).sum(); t0 = (w * yy).sum(); t1 = (w * x * yy).sum()
+    d = s0 * s2 - s1 * s1
+    if s0 <= 0 or d <= 1e-12 * s0 * s0: return t0 / s0, math.nan, 0.0
+    a = (t0 * s2 - t1 * s1) / d; b = (s0 * t1 - s1 * t0) / d
+    r = yy - (a + b * x); rss = (w * r * r).sum(); cc = ((w * (s0 * x - s1) / d) ** 2).sum()
+    se = math.sqrt(max(0.0, rss / s0 * cc)); return a, b, (b / se if se > 0 else 0.0)
+
+
+def kernel_series(h, l, c, bw=20, adapt=True, thr=0.5):
+    """Направление ядра на каждом закрытии бара своей серии: +1/−1/0 по |наклон| ≥ 0,5 тика/бар."""
+    n = len(c); dirs = np.zeros(n, np.int8); slope = np.full(n, np.nan)
+    tr = np.empty(n); tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+    for i in range(n):
+        if i < 20: continue
+        hb = bw
+        if adapt:
+            atr5 = tr[i - 4:i + 1].mean(); atr20 = tr[i - 19:i + 1].mean()
+            ratio = atr20 / atr5 if atr5 > 0 else 1.0
+            hb = int(round(bw * max(0.5, min(2.0, ratio))))
+        hb = max(3, hb)
+        if i + 1 < hb: continue
+        y = c[i::-1][:hb]
+        a, b, t = kernel_fit(y, hb)
+        if math.isnan(b): continue
+        s = b / TICK; slope[i] = s
+        dirs[i] = int(np.sign(s)) if abs(s) >= thr else 0
+    return dirs, slope
+
+
+# ============================================================== MOD11 (Lorentzian)
+def yj(x, lam):
+    x = np.asarray(x, float); out = np.empty_like(x)
+    pos = x >= 0
+    if abs(lam) < 1e-9: out[pos] = np.log(x[pos] + 1)
+    else: out[pos] = ((x[pos] + 1) ** lam - 1) / lam
+    if abs(lam - 2) < 1e-9: out[~pos] = -np.log(1 - x[~pos])
+    else: out[~pos] = -((1 - x[~pos]) ** (2 - lam) - 1) / (2 - lam)
+    return out
+
+
+def yj_fit(x):
+    """Золотое сечение по λ ∈ [−2, 2], 30 итераций — как в модуле."""
+    def ll(l):
+        y = yj(x, l); v = ((y - y.mean()) ** 2).mean()
+        j = (np.sign(x) * np.log(np.abs(x) + 1)).sum()
+        return -0.5 * len(x) * math.log(v) + (l - 1) * j if v > 0 else -math.inf
+    lo, hi, gr = -2.0, 2.0, 0.6180339887
+    x1 = hi - gr * (hi - lo); x2 = lo + gr * (hi - lo); f1 = ll(x1); f2 = ll(x2)
+    for _ in range(30):
+        if f1 < f2: lo = x1; x1 = x2; f1 = f2; x2 = lo + gr * (hi - lo); f2 = ll(x2)
+        else: hi = x2; x2 = x1; f2 = f1; x1 = hi - gr * (hi - lo); f1 = ll(x1)
+    return 0.5 * (lo + hi)
+
+
+def lorentz_series(h, l, c, v, lookback=2000, K=16, stride=4, H=4, vote_thr=0.5, refit=100, fitwin=500, q=0.01, r=1.0):
+    n = len(c); F = 5; raw = np.full((n, F), np.nan)
+    atr = math.nan; prev = math.nan; rsiN = 0; rsiUp = rsiDn = 0.0; kx = math.nan; kv = 0.0; p00 = p01 = p11 = 0.0
+    volring = np.zeros(20); tpv = np.zeros(20); vi = 0; vcnt = 0
+    for i in range(n):
+        hh, ll, cc, vv = h[i], l[i], c[i], v[i]
+        tr = hh - ll if math.isnan(prev) else max(hh - ll, abs(hh - prev), abs(ll - prev))
+        atr = tr if math.isnan(prev) else atr + (tr - atr) / 14.0
+        chg = 0.0 if math.isnan(prev) else cc - prev
+        rsiN += 1; rsiUp += ((chg if chg > 0 else 0) - rsiUp) / min(14, rsiN); rsiDn += ((-chg if chg < 0 else 0) - rsiDn) / min(14, rsiN)
+        rsi = 100 - 100 / (1 + rsiUp / rsiDn) if rsiDn > 0 else 100.0
+        if math.isnan(kx): kx = cc; kv = 0.0
+        else:
+            xp = kx + kv; a00 = p00 + 2 * p01 + p11 + q; a01 = p01 + p11; a11 = p11 + q
+            s = a00 + r; g0 = a00 / s; g1 = a01 / s; e = cc - xp
+            kx = xp + g0 * e; kv = kv + g1 * e; p00 = (1 - g0) * a00; p01 = (1 - g0) * a01; p11 = a11 - g1 * a01
+        volring[vi] = vv; tpv[vi] = vv * (hh + ll + cc) / 3.0; vi = (vi + 1) % 20; vcnt = min(20, vcnt + 1)
+        vs = volring[:vcnt].sum(); tps = tpv[:vcnt].sum()
+        vdens = vv / (vs / vcnt) if vs > 0 else 1.0; com = tps / vs if vs > 0 else cc
+        prev = cc; a = atr if atr > 0 else 1e-9
+        raw[i] = (atr / cc, kv / a, rsi, vdens, (cc - com) / a)
+    # нормализация: рефит каждые refit баров на окне fitwin; Z по текущим параметрам
+    dirs = np.zeros(n, np.int8); strength = np.zeros(n)
+    pre_mu = pre_sd = post_mu = post_sd = lam = None; since = refit; ready = False
+    Zcache = None
+    for i in range(n):
+        if i < 22: continue
+        since += 1
+        if (since >= refit or not ready) and i + 1 >= 50:
+            w = raw[max(0, i + 1 - fitwin):i + 1]
+            pre_mu = w.mean(0); pre_sd = w.std(0, ddof=1); pre_sd[~(pre_sd > 0)] = 1
+            lam = np.array([yj_fit((w[:, f] - pre_mu[f]) / pre_sd[f]) for f in range(F)])
+            post = np.column_stack([yj((w[:, f] - pre_mu[f]) / pre_sd[f], lam[f]) for f in range(F)])
+            post_mu = post.mean(0); post_sd = post.std(0, ddof=1); post_sd[~(post_sd > 0)] = 1
+            ready = True; since = 0
+            # Z всего ряда по параметрам этого рефита: решение на баре j берёт только строки ≤ j,
+            # параметры подогнаны на окне до i ≤ j — заглядывания нет; пересчёт при каждом рефите.
+            Zcache = np.column_stack([(yj((raw[:, f] - pre_mu[f]) / pre_sd[f], lam[f]) - post_mu[f]) / post_sd[f] for f in range(F)])
+        if not ready: continue
+        q0 = Zcache[i]
+        backs = np.arange(H, min(i, lookback) + 1, max(1, stride))
+        if len(backs) < 1: continue
+        idx = i - backs
+        d = np.log1p(np.abs(Zcache[idx] - q0)).sum(1)
+        lab = np.where(c[idx + H] > c[idx], 1, -1)          # исход соседа известен: back ≥ H
+        take = np.argsort(d, kind="stable")[:K]
+        vote = lab[take].sum(); sw = len(take)
+        st = abs(vote) / sw if sw else 0
+        dirs[i] = int(np.sign(vote)) if st >= vote_thr else 0; strength[i] = st
+    return dirs, strength
+
+
+# ============================================================== MOD14 (Lever)
+def lever_series(m5, m1, clusters=10, min_h=4, smooth=3, scale_win=50, vote_z=0.5, warm=50):
+    """Баланс свечи M5 по профилю из M1 (объём равномерно по тикам бара). Состояние Up/Down/Middle."""
+    n = len(m5); bal = np.full(n, np.nan); W = np.full(n, np.nan)
+    m1_open = m1["open_utc"].to_numpy("datetime64[ns]"); m1h = m1["h"].to_numpy(float); m1l = m1["l"].to_numpy(float); m1v = m1["v"].to_numpy(float)
+    co = m5["open_utc"].to_numpy("datetime64[ns]"); ce = m5["close_utc"].to_numpy("datetime64[ns]")
+    lo_i = np.searchsorted(m1_open, co, "left"); hi_i = np.searchsorted(m1_open, ce, "left")
+    H = m5["h"].to_numpy(float); L = m5["l"].to_numpy(float); O = m5["o"].to_numpy(float); C = m5["c"].to_numpy(float)
+    for i in range(n):
+        kL = int(round(L[i] / TICK)); kH = int(round(H[i] / TICK)); nlev = kH - kL + 1
+        if nlev < max(2, min_h) or nlev > 5000: continue
+        w = np.zeros(nlev); Wt = 0.0
+        for j in range(lo_i[i], hi_i[i]):
+            a = int(round(m1l[j] / TICK)); b = int(round(m1h[j] / TICK)); vv = m1v[j]
+            if b < a: a, b = b, a
+            m = b - a + 1
+            if m <= 0 or not (vv > 0): continue
+            ww = vv / m
+            a0 = max(a, kL); b0 = min(b, kH)
+            if b0 >= a0: w[a0 - kL:b0 - kL + 1] += ww; Wt += ww * (b0 - a0 + 1)
+        if not Wt > 0: continue
+        g = (H[i] + L[i]) / 2.0; armUp = max(H[i] - g, TICK); armDn = max(g - L[i], TICK)
+        arm = lambda p: (p - g) / armUp if p >= g else (p - g) / armDn
+        half = Wt / 2.0; cum = 0.0; p50 = H[i]
+        for j in range(nlev):
+            if w[j] > 0 and cum + w[j] >= half: p50 = (kL + j) * TICK - TICK / 2.0 + TICK * (half - cum) / w[j]; break
+            cum += w[j]
+        nc = max(1, min(max(2, clusters), nlev)); dens = np.zeros(nc); cen = np.zeros(nc); cnt = np.zeros(nc)
+        for b in range(nc):
+            a0 = b * nlev // nc; a1 = (b + 1) * nlev // nc - 1
+            cnt[b] = a1 - a0 + 1; dens[b] = w[a0:a1 + 1].sum() / cnt[b]; cen[b] = (kL + (a0 + a1) / 2.0) * TICK
+        md = np.median(dens); num = den = 0.0
+        for b in range(nc):
+            e = max(0.0, dens[b] - md) * cnt[b]; d = arm(cen[b]); num += e * d; den += e * abs(d)
+        lever = num / den if den > 0 else 0.0
+        bal[i] = 0.5 * (lever + arm(p50)); W[i] = Wt
+    state = np.zeros(n, np.int8); z = np.full(n, np.nan)
+    hist_b, hist_w = [], []
+    for i in range(n):
+        if math.isnan(bal[i]): continue
+        hist_b.append(bal[i]); hist_w.append(W[i])
+        if len(hist_b) < warm: continue
+        tb = np.array(hist_b[-smooth:]); tw = np.array(hist_w[-smooth:])
+        order = np.argsort(tb); cw = np.cumsum(tw[order]); sm = tb[order][np.searchsorted(cw, cw[-1] / 2.0)]
+        tail = np.array(hist_b[-scale_win:]); mad = np.median(np.abs(tail - np.median(tail)))
+        sc = max(0.02, 1.4826 * mad); zz = sm / sc; z[i] = zz
+        state[i] = 1 if zz >= vote_z else (-1 if zz <= -vote_z else 0)
+    return state, z
+
+
+# ============================================================== MOD13 (Kalman track)
+class KTrack:
+    def __init__(self, period, wmin, wmax, k=2.0, confirm=5, warm_periods=3, flat_tilt=0.4, sym=0.3, trend_z=3.0, trend_tilt=0.6, comp=0.75, exp=1.35):
+        a = 2.0 / (period + 1.0); b = 2.0 * (2.0 - a) - 4.0 * math.sqrt(1.0 - a); lam = b / math.sqrt(1.0 - a)
+        self.lam2 = lam * lam; self.nisA = a; self.forget = 0.97; self.rMin = (0.25 * TICK) ** 2; self.k = k
+        self.flat_tilt = flat_tilt; self.sym = sym; self.trend_z = trend_z; self.trend_tilt = trend_tilt; self.comp = comp; self.exp = exp
+        self.warm = max(10, warm_periods * period); self.confirm = confirm
+        self.wmin, self.wmax = max(3, min(wmin, wmax)), max(wmin, wmax); self.lf = float(self.wmax); self.wlen = self.wmax
+        self.n = 0; self.steps = 0; self.boot = []; self.closes = []; self.resid = []; self.uppers = []; self.lowers = []; self.widths = []
+        self.smoothed = False; self.in_range = False; self.flat_streak = 0; self.ready = False; self.state = "W"
+        self.level = self.upper = self.lower = self.prev_upper = self.prev_lower = math.nan
+        self.zS = self.tiltS = self.tuS = self.tlS = self.imbS = 0.0; self.x1 = 0.0
+    @staticmethod
+    def ols_slope(arr, m):
+        y = np.array(arr[-m:][::-1]); x = -np.arange(len(y), dtype=float)
+        if len(y) < 3: return 0.0
+        xm, ym = x.mean(), y.mean(); d = ((x - xm) ** 2).sum()
+        return ((x - xm) * (y - ym)).sum() / d if d > 0 else 0.0
+    def update(self, z, hi, lo):
+        self.closes.append(z)
+        cl = self.closes
+        if len(cl) > self.wmax:
+            net = abs(cl[-1] - cl[-1 - self.wmax]); path = sum(abs(cl[-1 - i] - cl[-2 - i]) for i in range(self.wmax))
+            er = net / path if path > 0 else 0.0; target = self.wmin + (self.wmax - self.wmin) * (1.0 - er)
+            self.lf += 0.2 * (target - self.lf); self.wlen = max(self.wmin, min(self.wmax, int(round(self.lf))))
+        else: self.wlen = max(self.wmin, min(self.wmax, len(cl) - 1))
+        if self.n < 5:
+            self.boot.append(z); self.n += 1
+            if self.n == 5:
+                acc = sum((self.boot[i] - self.boot[i - 1]) ** 2 for i in range(1, 5)); self.r = max(acc / 4.0, self.rMin)
+                self.x0 = z; self.x1 = (self.boot[4] - self.boot[0]) / 4.0; self.p00 = 10 * self.r; self.p01 = 0.0; self.p11 = self.r; self.s = self.p00 + self.r
+            self.ready = False; self.state = "W"; return
+        q = self.lam2 * self.r
+        a00 = self.p00 + 2 * self.p01 + self.p11 + q / 4.0; a01 = self.p01 + self.p11 + q / 2.0; a11 = self.p11 + q
+        xp0 = self.x0 + self.x1; xp1 = self.x1; nu = z - xp0; sv = a00 + self.r; k0 = a00 / sv; k1 = a01 / sv
+        self.x0 = xp0 + k0 * nu; self.x1 = xp1 + k1 * nu
+        self.p00 = max(1e-18, (1 - k0) * a00); self.p01 = (1 - k0) * a01; self.p11 = max(1e-18, a11 - k1 * a01); self.s = sv
+        self.steps += 1; dsh = (1 - self.forget) / (1 - self.forget ** (self.steps + 1))
+        self.r = max((1 - dsh) * self.r + dsh * (nu * nu - a00), self.rMin); self.n += 1
+        self.resid.append(z - self.x0)
+        Lw = min(self.wlen, len(self.resid))
+        if Lw < 3: self.ready = False; self.state = "W"; return
+        rr = np.array(self.resid[-Lw:][::-1]); u = np.arange(Lw) / (Lw / 2.0); w = np.exp(-0.5 * u * u)
+        W = w.sum(); U2 = (w * rr * rr * (rr > 0)).sum(); D2 = (w * rr * rr * (rr <= 0)).sum()
+        dup, ddn = math.sqrt(U2 / W), math.sqrt(D2 / W); imb = (dup - ddn) / (dup + ddn) if dup + ddn > 0 else 0.0
+        hu = max(TICK, self.k * math.sqrt(2.0) * dup); hd = max(TICK, self.k * math.sqrt(2.0) * ddn)
+        self.prev_level, self.prev_upper, self.prev_lower = self.level, self.upper, self.lower
+        self.level = self.x0; self.upper = self.x0 + hu; self.lower = self.x0 - hd; width = self.upper - self.lower
+        self.uppers.append(self.upper); self.lowers.append(self.lower); self.widths.append(width)
+        lw = min(len(self.widths), self.wmax); sw_ = max(1.0, lw / 2.0); uu = np.arange(lw) / sw_; ww = np.exp(-0.5 * uu * uu)
+        swd = (ww * np.array(self.widths[-lw:][::-1])).sum(); ratio = width / (swd / ww.sum()) if swd > 0 else 1.0
+        m = max(5, Lw // 2); wd = max(width, 2 * TICK)
+        tilt = self.x1 * Lw / wd; tu = self.ols_slope(self.uppers, m) * m / wd; tl = self.ols_slope(self.lowers, m) * m / wd; sz = self.x1 / math.sqrt(self.p11)
+        if not self.smoothed: self.zS, self.tiltS, self.tuS, self.tlS, self.imbS = sz, tilt, tu, tl, imb; self.smoothed = True
+        else:
+            A = 0.3; self.zS += A * (sz - self.zS); self.tiltS += A * (tilt - self.tiltS); self.tuS += A * (tu - self.tuS); self.tlS += A * (tl - self.tlS); self.imbS += A * (imb - self.imbS)
+        zf = self.trend_z / 2.0; tb = 1.25 * self.flat_tilt
+        flat = abs(self.zS) < zf and abs(self.tiltS) < self.flat_tilt and abs(self.tuS) < tb and abs(self.tlS) < tb and abs(self.tuS - self.tlS) < tb and abs(self.imbS) < self.sym
+        self.flat_streak = self.flat_streak + 1 if flat else 0
+        ready = self.n >= self.warm and len(self.resid) >= self.wmin
+        trend = abs(self.zS) >= self.trend_z and abs(self.tiltS) >= self.trend_tilt
+        if self.in_range:
+            up = (not math.isnan(self.prev_upper)) and z > self.prev_upper; dn = (not math.isnan(self.prev_lower)) and z < self.prev_lower
+            if up or dn or trend: self.in_range = False; self.flat_streak = 0
+        elif ready and self.flat_streak >= self.confirm: self.in_range = True
+        self.ready = ready
+        self.state = "W" if not ready else ("R" if self.in_range else ("T+" if trend and self.x1 > 0 else ("T-" if trend else "U")))
+    @property
+    def zflat(self): return self.trend_z / 2.0
+    @property
+    def corridor(self): return (self.tuS + self.tlS) / 2.0
+
+
+def kalman_tracks(bars, period, wmin, wmax, confirm):
+    t = KTrack(period, wmin, wmax, confirm=confirm); n = len(bars)
+    st = np.empty(n, dtype=object); lower = np.full(n, np.nan); upper = np.full(n, np.nan); zS = np.full(n, np.nan); cor = np.full(n, np.nan); ready = np.zeros(n, bool)
+    h = bars["h"].to_numpy(float); l = bars["l"].to_numpy(float); c = bars["c"].to_numpy(float)
+    for i in range(n):
+        t.update(c[i], h[i], l[i]); st[i] = t.state; lower[i] = t.lower; upper[i] = t.upper; zS[i] = t.zS; cor[i] = t.corridor; ready[i] = t.ready
+    return st, lower, upper, zS, cor, ready, t.zflat
+
+
+# ============================================================== оркестровка
+def latest_before(src_close, dst_time, strict=True):
+    """Индекс последнего бара источника с close < t (strict) или ≤ t."""
+    pos = np.searchsorted(src_close, dst_time, side="left" if strict else "right") - 1
+    return pos
+
+
+def simulate(m5, cand, filt_ok, escort, hard_close_min, win1, win2, entries_until, stop_ticks=40, name=""):
+    """Одна позиция за раз; вход по открытию следующего бара; стоп по худшему пути; закрытие 22:30 по Берлину."""
+    o = m5["o"].to_numpy(float); h = m5["h"].to_numpy(float); l = m5["l"].to_numpy(float); c = m5["c"].to_numpy(float)
+    be = pd.DatetimeIndex(m5["close_utc"]).tz_convert(TZB); tod = (be.hour * 60 + be.minute).to_numpy(); wd = be.dayofweek.to_numpy()
+    n = len(o); trades = []; pos = 0; i = 0
+    while i < n - 2:
+        if pos == 0:
+            if i in cand and filt_ok[i] and wd[i] < 5 and ((win1[0] <= tod[i] < win1[1]) or (win2[0] <= tod[i] < win2[1])) and tod[i] < entries_until:
+                d = cand[i][1]; ent = o[i + 1] + d * SLIP * TICK; stop = ent - d * stop_ticks * TICK
+                mfe = 0.0; mae = 0.0; j = i + 1; exit_px = None; reason = ""; k = j; against = 0
+                while k < n:
+                    # стоп по худшему пути (на баре входа тоже)
+                    if (d > 0 and l[k] <= stop) or (d < 0 and h[k] >= stop):
+                        exit_px = (min(o[k], stop) if d > 0 else max(o[k], stop)); exit_px -= d * SLIP * TICK; reason = "стоп"; break
+                    mfe = max(mfe, (h[k] - ent) if d > 0 else (ent - l[k])); mae = max(mae, (ent - l[k]) if d > 0 else (h[k] - ent))
+                    if tod[k] >= hard_close_min or wd[k] != wd[j]:
+                        exit_px = o[k] - d * SLIP * TICK if k > j else c[k] - d * SLIP * TICK; reason = "22:30"; break
+                    if escort is not None:
+                        new_stop, flip = escort(k, d, stop)
+                        if new_stop is not None and ((d > 0 and new_stop > stop) or (d < 0 and new_stop < stop)): stop = new_stop
+                        if flip:
+                            against += 1
+                            if against >= 2 and k + 1 < n: exit_px = o[k + 1] - d * SLIP * TICK; reason = "наклон"; k += 1; break
+                        else: against = 0
+                    k += 1
+                if exit_px is None: exit_px = c[n - 1]; reason = "конец"; k = n - 1
+                pnl = (exit_px - ent) * d / TICK * TICK_USD - COST_RT
+                trades.append({"chain": name, "entry_bar": i + 1, "exit_bar": k, "dir": d, "entry": ent, "exit": exit_px, "pnl_usd": pnl,
+                               "mfe_ticks": mfe / TICK, "mae_ticks": mae / TICK, "bars": k - i, "reason": reason, "time_utc": m5["close_utc"].iloc[i]})
+                i = k + 1; continue
+        i += 1
+    return pd.DataFrame(trades)
+
+
+def summarize(tr):
+    if len(tr) == 0: return {"n": 0}
+    w = tr[tr.pnl_usd > 0].pnl_usd.sum(); lo = -tr[tr.pnl_usd < 0].pnl_usd.sum()
+    wins = tr[tr.pnl_usd > 0]
+    cap_w = float((wins.pnl_usd / (wins.mfe_ticks * TICK_USD).replace(0, np.nan)).median()) if len(wins) else np.nan
+    cap_total = float(tr.pnl_usd.sum() / max(1e-9, (tr.mfe_ticks * TICK_USD).sum()))
+    return {"n": int(len(tr)), "pnl_sum": round(float(tr.pnl_usd.sum()), 1), "pnl_mean": round(float(tr.pnl_usd.mean()), 2), "pf": round(float(w / lo), 3) if lo > 0 else float("inf"),
+            "win": round(float((tr.pnl_usd > 0).mean()), 3), "mfe_med": round(float(tr.mfe_ticks.median()), 1), "mae_med": round(float(tr.mae_ticks.median()), 1),
+            "capture_winners_med": round(cap_w, 3), "capture_total": round(cap_total, 3), "reasons": {k: int(v) for k, v in tr.reason.value_counts().items()}}
+
+
+def cmd_run(a):
+    M = ms(); t0 = time.time()
+    m1 = M.load_npz(a.npz); m1 = m1[(m1.index >= pd.Timestamp(a.start, tz="UTC")) & (m1.index < pd.Timestamp(a.end, tz="UTC"))]
+    if a.volume_nt:
+        nt = M.load_nt_volume(a.volume_nt, a.start, a.end); j = m1.join(nt[["v"]], how="left", rsuffix="_nt"); m1["v"] = j["v_nt"].fillna(0.0).to_numpy()
+    bars = M.resample_all(m1, [5, 15, 60]); m1b = bars[1].reset_index(drop=True)
+    m5 = bars[5].reset_index(drop=True); m15 = bars[15].reset_index(drop=True); m60 = bars[60].reset_index(drop=True)
+    log(f"бары: M1 {len(m1b):,}, M5 {len(m5):,}, M15 {len(m15):,}, M60 {len(m60):,}")
+    c5 = pd.DatetimeIndex(m5["close_utc"]).to_numpy("datetime64[ns]"); c15 = pd.DatetimeIndex(m15["close_utc"]).to_numpy("datetime64[ns]"); c60 = pd.DatetimeIndex(m60["close_utc"]).to_numpy("datetime64[ns]")
+    # --- PAC: младший M5 (≤ t), старший M15 (< t)
+    ev5 = pac_series(m5["h"].to_numpy(float), m5["l"].to_numpy(float), m5["c"].to_numpy(float))
+    ev15 = pac_series(m15["h"].to_numpy(float), m15["l"].to_numpy(float), m15["c"].to_numpy(float), higher=True)
+    pos15 = latest_before(c15, c5, strict=True)
+    ev_high_map = {}
+    seen = set()
+    for i in range(len(m5)):
+        p = pos15[i]
+        if p >= 0 and p not in seen and ev15[p]:
+            # событие старшего ТФ отправляется на первом такте исполнения после закрытия его бара
+            ev_high_map[i] = ev15[p]; seen.add(p)
+    cand = pac_candidates(ev5, ev_high_map, len(m5))
+    log(f"PAC: кандидатов {len(cand):,} ({len(cand)/len(m5):.2%} баров M5), {time.time()-t0:.0f} с")
+    # --- MOD9 на M15 (< t)
+    kd15, ks15 = kernel_series(m15["h"].to_numpy(float), m15["l"].to_numpy(float), m15["c"].to_numpy(float))
+    ker_dir = np.where(pos15 >= 0, kd15[np.clip(pos15, 0, len(kd15) - 1)], 0)
+    log(f"MOD9: доля баров с направлением {np.mean(ker_dir != 0):.2%}, {time.time()-t0:.0f} с")
+    # --- MOD11 на M5 (≤ t)
+    ld, ls = lorentz_series(m5["h"].to_numpy(float), m5["l"].to_numpy(float), m5["c"].to_numpy(float), m5["v"].to_numpy(float))
+    log(f"MOD11: доля баров с перевесом {np.mean(ld != 0):.2%}, {time.time()-t0:.0f} с")
+    # --- MOD14: свеча M5 из M1, финализация после закрытия → доступна с бара i+1
+    lv_state, lv_z = lever_series(m5, m1b)
+    lv_avail = np.r_[0, lv_state[:-1]]
+    log(f"MOD14: доля Up/Down {np.mean(lv_avail != 0):.2%}, {time.time()-t0:.0f} с")
+    # --- MOD13: направление по M60 (< t), сопровождение по M5 (≤ t)
+    st60, lo60, up60, z60, cor60, rd60, zf = kalman_tracks(m60, 20, 30, 120, confirm=5)
+    st5, lo5, up5, z5, cor5, rd5, zf5 = kalman_tracks(m5, 20, 30, 120, confirm=5)
+    pos60 = latest_before(c60, c5, strict=True)
+    k60 = np.where(pos60 >= 0, st60[np.clip(pos60, 0, len(st60) - 1)], "W")
+    kal_dir = np.where(k60 == "T+", 1, np.where(k60 == "T-", -1, 0))
+    log(f"MOD13: доля тренда по M60 {np.mean(kal_dir != 0):.2%}, {time.time()-t0:.0f} с")
+    # --- вердикты фильтров на кандидатах: пропуск, если нейтраль или согласие; вето при противоположном направлении
+    n5 = len(m5); cd = np.zeros(n5, np.int8)
+    for i, v in cand.items(): cd[i] = v[1]
+    def passes(fdir): return (fdir == 0) | (fdir == cd)
+    F = {"MOD9": passes(ker_dir), "MOD11": passes(ld), "MOD14": passes(lv_avail), "MOD13": passes(kal_dir)}
+    # --- мета-разметка Э32: вход по закрытию бара сигнала, цель = стоп, стоп 40, вертикаль 60 баров
+    h = m5["h"].to_numpy(float); l = m5["l"].to_numpy(float); c = m5["c"].to_numpy(float)
+    meta = {}
+    for i, v in cand.items():
+        d = v[1]; e = c[i]; up = e + (40 * TICK if d > 0 else 40 * TICK); dn = e - 40 * TICK
+        lab = None
+        for k in range(i + 1, min(n5, i + a.meta_horizon + 1)):
+            hu, hd = h[k] >= up, l[k] <= dn
+            if hu and hd: lab = 0; break
+            if hu: lab = 1 if d > 0 else 0; break
+            if hd: lab = 1 if d < 0 else 0; break
+        if lab is None: lab = 1 if (c[min(n5 - 1, i + a.meta_horizon)] - e) * d > 0 else 0
+        meta[i] = lab
+    rows = []
+    idx = np.array(sorted(meta)); labs = np.array([meta[i] for i in idx])
+    for name, ok in F.items():
+        p = ok[idx]
+        passw = int(((labs == 1) & p).sum()); passl = int(((labs == 0) & p).sum()); cutw = int(((labs == 1) & ~p).sum()); cutl = int(((labs == 0) & ~p).sum())
+        rows.append({"filter": name, "candidates": len(idx), "passed": passw + passl, "precision_pass": round(passw / max(1, passw + passl), 4),
+                     "base_rate": round(float(labs.mean()), 4), "recall": round(passw / max(1, passw + cutw), 4), "cut": cutw + cutl, "cut_profitable": cutw})
+    metaT = pd.DataFrame(rows); log("\n" + metaT.to_string(index=False))
+    # --- цепочки: симуляция сделок
+    win1 = (60, 8 * 60); win2 = (9 * 60 + 30, 18 * 60 + 30); until = 21 * 60 + 30; hard = 22 * 60 + 30
+    allok = np.ones(n5, bool)
+    def kal_escort(k, d, stop):
+        if not rd5[k]: return None, False
+        new = (lo5[k] - 2 * TICK) if d > 0 else (up5[k] + 2 * TICK)
+        if d > 0 and new >= c[k]: new = None
+        if d < 0 and new is not None and new <= c[k]: new = None
+        flip = (z5[k] <= -zf5 and cor5[k] < 0) if d > 0 else (z5[k] >= zf5 and cor5[k] > 0)
+        return new, flip
+    # Э58: сопровождение по старшему каналу (EscortTf = Higher, M60) — реже обновляется, шире; в модуле это настройка [C1x]
+    lo60m = np.where(pos60 >= 0, lo60[np.clip(pos60, 0, len(lo60) - 1)], np.nan); up60m = np.where(pos60 >= 0, up60[np.clip(pos60, 0, len(up60) - 1)], np.nan)
+    rd60m = np.where(pos60 >= 0, rd60[np.clip(pos60, 0, len(rd60) - 1)], False)
+    def kal_escort60(k, d, stop):
+        if not rd60m[k] or math.isnan(lo60m[k]): return None, False
+        new = (lo60m[k] - 2 * TICK) if d > 0 else (up60m[k] + 2 * TICK)
+        if (d > 0 and new >= c[k]) or (d < 0 and new <= c[k]): new = None
+        return new, False
+    chains = {
+        "A: PAC без фильтров, стоп 40 + 22:30": (allok, None),
+        "E2 (Э58): PAC → сопровождение MOD13 по каналу M60": (allok, kal_escort60),
+        "B: PAC ∧ MOD14 ∧ MOD11 (валидация)": (F["MOD14"] & F["MOD11"], None),
+        "C: PAC ∧ MOD9 (ядро M15)": (F["MOD9"], None),
+        "D: PAC ∧ MOD13-направление M60": (F["MOD13"], None),
+        "E: PAC → сопровождение MOD13 (канал M5)": (allok, kal_escort),
+        "F: PAC ∧ MOD14 ∧ MOD11 ∧ MOD9 → MOD13": (F["MOD14"] & F["MOD11"] & F["MOD9"], kal_escort),
+        "G: PAC ∧ MOD9 ∧ MOD13-напр. → MOD13": (F["MOD9"] & F["MOD13"], kal_escort),
+    }
+    res = {}; alltr = []
+    for name, (ok, esc) in chains.items():
+        tr = simulate(m5, cand, ok, esc, hard, win1, win2, until, name=name)
+        res[name] = summarize(tr); alltr.append(tr)
+        log(f"{name}: {res[name]}")
+    os.makedirs(a.out, exist_ok=True)
+    pd.concat(alltr).to_csv(os.path.join(a.out, "chain_trades.csv"), sep=";", index=False, float_format="%.3f")
+    metaT.to_csv(os.path.join(a.out, "meta_filters.csv"), sep=";", index=False)
+    json.dump({"version": VERSION, "start": a.start, "end": a.end, "candidates": len(cand), "chains": res}, open(os.path.join(a.out, "chains_summary.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2, default=str)
+    log(f"готово, {time.time()-t0:.0f} с")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION); sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("run", "parity-dump"):
+        p = sub.add_parser(name); p.add_argument("--npz", required=True); p.add_argument("--volume-nt"); p.add_argument("--start", default="2015-01-01"); p.add_argument("--end", default="2019-01-01"); p.add_argument("--out", default="ms/chains"); p.add_argument("--days", type=int, default=2); p.add_argument("--meta-horizon", type=int, default=60)
+    a = ap.parse_args()
+    if a.cmd == "parity-dump": a.end = str((pd.Timestamp(a.start) + pd.Timedelta(days=a.days)).date())
+    cmd_run(a)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_REG_Trades_S021.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_REG_Trades_S021.py — ЭТАП 0 директивы: четырёхлетний реестр сделок по маркерам [MOD1] на восьми ТФ,
+три категории, статистика «событие × ТФ» с поправкой на множественный выбор, рубежи 12:30 и 22:00 Берлин.
+v1.0 (2026-10-04). Работает на сертифицированных ценах M1 и разметке DZ_MS_Market_S021 (контекст).
+
+СДЕЛКА РЕЕСТРА. Триггер — маркер структуры PAC (перенос ядра DZ_SW_Mod_Pac_S021 v1.4: пивоты 3/10, пробой по
+закрытию): BOS, CHoCH, CHoCH+ внутренние и свинговые, на каждом из ТФ 1/5/15/30/45/60/120/240 отдельно.
+Вход — рынок по открытию следующего бара своего ТФ, проскальзывание 1 тик; стоп = 1·ATR14 своего ТФ,
+цель = 1·ATR14 (R = 1), вертикальный барьер 24 бара своего ТФ; худший путь — оба барьера одним баром =
+убыток; комиссия 0,44 $ за круг. Так доля прибыльных сравнима между ТФ: базовая около 50 %.
+КАТЕГОРИИ по контексту разметки DZ_MS того же ТФ (тренд и фаза в момент маркера):
+  1 Разворот — CHoCH/CHoCH+ против текущего тренда разметки или без тренда;
+  2 Тренд — BOS в направлении тренда вне фазы отката (и BOS без контекста);
+  3 Откат — любой маркер в направлении тренда в фазе PULLBACK (вход после коррекции).
+СТАТИСТИКА. По (категория, событие, ТФ): n, WinRate с интервалом Уилсона 95 %, PF, ожидание $/сделку.
+«Доверенное» — n ≥ 100, WinRate выше базовой доли своего ТФ и категории на величину ожидаемого максимума из 48 комбинаций при
+нулевой гипотезе (6 событий × 8 ТФ; MLAM 8.4, теорема о ложной стратегии): порог = база + E[max]·√(p(1−p)/n),
+E[max] для 48 — 2,17; и t-статистика ожидания в $ выше 2,17; и PF > 1. Это обучение 2015–2018; заморозка — только после проверки 2022–2025.
+ЭКСПЕРИМЕНТЫ, умолчания = реестр: Э60 --barrier-r R — цель в R при стопе 1 ATR (гипотеза: асимметрия R = 2 меняет
+ранжирование комбинаций); Э61 --vertical N — вертикальный барьер (24 бара). Любое их изменение — испытание в реестре.
+РУБЕЖИ. Для каждой сделки реестра — PnL при вариантах: 12:30 А полное закрытие; 12:30 Б половина и безубыток;
+22:00 А полное закрытие; 22:00 Б закрытие только прибыльных. Дельта ожидания и максимальная просадка по ТФ.
+==========================================================================================
+"""
+import argparse, importlib.util, json, math, os, sys, time
+import numpy as np
+import pandas as pd
+
+VERSION = "DZ_REG_Trades_S021-v1.0 (2026-10-04)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+TICK = 0.1; TICK_USD = 1.0; COST_RT = 0.44; SLIP = 1; TZB = "Europe/Berlin"
+TFS = [1, 5, 15, 30, 45, 60, 120, 240]
+EMAX48 = 2.17
+
+
+def load(name, fn):
+    s = importlib.util.spec_from_file_location(name, os.path.join(HERE, fn)); m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+
+
+def atr14(h, l, c):
+    tr = np.empty(len(c)); tr[0] = h[0] - l[0]
+    tr[1:] = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+    return pd.Series(tr).ewm(alpha=1 / 14.0, adjust=False).mean().to_numpy()
+
+
+def wilson(k, n, z=1.96):
+    if n == 0: return (np.nan, np.nan)
+    p = k / n; d = 1 + z * z / n; c = (p + z * z / (2 * n)) / d; r = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return (c - r, c + r)
+
+
+def simulate_tf(bars, events, tf, lab_trend, lab_phase, lab_idx, vertical=24, r_mult=1.0):
+    """Сделки по маркерам одного ТФ; возвращает DataFrame реестра."""
+    o = bars["o"].to_numpy(float); h = bars["h"].to_numpy(float); l = bars["l"].to_numpy(float); c = bars["c"].to_numpy(float)
+    co = pd.DatetimeIndex(bars["close_utc"]); cb = co.tz_convert(TZB); tod = (cb.hour * 60 + cb.minute).to_numpy(); wd = cb.dayofweek.to_numpy()
+    atr = atr14(h, l, c); n = len(c); rows = []
+    tcl = co.to_numpy("datetime64[ns]")
+    pos_l = np.searchsorted(lab_idx, tcl, side="right") - 1
+    for i in range(14, n - 2):
+        if not events[i]: continue
+        for (scope, ev, d) in events[i]:
+            R = max(2 * TICK, atr[i]); ent = o[i + 1] + d * SLIP * TICK; stop = ent - d * R; tgt = ent + d * R * r_mult
+            mfe = mae = 0.0; k = i + 1; exit_px = None; reason = ""; path = []
+            while k < min(n, i + 1 + vertical):
+                mfe = max(mfe, (h[k] - ent) if d > 0 else (ent - l[k])); mae = max(mae, (ent - l[k]) if d > 0 else (h[k] - ent))
+                hu = h[k] >= tgt if d > 0 else l[k] <= tgt
+                hd = l[k] <= stop if d > 0 else h[k] >= stop
+                if hu and hd: exit_px = stop; reason = "стоп"; break
+                if hd: exit_px = (min(o[k], stop) if d > 0 else max(o[k], stop)); reason = "стоп"; break
+                if hu: exit_px = (max(o[k], tgt) if d > 0 else min(o[k], tgt)); reason = "цель"; break
+                k += 1
+            if exit_px is None:
+                k = min(n - 1, i + vertical); exit_px = c[k]; reason = "вертикаль"
+            exit_px -= d * SLIP * TICK
+            ticks = (exit_px - ent) * d / TICK; pnl = ticks * TICK_USD - COST_RT
+            # контекст разметки DZ_MS на своём ТФ в момент маркера
+            pl = pos_l[i]; tr_ = int(lab_trend[pl]) if pl >= 0 else 0; ph = int(lab_phase[pl]) if pl >= 0 else 0
+            if ev.startswith("CHOCH") and (tr_ == 0 or tr_ != d): cat = 1
+            elif tr_ == d and ph == 2: cat = 3
+            elif ev == "BOS": cat = 2
+            else: cat = 1
+            rows.append({"tf": tf, "bar": i, "time_utc": co[i], "berlin": cb[i].strftime("%Y-%m-%d %H:%M"), "weekday": int(wd[i]), "tod_min": int(tod[i]),
+                         "event": ev + (" swing" if scope == "sw" else ""), "dir": d, "category": cat, "ctx_trend": tr_, "ctx_phase": ph,
+                         "entry": ent, "exit": exit_px, "exit_bar": k, "bars": k - i, "reason": reason, "atr_ticks": R / TICK,
+                         "ticks_move": ticks, "absolute_move": abs(exit_px - ent), "price_delta_pct": (exit_px - ent) * d / ent * 100.0,
+                         "mfe_ticks": mfe / TICK, "mae_ticks": mae / TICK, "pnl_usd": pnl, "win": int(pnl > 0)})
+    return pd.DataFrame(rows)
+
+
+def time_exit_variants(bars, reg, tf):
+    """PnL сделок при рубежах 12:30 и 22:00 Берлин (варианты А/Б) против базового выхода."""
+    o = bars["o"].to_numpy(float); h = bars["h"].to_numpy(float); l = bars["l"].to_numpy(float); c = bars["c"].to_numpy(float)
+    cb = pd.DatetimeIndex(bars["close_utc"]).tz_convert(TZB); tod = (cb.hour * 60 + cb.minute).to_numpy(); day = cb.strftime("%Y-%m-%d").to_numpy()
+    out = {v: [] for v in ("base", "1230A", "1230B", "2200A", "2200B")}
+    for r in reg.itertuples():
+        i, k, d, ent = int(r.bar), int(r.exit_bar), int(r.dir), float(r.entry); base = float(r.pnl_usd)
+        out["base"].append(base)
+        for mark, v in ((12 * 60 + 30, "1230"), (22 * 60, "2200")):
+            # первый бар после входа, закрывшийся в/после рубежа того же берлинского дня, до базового выхода
+            j = None
+            for q in range(i + 1, k + 1):
+                if tod[q] >= mark and day[q] == day[i] and tod[i] < mark: j = q; break
+            if j is None or j >= k:
+                out[v + "A"].append(base); out[v + "B"].append(base); continue
+            px = c[j] - d * SLIP * TICK; pnl_at = (px - ent) * d / TICK * TICK_USD - COST_RT
+            out[v + "A"].append(pnl_at)
+            if v == "1230":
+                # Б: половина по рынку, остаток — стоп в безубыток до базового выхода
+                rest = base
+                for q in range(j + 1, k + 1):
+                    if (d > 0 and l[q] <= ent) or (d < 0 and h[q] >= ent): rest = (-SLIP * TICK / TICK * TICK_USD) - COST_RT / 2; break
+                else: rest = base
+                out[v + "B"].append(0.5 * pnl_at + 0.5 * rest)
+            else:
+                out[v + "B"].append(pnl_at if pnl_at > 0 else base)
+    res = {}
+    for v, arr in out.items():
+        a = np.array(arr); cum = np.cumsum(a); dd = float((np.maximum.accumulate(cum) - cum).max()) if len(a) else np.nan
+        res[v] = {"n": int(len(a)), "mean": round(float(a.mean()), 3) if len(a) else np.nan, "sum": round(float(a.sum()), 1) if len(a) else np.nan, "maxdd": round(dd, 1)}
+    return res
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION)
+    ap.add_argument("--npz", required=True); ap.add_argument("--labels", default="train"); ap.add_argument("--start", default="2015-01-01"); ap.add_argument("--end", default="2019-01-01")
+    ap.add_argument("--out", default="registry"); ap.add_argument("--tfs", nargs="*", default=[str(x) for x in TFS]); ap.add_argument("--min-n", type=int, default=100); ap.add_argument("--barrier-r", type=float, default=1.0, help="Э60: цель в R (стоп = 1 ATR)"); ap.add_argument("--vertical", type=int, default=24, help="Э61: вертикальный барьер, баров своего ТФ")
+    a = ap.parse_args(); t0 = time.time()
+    M = load("dz_ms", "DZ_MS_Market_S021.py"); P = load("dz_port", "DZ_PORT_Chains_S021.py")
+    m1 = M.load_npz(a.npz); m1 = m1[(m1.index >= pd.Timestamp(a.start, tz="UTC")) & (m1.index < pd.Timestamp(a.end, tz="UTC"))]
+    tfs = [int(x) for x in a.tfs]; bars = M.resample_all(m1, tfs)
+    lab = M.load_labeled(a.labels); lab_idx = lab.index.values.astype("datetime64[ns]")
+    os.makedirs(a.out, exist_ok=True); regs = []; texits = {}
+    for tf in tfs:
+        b = bars[tf].reset_index(drop=True)
+        ev = P.pac_series(b["h"].to_numpy(float), b["l"].to_numpy(float), b["c"].to_numpy(float))
+        reg = simulate_tf(b, ev, tf, lab[f"{tf}m_trend"].to_numpy(np.int8), lab[f"{tf}m_phase"].to_numpy(np.int8), lab_idx, a.vertical, a.barrier_r)
+        texits[tf] = time_exit_variants(b, reg, tf)
+        regs.append(reg)
+        print(time.strftime("%H:%M:%S"), f"ТФ {tf}m: баров {len(b):,}, сделок реестра {len(reg):,}, прибыльных {reg.win.mean():.1%}, {time.time()-t0:.0f} с", flush=True)
+    reg = pd.concat(regs, ignore_index=True); reg.insert(0, "id", [f"R{tf}-{i:07d}" for tf, i in zip(reg.tf, range(len(reg)))])
+    reg.to_csv(os.path.join(a.out, "registry_trades_mod1.csv"), sep=";", index=False, float_format="%.4f")
+    # статистика событие × ТФ по категориям
+    rows = []
+    for cat, g in reg.groupby("category"):
+        for (ev, tf), s in g.groupby(["event", "tf"]):
+            base = g.loc[g.tf == tf, "win"].mean()          # база — своего ТФ: издержки относительно ATR разные
+            n = len(s); k = int(s.win.sum()); lo, hi = wilson(k, n)
+            w = s.loc[s.pnl_usd > 0, "pnl_usd"].sum(); L = -s.loc[s.pnl_usd < 0, "pnl_usd"].sum()
+            thr = base + EMAX48 * math.sqrt(base * (1 - base) / max(1, n))
+            t_exp = s.pnl_usd.mean() / (s.pnl_usd.std(ddof=1) / math.sqrt(n)) if n > 2 and s.pnl_usd.std(ddof=1) > 0 else np.nan
+            rows.append({"category": cat, "event": ev, "tf": tf, "n": n, "winrate": k / n, "ci_lo": lo, "ci_hi": hi, "base_rate_cat_tf": base, "t_exp": t_exp,
+                         "pf": (w / L) if L > 0 else np.inf, "exp_usd": s.pnl_usd.mean(), "exp_ticks": s.ticks_move.mean(),
+                         "mfe_med": s.mfe_ticks.median(), "capture_mfe_winners": float((s.loc[s.win == 1, "ticks_move"] / s.loc[s.win == 1, "mfe_ticks"].replace(0, np.nan)).median()) if k else np.nan,
+                         "null_max_threshold": thr, "trusted": bool(n >= a.min_n and k / n > thr and (w / L if L > 0 else 9) > 1.0 and t_exp > EMAX48)})
+    st = pd.DataFrame(rows).sort_values(["category", "winrate"], ascending=[True, False])
+    st.to_csv(os.path.join(a.out, "stats_event_tf.csv"), sep=";", index=False, float_format="%.4f")
+    # итоговая таблица: лучшая комбинация по категории среди n ≥ min_n по ожиданию в $, затем по WinRate
+    best = []
+    for cat, g in st.groupby("category"):
+        g2 = g[g.n >= a.min_n].sort_values(["exp_usd", "winrate"], ascending=False)
+        best.append(g2.head(5))
+    best = pd.concat(best); best.to_csv(os.path.join(a.out, "trusted_candidates.csv"), sep=";", index=False, float_format="%.4f")
+    json.dump({"version": VERSION, "trades": int(len(reg)), "time_exits_by_tf": texits}, open(os.path.join(a.out, "time_exits.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(st[st.n >= a.min_n].groupby("category").head(6).round(3).to_string(index=False))
+    print(json.dumps(texits, ensure_ascii=False)[:3000])
+    print("готово", round(time.time() - t0), "с")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_RUNNER_Prepare.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DZ_RUNNER_Prepare.py — сборка исходников исполнителя модулей на ПК, v1.0 (2026-10-01)
+
+Исполнитель компилирует ТЕ ЖЕ исходники модулей, что торгуют в NinjaTrader, без единой правки.
+Из исходника коммутатора извлекается, а не переписывается руками:
+  Contracts.g.cs   SwRole, SwHealth, SwVerdict, SwActionKind, SwSignal, SwAction, SwModule — текстом, как есть;
+  HostView.g.cs    SwHostView с ТЕМИ ЖЕ сигнатурами; тела перенаправлены в среду исполнителя;
+  config_map.json  «поле конфигурации ← свойство меню» по блокам BuildSlots — проводка коммутатора.
+Модули копируются из папки NinjaTrader или из снимка DZ_SYS_Bridge (тогда идентичность доказана отпечатком).
+
+  python DZ_RUNNER_Prepare.py --src "<…>\\bin\\Custom\\Strategies" --out build
+  cd build && dotnet build -c Release
+"""
+import argparse, json, os, re, shutil, hashlib
+
+VERSION = "DZ_RUNNER_Prepare-v1.0 (2026-10-01)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+SKIP = ("DZ_SW_Hub_S021.cs", "DZ_SW_Financial_S021.cs", "DZ_SW_WsBridge_S021.cs")
+CONTRACTS = ("SwRole", "SwHealth", "SwVerdict", "SwActionKind", "SwSignal", "SwAction", "SwModule")
+
+
+def block(src, start):
+    """Текст от позиции объявления до парной закрывающей скобки, с учётом строк и комментариев."""
+    i = src.index("{", start); d = 0; j = i; n = len(src)
+    while j < n:
+        c = src[j]
+        if src.startswith("//", j): j = src.find("\n", j); continue
+        if src.startswith("/*", j): j = src.find("*/", j) + 2; continue
+        if c == '"':
+            j += 1
+            while src[j] != '"': j += 2 if src[j] == "\\" else 1
+        elif c == "'":
+            j += 1
+            while src[j] != "'": j += 2 if src[j] == "\\" else 1
+        elif c == "{": d += 1
+        elif c == "}":
+            d -= 1
+            if d == 0: return src[start:j + 1]
+        j += 1
+    raise ValueError("нет парной скобки")
+
+
+def decl_start(src, kind_name):
+    m = re.search(r"(?m)^[ \t]*(?:///[^\n]*\n[ \t]*)*(?:\[[^\]]*\]\s*)*public\s+(?:abstract\s+|sealed\s+)?(?:enum|struct|class)\s+" + kind_name + r"\b", src)
+    if not m: raise ValueError(f"не найдено объявление {kind_name}")
+    return m.start()
+
+
+def ns_of(src, pos):
+    return re.findall(r"namespace\s+([\w\.]+)", src[:pos])[-1]
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION)
+    ap.add_argument("--src", required=True); ap.add_argument("--out", default="build")
+    a = ap.parse_args()
+    os.makedirs(a.out, exist_ok=True)
+    hub = open(os.path.join(a.src, "DZ_SW_Hub_S021.cs"), encoding="utf-8").read()
+    files = {}
+    # 1. модули — копии без правки
+    for f in sorted(os.listdir(a.src)):
+        if f.startswith("DZ_SW_") and f.endswith(".cs") and f not in SKIP:
+            shutil.copy2(os.path.join(a.src, f), os.path.join(a.out, f))
+            files[f] = hashlib.sha256(open(os.path.join(a.src, f), "rb").read()).hexdigest()
+    # 2. контракты — текстом из коммутатора
+    parts = {}
+    for name in CONTRACTS:
+        p = decl_start(hub, name); parts.setdefault(ns_of(hub, p), []).append(block(hub, p))
+    with open(os.path.join(a.out, "Contracts.g.cs"), "w", encoding="utf-8") as f:
+        f.write("// СГЕНЕРИРОВАНО DZ_RUNNER_Prepare из DZ_SW_Hub_S021.cs — не править руками\nusing System;\nusing System.Collections.Generic;\nusing NinjaTrader.NinjaScript;\n\n")
+        for ns, blocks in parts.items(): f.write(f"namespace {ns}\n{{\n" + "\n\n".join(blocks) + "\n}\n\n")
+    # 3. SwHostView — те же сигнатуры, тела в среду исполнителя
+    p = hub.index("public sealed class SwHostView"); body = block(hub, p); inner = body[body.index("{") + 1:-1]
+    members, out = [], []
+    depth = 0; k = 0; top = []
+    for m in re.finditer(r"[{}]|\n", inner):
+        if m.group(0) == "{": depth += 1
+        elif m.group(0) == "}": depth -= 1
+        elif depth == 0: top.append(inner[k:m.start()]); k = m.end()
+    text = "\n".join(top) + "\n" + inner[k:]
+    for m in re.finditer(r"(?:public|internal)\s+((?:[\w<>\[\]\.]+))\s+(\w+)\s*(\(([^)]*)\))?\s*(?=\{|=>)", inner):
+        typ, name, params = m.group(1), m.group(2), m.group(4)
+        if name == "SwHostView" or typ in ("sealed", "class"): continue
+        if params is None:
+            members.append(name); out.append(f"        public {typ} {name} {{ get {{ return rt.{name}; }} }}")
+        else:
+            args = ", ".join(x.strip().split()[-1].split("=")[0].strip() for x in params.split(",") if x.strip())
+            members.append(name)
+            out.append(f"        {'internal' if inner[m.start():m.start()+8]=='internal' else 'public'} {typ} {name}({params}) {{ {'' if typ == 'void' else 'return '}rt.{name}({args}); }}")
+    with open(os.path.join(a.out, "HostView.g.cs"), "w", encoding="utf-8") as f:
+        f.write("// СГЕНЕРИРОВАНО DZ_RUNNER_Prepare: сигнатуры SwHostView коммутатора, тела — среда исполнителя\nusing System;\nusing NinjaTrader.NinjaScript;\n\n"
+                "namespace NinjaTrader.NinjaScript.Strategies\n{\n    public sealed class SwHostView\n    {\n        private readonly DzRunner.RunnerRuntime rt;\n"
+                "        internal SwHostView(DzRunner.RunnerRuntime r) { rt = r; }\n" + "\n".join(out) + "\n    }\n}\n")
+    # 4. проводка конфигураций из BuildSlots
+    cmap = {}
+    for m in re.finditer(r"(Sw\w+Config)\s+(\w+)\s*=\s*new\s+\1\s*\(\s*\)\s*;", hub):
+        cls, var = m.group(1), m.group(2); seg = hub[m.end():m.end() + 4000]; seg = seg[:seg.find("modules.Add")]
+        cmap[cls] = {f: pr for f, pr in re.findall(r"\b" + var + r"\.(\w+)\s*=\s*(\w+)\s*;", seg)}
+    json.dump({"generator": VERSION, "modules_sha256": files, "host_members": members, "config_map": cmap},
+              open(os.path.join(a.out, "config_map.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    # 5. исполнитель и проект
+    for f in ("Program.cs", "DZ_SW_Host_Runner.csproj"):
+        shutil.copy2(os.path.join(HERE, f), os.path.join(a.out, f))
+    runtime = open(os.path.join(HERE, "Program.cs"), encoding="utf-8").read()
+    missing = [n for n in members if not re.search(r"public\s+[\w<>\[\]\.]+\s+" + n + r"\b", runtime)]
+    print(f"[исполнитель] модулей {len(files)}, контракты {sum(len(v) for v in parts.values())}, членов хоста {len(members)}, конфигураций {len(cmap)}")
+    print("  в среде исполнителя нет членов хоста:", missing or "нет — сигнатуры покрыты")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_SA_Audit_S021.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_SA_Audit_S021.py — проверка оптимизации Strategy Analyzer, v1.0 (2026-10-04)
+
+Читает журнал итераций, который коммутатор пишет в анализаторе при [T19]
+(dz_export\\sa_runs\\sa_daily_*.csv: итерация, дата, результат, издержки, сделки, настройки),
+строит матрицу «дни × итерации» и считает то же, что движок ПК для своих задач:
+  DSR — дефлированный Шарп лучшей итерации по числу итераций (AFML с. 204–206);
+  PBO — вероятность переподгонки по CSCV (AFML с. 155–156);
+  порог «случайного лучшего» — ожидаемый максимум Шарпа без преимущества.
+Формулы не переписаны: импортируются из DZ_OPT_Engine_S021.py — одна величина, один источник.
+
+ЕДИНИЦА — день. Дни без сделок — нули: иначе Шарп завышается. Календарь — рабочие дни от
+первой до последней даты журнала.
+
+КОМИССИЯ. Trade.ProfitCurrency в руководстве NinjaTrader — «прибыль в валюте» (с. 2393);
+включает ли она комиссию, не сказано. По умолчанию результат берётся как есть; при
+--subtract-commission комиссия вычитается. Какой вариант верен — сверить один раз по
+вкладке Trades анализатора и записать в журнал ревизии.
+
+  python DZ_SA_Audit_S021.py --journal sa_daily_20261004.csv [--since 2026-10-04T12:00]
+         [--registry trials_registry.csv --strategy SA_DualBreakout] [--out sa_audit.csv]
+==========================================================================================
+"""
+import argparse, glob, importlib.util, math, os, sys
+import numpy as np
+import pandas as pd
+
+VERSION = "DZ_SA_Audit_S021-v1.0 (2026-10-04)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _engine():
+    spec = importlib.util.spec_from_file_location("dz_engine", os.path.join(HERE, "DZ_OPT_Engine_S021.py"))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+def load(paths, subtract_commission):
+    frames = [pd.read_csv(p, sep=";", dtype={"iteration": str, "date": str}) for p in paths]
+    d = pd.concat(frames, ignore_index=True)
+    d["profit"] = pd.to_numeric(d["profit"], errors="coerce").fillna(0.0)
+    d["commission"] = pd.to_numeric(d["commission"], errors="coerce").fillna(0.0)
+    d["net"] = d["profit"] - (d["commission"] if subtract_commission else 0.0)
+    return d
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION)
+    ap.add_argument("--journal", nargs="+", required=True, help="файлы sa_daily_*.csv или маска")
+    ap.add_argument("--subtract-commission", action="store_true")
+    ap.add_argument("--registry", default=None, help="дописать число итераций в реестр испытаний")
+    ap.add_argument("--strategy", default="SA_DualBreakout")
+    ap.add_argument("--task-id", default=None)
+    ap.add_argument("--out", default="sa_audit.csv")
+    ap.add_argument("--blocks", type=int, default=10, help="число блоков CSCV")
+    a = ap.parse_args()
+
+    paths = sorted({p for pat in a.journal for p in glob.glob(pat)})
+    if not paths:
+        sys.exit("журнал не найден")
+    eng = _engine()
+    d = load(paths, a.subtract_commission)
+    iters = sorted(d["iteration"].unique())
+    dated = d[d["date"].notna() & (d["date"].astype(str).str.len() >= 8)].copy()
+    if dated.empty:
+        sys.exit("в журнале нет ни одной сделки")
+    dated["date"] = pd.to_datetime(dated["date"])
+    days = pd.bdate_range(dated["date"].min(), dated["date"].max())
+    M = np.zeros((len(days), len(iters)))
+    pos = {k: i for i, k in enumerate(iters)}
+    piv = dated.groupby(["date", "iteration"])["net"].sum()
+    di = {dd: i for i, dd in enumerate(days)}
+    for (dd, it), v in piv.items():
+        if dd in di:
+            M[di[dd], pos[it]] += v
+
+    mu, sd = M.mean(0), M.std(0, ddof=1)
+    sr = np.where(sd > 0, mu / np.where(sd > 0, sd, 1), np.nan)
+    trades = d.groupby("iteration")["trades"].sum().reindex(iters).fillna(0).astype(int).values
+    net = M.sum(0)
+    best = int(np.nanargmax(sr))
+    x = M[:, best]
+    skew = float(pd.Series(x).skew()) if len(x) > 2 else 0.0
+    kurt = float(pd.Series(x).kurt() + 3.0) if len(x) > 3 else 3.0
+    n_trials = len(iters)
+    if a.registry:
+        tid = a.task_id or "SA_" + pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+        n_trials = eng.registry_add(a.registry, tid, a.strategy, len(iters))
+    dsr, sr0 = eng.deflated_sharpe(float(sr[best]), float(np.nanvar(sr)), n_trials, len(days), skew, kurt)
+    pbo = eng.pbo_cscv(M, S=a.blocks) if len(iters) >= 2 else None
+
+    rep = pd.DataFrame({"iteration": iters, "net": np.round(net, 2), "trades": trades,
+                        "sharpe_daily": np.round(sr, 5)}).sort_values("sharpe_daily", ascending=False)
+    params = d.drop_duplicates("iteration").set_index("iteration")["params"]
+    rep["params"] = rep["iteration"].map(params)
+    rep.to_csv(a.out, index=False, sep=";")
+
+    print(f"{VERSION}")
+    print(f"  журналов {len(paths)}, итераций {len(iters)}, дней {len(days)} ({days[0].date()} … {days[-1].date()})"
+          f"{', комиссия вычтена' if a.subtract_commission else ''}")
+    print(f"  лучшая итерация {iters[best]}: итог {net[best]:.2f}, сделок {trades[best]}, Шарп дневной {sr[best]:.4f}")
+    print(f"  испытаний для DSR {n_trials}; порог «случайного лучшего» {sr0}; DSR {dsr}; PBO {pbo}")
+    ok = dsr is not None and dsr >= 0.95 and pbo is not None and pbo <= 0.5
+    print("  ИТОГ: " + ("преимущество подтверждено с учётом числа итераций" if ok
+                        else "преимущество не доказано с учётом числа итераций и переподгонки"))
+    print(f"  таблица итераций → {a.out}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_STATUS_Board.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_STATUS_Board.py — светофор терминала «Атлас», v1.0 (2026-09-28)
+
+Статус пишется в файлы, а не в имена папок: переименование порвало бы пути скриптов,
+NinjaTrader и Excel. Результат:
+  • STATUS.json в папке каждого инструмента и стратегии;
+  • status/ATLAS_STATUS.json и status/ATLAS_STATUS.html — сводная панель для браузера.
+
+ИНСТРУМЕНТ
+  КРАСНЫЙ  нет паспорта или сертификата данных, либо проверка отпечатков не прошла
+  ЖЁЛТЫЙ   паспорт и данные целы; шаблоны не выше жёлтого
+  ЗЕЛЁНЫЙ  есть шаблон с рангом GREEN
+  ЗОЛОТОЙ  есть шаблон с рангом GOLD
+СТРАТЕГИЯ — по явному списку STRATEGY_ELEMENTS.json (восемь элементов)
+  КРАСНЫЙ  списка нет либо хотя бы один элемент отсутствует
+  ЖЁЛТЫЙ   все восемь на месте
+  ЗЕЛЁНЫЙ / ЗОЛОТОЙ — ранг сертификата допуска (элемент DOC7_TRADING_CERTIFICATE)
+==========================================================================================
+"""
+import argparse, glob, html, json, os, sys
+
+VERSION = "DZ_STATUS_Board-v1.0 (2026-09-28)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from DZ_CERT_Common import read_cert, sha_file  # noqa: E402
+
+ELEMENTS = ["DOC1_TZ", "DOC2_MANUAL", "DOC3_DEV_GUIDE", "DOC4_SETTINGS_DICT", "DOC5_SETTINGS_LINKS",
+            "DOC6_MODULES", "DOC7_TRADING_CERTIFICATE", "DOC8_ENGINE_CS"]
+COLOR = {"RED": ("#FFC7CE", "🔴 КРАСНЫЙ"), "YELLOW": ("#FFEB9C", "🟡 ЖЁЛТЫЙ"),
+         "GREEN": ("#C6EFCE", "🟢 ЗЕЛЁНЫЙ"), "GOLD": ("#FFD966", "🥇 ЗОЛОТОЙ")}
+
+
+def instrument_status(root, sym, data_verify):
+    folder = os.path.join(root, "certified_vault", sym); why = []
+    pas = os.path.join(folder, f"{sym}.instrument.cert.json")
+    dc = os.path.join(root, "data_certified", sym, f"{sym}_DATA_CERTIFICATE.json")
+    if not os.path.exists(pas): why.append("нет паспорта инструмента")
+    else:
+        p, ok = read_cert(pas)
+        if not ok or not p.get("verified_in_nt"): why.append("паспорт изменён или не сверен с NinjaTrader")
+    if not os.path.exists(dc): why.append("нет сертификата данных")
+    else:
+        ok, errs, _ = data_verify(dc, quiet=True)
+        if not ok: why += errs
+    ranks = []
+    for c in glob.glob(os.path.join(folder, "*", "templates", "*.cert.json")):
+        t, ok = read_cert(c)
+        if ok: ranks.append(t.get("rank"))
+    st = "RED" if why else ("GOLD" if "GOLD" in ranks else "GREEN" if "GREEN" in ranks else "YELLOW")
+    return {"kind": "инструмент", "name": sym, "status": st, "reasons": why,
+            "templates": {r: ranks.count(r) for r in set(ranks)}}
+
+
+def strategy_status(folder):
+    name = os.path.basename(folder); man = os.path.join(folder, "STRATEGY_ELEMENTS.json")
+    if not os.path.exists(man):
+        return {"kind": "стратегия", "name": name, "status": "RED", "reasons": ["нет STRATEGY_ELEMENTS.json"]}
+    m = json.load(open(man, encoding="utf-8")); why, found = [], {}
+    for e in ELEMENTS:
+        f = m.get(e)
+        if not f or not os.path.exists(os.path.join(folder, f)): why.append(f"нет {e}")
+        else: found[e] = {"file": f, "sha256": sha_file(os.path.join(folder, f))}
+    rank = None
+    if "DOC7_TRADING_CERTIFICATE" in found and found["DOC7_TRADING_CERTIFICATE"]["file"].endswith(".json"):
+        c, ok = read_cert(os.path.join(folder, found["DOC7_TRADING_CERTIFICATE"]["file"]))
+        rank = c.get("rank") if ok else None
+    st = "RED" if why else (rank if rank in ("GREEN", "GOLD") else "YELLOW")
+    return {"kind": "стратегия", "name": name, "status": st, "reasons": why, "elements": found}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION); ap.add_argument("--root", default=".")
+    a = ap.parse_args()
+    import importlib.util
+    s = importlib.util.spec_from_file_location("dz_cd", os.path.join(HERE, "DZ_CERT_Data.py"))
+    cd = importlib.util.module_from_spec(s); s.loader.exec_module(cd)
+    rows = []
+    for d in sorted(glob.glob(os.path.join(a.root, "certified_vault", "*"))):
+        if os.path.isdir(d):
+            r = instrument_status(a.root, os.path.basename(d), cd.verify); rows.append(r)
+            json.dump(r, open(os.path.join(d, "STATUS.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    for d in sorted(glob.glob(os.path.join(a.root, "strategies_vault", "*"))):
+        if os.path.isdir(d):
+            r = strategy_status(d); rows.append(r)
+            json.dump(r, open(os.path.join(d, "STATUS.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    os.makedirs(os.path.join(a.root, "status"), exist_ok=True)
+    json.dump(rows, open(os.path.join(a.root, "status", "ATLAS_STATUS.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    tr = "".join(f"<tr style='background:{COLOR[r['status']][0]}'><td>{r['kind']}</td><td><b>{html.escape(r['name'])}</b></td>"
+                 f"<td>{COLOR[r['status']][1]}</td><td>{html.escape('; '.join(r['reasons']) or '—')}</td></tr>" for r in rows)
+    page = (f"<!doctype html><meta charset='utf-8'><title>Атлас — статус</title><body style='font-family:sans-serif'>"
+            f"<h2>Терминал «Атлас» — статус</h2><table cellpadding=6 style='border-collapse:collapse' border=1>"
+            f"<tr><th>Вид</th><th>Имя</th><th>Статус</th><th>Причины</th></tr>{tr}</table></body>")
+    open(os.path.join(a.root, "status", "ATLAS_STATUS.html"), "w", encoding="utf-8").write(page)
+    for r in rows:
+        print(f"  {COLOR[r['status']][1]:12} {r['kind']:10} {r['name']:18} {'; '.join(r['reasons'])[:70]}")
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_SYN_Test_S021.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_SYN_Test_S021.py — проверки ПК-стенда на синтетическом рынке, v1.0 (2026-10-04)
+
+  pipeline  --raw syn_raw.txt --symbol SYN1     сырьё → кэш движка → сертификат (очиститель
+            v2) → проверка сертификата → объём → старшие ТФ против эталона → цены кэша
+            против сырья. Синтетика с пропавшими минутками, нулевым объёмом и переходами
+            на летнее время — то, на чём ломаются загрузчики.
+  reference --raw syn_raw.txt [--instrument MGC] [--qty 3]
+            эталон пробоя на синтетике и 11 инвариантов каждой сделки: уровень от базы,
+            исполнение по уровню или открытию на разрыве, флаг разрыва, проскальзывание и
+            стоп от исполнения, касание уровня, худший порядок на баре входа, цена выхода по
+            причине, результат в тиках, окно входа, сделки не перекрываются, MFE и MAE ≥ 0.
+  noise     --instrument MGC --runs 20 --days 80        ЭКСПЕРИМЕНТ Э30
+            контроль на чистом случайном блуждании без режимов и событий: преимущества нет
+            по построению, и средний результат сделки в тиках обязан быть около
+            −(проскальзывание входа + выхода). Заметно выше — эталон заглядывает в будущее
+            или выгодно выбирает порядок цен внутри бара (AFML гл. 13; MLAM гл. 8).
+
+Скрипт лежит рядом со скриптами стенда (certification) и вызывает их, ничего в них не меняя.
+==========================================================================================
+"""
+import argparse, importlib.util, json, math, os, subprocess, sys, tempfile
+from datetime import time as dtime
+import numpy as np
+import pandas as pd
+
+VERSION = "DZ_SYN_Test_S021-v1.0 (2026-10-04)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+PY = sys.executable
+
+
+def _mod(fname, name):
+    s = importlib.util.spec_from_file_location(name, os.path.join(HERE, fname))
+    m = importlib.util.module_from_spec(s); s.loader.exec_module(m); return m
+
+
+def _run(args):
+    r = subprocess.run([PY] + args, cwd=HERE, capture_output=True, text=True)
+    tail = (r.stdout + r.stderr).strip().splitlines()
+    return r.returncode, (tail[-1] if tail else "")
+
+
+# ======================================================================================
+# pipeline
+# ======================================================================================
+
+def pipeline(a):
+    root = tempfile.mkdtemp(prefix="dzsyn_")
+    raw = os.path.abspath(a.raw)
+    cache = os.path.join(root, "syn.npz")
+    import shutil; shutil.copy(raw, os.path.join(root, "syn.txt"))
+    steps = []
+    rc, t = _run(["DZ_OPT_Engine_S021.py", "cache", "--data", os.path.join(root, "syn.txt")]); steps.append(("кэш движка", rc, t))
+    rc, t = _run(["DZ_CERT_Data.py", "certify", "--symbol", a.symbol, "--clean", cache, "--tick", str(a.tick),
+                  "--point-value", str(a.point_value), "--root", root, "--note", "синтетика DZ_SYN"]); steps.append(("сертификат", rc, t))
+    cert = os.path.join(root, a.symbol, f"{a.symbol}_DATA_CERTIFICATE.json")
+    rc, t = _run(["DZ_CERT_Data.py", "verify", "--cert", cert]); steps.append(("проверка сертификата", rc, t))
+    m1 = os.path.join(root, a.symbol, f"{a.symbol}_M1.npz")
+    rc, t = _run(["DZ_DATA_Check_S021.py", "volume", "--npz", m1, "--max-zero-share", "0.01"]); steps.append(("объём", rc, t))
+    rc, t = _run(["DZ_DATA_Check_S021.py", "htf-selftest", "--npz", m1]); steps.append(("старшие ТФ = эталон", rc, t))
+    ref = _mod("DZ_BT_DualBreakout_S021.py", "ref")
+    p = ref.Params(); p.tick = a.tick
+    m, _ = ref.load_m1(raw, p, lambda *_: None)
+    z = np.load(m1)
+    same = len(m) == len(z["c"]) and np.allclose(m.c.values, z["c"]) and np.allclose(m.h.values, z["h"])
+    steps.append(("цены сертификата = сырьё", 0 if same else 1, f"минуток {len(m):,}"))
+    ok = all(rc == 0 for _, rc, _ in steps)
+    for n, rc, t in steps:
+        print(f"  {'пройдено' if rc == 0 else 'НЕ ПРОЙДЕНО':<13} {n}: {t[:150]}")
+    print(f"{VERSION} · pipeline: {'ПРОЙДЕН' if ok else 'НЕ ПРОЙДЕН'} (папка {root})")
+    return ok
+
+
+# ======================================================================================
+# reference — инварианты сделок эталона
+# ======================================================================================
+
+def check_trades(m1, trades, p, ref):
+    tk = p.tick
+    t = m1.index.as_unit("ns").asi8 if hasattr(m1.index, "as_unit") else m1.index.asi8
+    o, h, l = m1.o.values, m1.h.values, m1.l.values
+    pos = {v: i for i, v in enumerate(t)}
+    tz = ref.PROFILE_TZ[p.profile]
+    viol = {f"I{i}": 0 for i in range(1, 12)}
+    first = {}
+    prev_exit = {}
+    eps = 1e-6
+    for _, r in trades.iterrows():
+        d = int(r.Direction)
+        k = pos.get(pd.Timestamp(r.EntryTimeUTC).value)
+        j = pos.get(pd.Timestamp(r.ExitTimeUTC).value)
+        if k is None or j is None:
+            viol["I10"] += 1; continue
+
+        def bad(code, why):
+            viol[code] += 1
+            first.setdefault(code, f"{r.Session} {r.SessionDate} вход {r.EntryTimeUTC}: {why}")
+        lvl = r.BaseHigh + tk if d > 0 else r.BaseLow - tk
+        if abs(r.EntryLevel - lvl) > eps: bad("I1", f"уровень {r.EntryLevel} ≠ база ± тик {lvl}")
+        fill = max(r.EntryLevel, o[k]) if d > 0 else min(r.EntryLevel, o[k])
+        if abs(r.EntryPrice - fill) > eps: bad("I2", f"вход {r.EntryPrice} ≠ {fill}")
+        if bool(r.EntryGap) != (abs(r.EntryPrice - r.EntryLevel) > eps): bad("I3", "флаг разрыва")
+        if abs(r.EntryPriceWithSlip - (r.EntryPrice + d * p.slip_entry_ticks * tk)) > eps or \
+           abs(r.StopInitial - (r.EntryPriceWithSlip - d * p.stop_ticks * tk)) > eps: bad("I4", "проскальзывание или стоп")
+        if (d > 0 and h[k] < r.EntryLevel - eps) or (d < 0 and l[k] > r.EntryLevel + eps): bad("I5", "бар входа не касался уровня")
+        hit = (d > 0 and l[k] <= r.StopInitial + eps) or (d < 0 and h[k] >= r.StopInitial - eps)
+        if hit and r.ExitReason != "STOP_ON_ENTRY_BAR": bad("I6", "стоп на баре входа не засчитан")
+        if not hit and r.ExitReason == "STOP_ON_ENTRY_BAR": bad("I6", "стоп на баре входа без касания")
+        why = None
+        if r.ExitReason == "STOP_ON_ENTRY_BAR":
+            if abs(r.ExitPrice - r.StopInitial) > eps or j != k: why = "выход не по стопу на баре входа"
+        elif r.ExitReason.endswith("_STOP"):
+            if d > 0 and (r.ExitPrice > o[j] + eps or r.ExitPrice < l[j] - eps): why = "стоп вне бара"
+            if d < 0 and (r.ExitPrice < o[j] - eps or r.ExitPrice > h[j] + eps): why = "стоп вне бара"
+            if bool(r.ExitGap) and abs(r.ExitPrice - o[j]) > eps: why = "разрыв не по открытию"
+        elif r.ExitReason == "TIME_EXIT":
+            if abs(r.ExitPrice - o[j]) > eps: why = "выход по времени не по открытию"
+        if why: bad("I7", why)
+        g = round(d * (r.ExitPriceWithSlip - r.EntryPriceWithSlip) / tk, 6)
+        if abs(g - r.GrossTicks) > 1e-4 or abs(r.ExitPriceWithSlip - (r.ExitPrice - d * p.slip_exit_ticks * tk)) > eps:
+            bad("I8", f"результат {r.GrossTicks} ≠ {g}")
+        sp = ref.SESSIONS[r.Session]
+        lt = pd.Timestamp(r.EntryTimeUTC).tz_convert(tz).time()
+        if not (sp["window"][0] <= lt < sp["window"][1]): bad("I9", f"вход {lt} вне окна")
+        key = (r.Session, r.SessionDate)
+        if key in prev_exit and pd.Timestamp(r.EntryTimeUTC) < prev_exit[key]: bad("I10", "сделки перекрываются")
+        prev_exit[key] = pd.Timestamp(r.ExitTimeUTC)
+        if r.MFE_Ticks < -eps or r.MAE_Ticks < -eps: bad("I11", "MFE или MAE < 0")
+    return viol, first
+
+
+def reference(a):
+    ref = _mod("DZ_BT_DualBreakout_S021.py", "ref")
+    ins = json.load(open(os.path.join(HERE, "DZ_INSTRUMENTS_S021.json"), encoding="utf-8"))["instruments"][a.instrument]
+    p = ref.Params()
+    p.tick = ins["tick"]; p.usd_per_tick = ins["tick_value_usd"] * a.qty
+    m1, val = ref.load_m1(a.raw, p, lambda *_: None)
+    sess, tr = ref.simulate(m1, p, lambda *_: None)
+    if tr.empty:
+        print(f"{VERSION} · reference: сделок нет — проверять нечего"); return False
+    viol, first = check_trades(m1, tr, p, ref)
+    names = {"I1": "уровень от базы", "I2": "исполнение входа", "I3": "флаг разрыва", "I4": "проскальзывание и стоп",
+             "I5": "касание уровня", "I6": "худший порядок на баре входа", "I7": "цена выхода по причине",
+             "I8": "результат в тиках", "I9": "окно входа", "I10": "сделки не перекрываются", "I11": "MFE и MAE"}
+    print(f"{VERSION} · reference  {a.raw}")
+    print(f"  минуток {len(m1):,}, сессий {len(sess)}, сделок {len(tr)}; причины выхода: "
+          + ", ".join(f"{k} {v}" for k, v in tr.ExitReason.value_counts().items()))
+    print(f"  разрывов входа {int(tr.EntryGap.sum())}, разрывов выхода {int(tr.ExitGap.sum())}, "
+          f"неоднозначных баров {int(tr.AmbiguousBars.sum())}, итог {tr.NetUSD.sum():.2f}")
+    for k, v in viol.items():
+        print(f"  {'пройдено' if v == 0 else 'НАРУШЕНО':<10} {k} {names[k]}: {v}" + (f" — {first[k]}" if k in first else ""))
+    ok = sum(viol.values()) == 0
+    print("  ИТОГ: " + ("все сделки эталона соблюдают инварианты" if ok else "есть нарушения — эталон не годится для сверки"))
+    return ok
+
+
+# ======================================================================================
+# noise — Э30
+# ======================================================================================
+
+def noise(a):
+    ref = _mod("DZ_BT_DualBreakout_S021.py", "ref")
+    gen = _mod("DZ_SYN_Market_S021.py", "gen")
+    ins = gen.passport(a.instrument)
+    gross, nets, n_tr = [], [], 0
+    tmp = tempfile.mkdtemp(prefix="dznoise_")
+    for seed in range(1, a.runs + 1):
+        ns = argparse.Namespace(instrument=a.instrument, start="2025-01-06", days=a.days, seed=seed, scenario="calm",
+                                price=None, ou=None, nt_name=None, passport=None, out=os.path.join(tmp, f"rw{seed}"))
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()):
+            gen.generate(ns)
+        p = ref.Params(); p.tick = ins["tick"]; p.usd_per_tick = ins["tick_value_usd"] * a.qty
+        m1, _ = ref.load_m1(ns.out + "_raw.txt", p, lambda *_: None)
+        _, tr = ref.simulate(m1, p, lambda *_: None)
+        if len(tr):
+            gross += list(tr.GrossTicks.values); nets.append(tr.NetUSD.sum()); n_tr += len(tr)
+    g = np.array(gross)
+    expect = -(ref.Params().slip_entry_ticks + ref.Params().slip_exit_ticks)
+    se = g.std(ddof=1) / math.sqrt(len(g)) if len(g) > 1 else float("nan")
+    tstat = (g.mean() - expect) / se if se > 0 else float("nan")
+    print(f"{VERSION} · noise: прогонов {a.runs} × {a.days} дней случайного блуждания, сделок {n_tr}")
+    print(f"  средний результат сделки {g.mean():+.3f} тика (ожидание без преимущества {expect:+.1f}), "
+          f"t = {tstat:+.2f}; прогонов в плюсе {sum(1 for x in nets if x > 0)} из {len(nets)}")
+    ok = not (tstat > 3.0)
+    print("  ИТОГ: " + ("фантомного преимущества нет — эталон не заглядывает в будущее" if ok
+                        else "ФАНТОМНОЕ ПРЕИМУЩЕСТВО на шуме — искать заглядывание или выгодный порядок внутри бара"))
+    return ok
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    pp = sub.add_parser("pipeline"); pp.add_argument("--raw", required=True); pp.add_argument("--symbol", default="SYN1")
+    pp.add_argument("--tick", type=float, default=0.1); pp.add_argument("--point-value", type=float, default=10.0)
+    r = sub.add_parser("reference"); r.add_argument("--raw", required=True); r.add_argument("--instrument", default="MGC")
+    r.add_argument("--qty", type=int, default=3)
+    n = sub.add_parser("noise"); n.add_argument("--instrument", default="MGC"); n.add_argument("--runs", type=int, default=20)
+    n.add_argument("--days", type=int, default=80); n.add_argument("--qty", type=int, default=3)
+    a = ap.parse_args()
+    ok = {"pipeline": pipeline, "reference": reference, "noise": noise}[a.cmd](a)
+    sys.exit(0 if ok else 1)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_SYS_Bridge.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_SYS_Bridge.py — страж идентичности «терминал ↔ ПК», v1.0 (2026-09-27)
+
+ГАРАНТИЯ: на ПК оптимизируется ТОТ ЖЕ исходный код, из которого NinjaTrader собрал
+торгующую сборку. Подтверждается отпечатками SHA-256, а не договорённостью.
+
+  discover   найти папки терминала: исходники, сборку, шаблоны
+  snapshot   паспорт сборки: отпечатки DZ_SW_*.cs и NinjaTrader.Custom.dll; проверка, что
+             сборка НОВЕЕ всех исходников (иначе терминал торгует старым кодом)
+  sync       неизменяемая копия исходников на ПК: nt_build/<отпечаток паспорта>/
+  check      сравнить снимок на ПК с тем, что лежит в терминале сейчас
+  export     положить шаблон настроек в папку шаблонов стратегии NinjaTrader
+
+Скомпилированную сборку вне NinjaTrader не запустить: классы стратегий зависят от среды
+выполнения терминала. Поэтому идентичность обеспечивается на уровне ИСХОДНИКОВ: ПК
+компилирует ровно снимок, отпечаток которого совпадает с паспортом сборки терминала.
+==========================================================================================
+"""
+import argparse, hashlib, json, os, shutil, stat, sys, time
+
+DEFAULT_ROOT = os.path.join(os.path.expanduser("~"), "Documents", "NinjaTrader 8")
+
+
+def sha(p):
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
+
+
+def paths(root):
+    return {"root": root, "strategies": os.path.join(root, "bin", "Custom", "Strategies"),
+            "indicators": os.path.join(root, "bin", "Custom", "Indicators"),
+            "dll": os.path.join(root, "bin", "Custom", "NinjaTrader.Custom.dll"),
+            "templates": os.path.join(root, "templates", "Strategy")}
+
+
+def sources(P, pattern_prefixes=("DZ_SW_", "DZ_IND_")):
+    out = {}
+    for d in (P["strategies"], P["indicators"]):
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".cs") and f.startswith(pattern_prefixes):
+                out[os.path.relpath(os.path.join(d, f), P["root"])] = os.path.join(d, f)
+    return out
+
+
+def snapshot(root, out):
+    P = paths(root); src = sources(P)
+    if not src:
+        sys.exit(f"ОТКАЗ: исходники DZ_SW_/DZ_IND_ не найдены в {P['strategies']}")
+    files = {rel: {"sha256": sha(p), "mtime": os.path.getmtime(p)} for rel, p in src.items()}
+    dll = {"exists": os.path.exists(P["dll"])}
+    warnings = []
+    if dll["exists"]:
+        dll.update(sha256=sha(P["dll"]), mtime=os.path.getmtime(P["dll"]))
+        newer = [r for r, v in files.items() if v["mtime"] > dll["mtime"]]
+        if newer:
+            warnings.append(f"исходники изменены ПОСЛЕ последней компиляции: {newer} — терминал торгует старым кодом; "
+                            f"скомпилируйте в NinjaTrader и снимите паспорт заново")
+    else:
+        warnings.append("сборка NinjaTrader.Custom.dll не найдена")
+    ident = hashlib.sha256("".join(f"{r}:{v['sha256']}\n" for r, v in sorted(files.items())).encode()).hexdigest()[:16]
+    passport = {"build_id": ident, "taken_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "terminal_root": root, "files": files, "dll": dll, "warnings": warnings}
+    json.dump(passport, open(out, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(f"[паспорт] сборка {ident}: {len(files)} исходников" + ("".join(f"\n  ВНИМАНИЕ: {w}" for w in warnings) or ""))
+    return passport
+
+
+def sync(passport_path, dest_root):
+    ps = json.load(open(passport_path, encoding="utf-8"))
+    if ps["warnings"]:
+        sys.exit("ОТКАЗ: у паспорта есть предупреждения — сначала скомпилируйте в терминале и снимите паспорт заново")
+    dest = os.path.join(dest_root, ps["build_id"])
+    for rel, meta in ps["files"].items():
+        src = os.path.join(ps["terminal_root"], rel)
+        if sha(src) != meta["sha256"]:
+            sys.exit(f"ОТКАЗ: {rel} изменился после снятия паспорта")
+        dst = os.path.join(dest, rel); os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+        os.chmod(dst, stat.S_IREAD | stat.S_IRGRP | stat.S_IROTH)       # снимок — только чтение
+    shutil.copy2(passport_path, os.path.join(dest, "build_passport.json"))
+    print(f"[снимок] {len(ps['files'])} файлов → {dest} (только чтение)")
+    return dest
+
+
+def check(snapshot_dir, root):
+    ps = json.load(open(os.path.join(snapshot_dir, "build_passport.json"), encoding="utf-8"))
+    now = {rel: sha(p) for rel, p in sources(paths(root)).items()}
+    was = {rel: m["sha256"] for rel, m in ps["files"].items()}
+    changed = sorted(r for r in was.keys() & now.keys() if was[r] != now[r])
+    added, removed = sorted(now.keys() - was.keys()), sorted(was.keys() - now.keys())
+    same_snapshot = all(sha(os.path.join(snapshot_dir, r)) == h for r, h in was.items())
+    ok = not (changed or added or removed) and same_snapshot
+    print(f"[сверка] сборка {ps['build_id']}: " + ("ИДЕНТИЧНА терминалу" if ok else
+          f"РАСХОЖДЕНИЕ — изменены {changed}, добавлены {added}, удалены {removed}, снимок цел: {same_snapshot}"))
+    return ok
+
+
+def export(template, root, strategy):
+    dst_dir = os.path.join(paths(root)["templates"], strategy); os.makedirs(dst_dir, exist_ok=True)
+    dst = os.path.join(dst_dir, os.path.basename(template))
+    shutil.copy2(template, dst)
+    print(f"[шаблон] → {dst}")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("cmd", choices=["discover", "snapshot", "sync", "check", "export"])
+    ap.add_argument("--root", default=DEFAULT_ROOT); ap.add_argument("--passport", default="build_passport.json")
+    ap.add_argument("--dest", default="nt_build"); ap.add_argument("--snapshot")
+    ap.add_argument("--template"); ap.add_argument("--strategy", default="DZ_SW_Hub_S021")
+    a = ap.parse_args()
+    if a.cmd == "discover":
+        for k, v in paths(a.root).items(): print(f"  {k:11} {'есть ' if os.path.exists(v) else 'НЕТ  '} {v}")
+        print(f"  исходников DZ: {len(sources(paths(a.root)))}")
+    elif a.cmd == "snapshot": snapshot(a.root, a.passport)
+    elif a.cmd == "sync": sync(a.passport, a.dest)
+    elif a.cmd == "check": sys.exit(0 if check(a.snapshot, a.root) else 1)
+    else: export(a.template, a.root, a.strategy)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_TEST_Filter_Hurst_S021.py
+--------------------------------------------------------------------------------
+
+# -*- coding: utf-8 -*-
+"""Тест 04: ядро Хёрста [MOD10] как фильтр. Перенос HurstRS (R/S по масштабам с вычетом ожидания Аниса–Ллойда,
+H = 0,5 + наклон), ширина окна 8…40 по H в [0,37; 0,57], локально-линейная регрессия с ядром Епанечникова,
+направление — знак наклона при |β| ≥ 0,5 тика/бар. Фильтр пропускает согласие и нейтраль. Серия — M5."""
+import json, math, sys, importlib.util
+import numpy as np, pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view as sw
+from scipy.special import gammaln
+spec = importlib.util.spec_from_file_location("eng", "/tmp/p6/pc/DZ_OPT_Engine_S021.py"); eng = importlib.util.module_from_spec(spec); spec.loader.exec_module(eng)
+z = np.load(sys.argv[1]); t = pd.to_datetime(z["t_open"], utc=True); o, h, l, c = z["o"], z["h"], z["l"], z["c"]
+lab = pd.read_csv(sys.argv[2], parse_dates=["time"]); ti = t.asi8
+k = np.searchsorted(ti, lab.time.values.astype("datetime64[ns]").astype(np.int64), side="left"); d = lab.dir.values
+S, V = 200, 240; H, L = sw(h, V), sw(l, V); kk = np.minimum(k, len(H) - 1); e = o[k]; sl = S * 0.1
+hu = H[kk] >= (e + sl)[:, None]; hd = L[kk] <= (e - sl)[:, None]
+fu = np.where(hu.any(1), hu.argmax(1), V); fd = np.where(hd.any(1), hd.argmax(1), V); last = c[np.minimum(k + V - 1, len(c) - 1)]
+R = np.where((fu == V) & (fd == V), (last - e) * d / sl, np.where(fu < fd, np.where(d > 0, 1., -1.), np.where(fd < fu, np.where(d > 0, -1., 1.), -1.))) - 2.0 / S
+ct = t.tz_convert("America/Chicago").tz_localize(None); sh = pd.Timedelta(hours=17)
+cc = pd.Series(c, index=(ct - sh).floor("5min") + sh).groupby(level=0).last()
+cl = pd.DatetimeIndex(cc.index + pd.Timedelta(minutes=5)).tz_localize("America/Chicago", ambiguous="NaT", nonexistent="NaT").tz_convert("UTC")
+x5 = cc.values[cl.notna()]; c5 = cl[cl.notna()].asi8; r5 = np.diff(np.log(x5))
+SC = [8, 16, 32, 64]
+def ealloyd(n):
+    i = np.arange(1, n); return math.exp(gammaln((n - 1) / 2) - gammaln(n / 2)) / math.sqrt(math.pi) * np.sqrt((n - i) / i).sum()
+LE = np.log([ealloyd(n) for n in SC]); LN = np.log(SC)
+def hurst(ret):
+    ys = []
+    for n, le in zip(SC, LE):
+        w = ret[: (len(ret) // n) * n].reshape(-1, n); dv = w - w.mean(1, keepdims=True); cs = dv.cumsum(1)
+        rng = np.maximum(cs.max(1), 0) - np.minimum(cs.min(1), 0); sd = np.sqrt((dv ** 2).mean(1)); ok = sd > 0
+        ys.append(math.log((rng[ok] / sd[ok]).mean()) - le)
+    return 0.5 + np.polyfit(LN, ys, 1)[0]
+def slope(y):
+    n = len(y); xx = np.arange(n); u = (n - 1 - xx) / n; w = 1 - u * u
+    xm = (w * xx).sum() / w.sum(); ym = (w * y).sum() / w.sum()
+    return (w * (xx - xm) * (y - ym)).sum() / (w * (xx - xm) ** 2).sum()
+j5 = np.searchsorted(c5, ti[k], side="right") - 1
+def run(prior=0, inverse=False, rwgate=False):
+    dirs = np.zeros(len(k), int)
+    for q in range(len(k)):
+        j = j5[q]
+        if j < 130: continue
+        hh = hurst(r5[j - 128:j])
+        if prior: hh = 0.47 + (hh - 0.47) * 128 / (128 + prior)
+        tt = min(1, max(0, (hh - 0.37) / 0.2)); tt = 1 - tt if inverse else tt
+        hb = int(round(8 + tt * 32)); b = slope(x5[j - hb + 1:j + 1]) / 0.1
+        dd = int(np.sign(b)) if abs(b) >= 0.5 else 0
+        if rwgate and abs(hh - 0.47) < 0.03: dd = 0
+        dirs[q] = dd
+    return dirs
+GRID = {"K0 умолчание": run(), "K1 Э46 априорных 64": run(prior=64), "K2 обратное отображение": run(inverse=True), "K3 шлюз блуждания": run(rwgate=True)}
+out, mats = {"база": {"$ на сделку": round(float((R * S).mean()), 2)}}, {}; days = lab.time.dt.tz_convert("Europe/Berlin").dt.date.values
+for name, dirs in GRID.items():
+    ok = (dirs == d) | (dirs == 0); pp, cq = R[ok], R[~ok]; wp, wc = int((pp > 0).sum()), int((cq > 0).sum())
+    xs = np.random.default_rng(1).beta(1 + wp, 1 + len(pp) - wp, 200000) > np.random.default_rng(2).beta(1 + wc, 1 + len(cq) - wc, 200000)
+    yr = pd.Series(R * S).groupby(lab.time.dt.year).apply(lambda s_: s_[ok[s_.index]].mean() - s_[~ok[s_.index]].mean())
+    out[name] = {"пропущено": f"{ok.mean():.1%}", "точн. пр./отс.": f"{wp/len(pp):.3f}/{wc/max(1,len(cq)):.3f}", "P": round(float(xs.mean()), 3),
+                 "$ пр./отс.": f"{(pp*S).mean():+.2f}/{(cq*S).mean():+.2f}", "годы": "".join("+" if v > 0 else "−" for v in yr.values)}
+    mats[name] = pd.Series(np.where(ok, R * S, 0.0)).groupby(days).sum()
+M = pd.DataFrame(mats).fillna(0).values; srs = M.mean(0) / M.std(0); bi = int(np.argmax(srs))
+out["PBO"] = eng.pbo_cscv(M, S=10); out["DSR (34 испытания)"] = eng.deflated_sharpe(float(srs[bi]), float(np.var(srs)), 34, len(M), float(pd.Series(M[:, bi]).skew()), float(pd.Series(M[:, bi]).kurt() + 3))[0]
+json.dump(out, open(sys.argv[3], "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
+for kx, v in out.items(): print(kx, "→", v)
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_TEST_Filter_Lines_S021.py
+--------------------------------------------------------------------------------
+
+# -*- coding: utf-8 -*-
+"""Тест 03: фильтр линий [MOD2] поверх структуры. Исполнение: стоп 200 т, цель 1R, вертикаль 240, издержки 2 т.
+Перенос линии диапазонного фильтра: диапазон = EMA(EMA(|Δc|, p), 2p−1) × m; линия не ходит против себя;
+направление — знак изменения линии, при равенстве сохраняется. Голос: все включённые линии за сторону сигнала."""
+import json, math, sys, importlib.util
+import numpy as np, pandas as pd
+from numpy.lib.stride_tricks import sliding_window_view as sw
+spec = importlib.util.spec_from_file_location("eng", "/tmp/p6/pc/DZ_OPT_Engine_S021.py"); eng = importlib.util.module_from_spec(spec); spec.loader.exec_module(eng)
+z = np.load(sys.argv[1]); t = pd.to_datetime(z["t_open"], utc=True); o, h, l, c = z["o"], z["h"], z["l"], z["c"]
+lab = pd.read_csv(sys.argv[2], parse_dates=["time"]); ti = t.asi8
+k = np.searchsorted(ti, lab.time.values.astype("datetime64[ns]").astype(np.int64), side="left"); d = lab.dir.values
+S, V = 200, 240; H, L = sw(h, V), sw(l, V); kk = np.minimum(k, len(H) - 1); e = o[k]; sl = S * 0.1
+hu = H[kk] >= (e + sl)[:, None]; hd = L[kk] <= (e - sl)[:, None]
+fu = np.where(hu.any(1), hu.argmax(1), V); fd = np.where(hd.any(1), hd.argmax(1), V)
+last = c[np.minimum(k + V - 1, len(c) - 1)]
+R = np.where((fu == V) & (fd == V), (last - e) * d / sl, np.where(fu < fd, np.where(d > 0, 1., -1.), np.where(fd < fu, np.where(d > 0, -1., 1.), -1.))) - 2.0 / S
+def series(minutes):
+    ct = t.tz_convert("America/Chicago").tz_localize(None); sh = pd.Timedelta(hours=17)
+    st = (ct - sh).floor(f"{minutes}min") + sh
+    cc = pd.Series(c, index=st).groupby(level=0).last()
+    cl = pd.DatetimeIndex(cc.index + pd.Timedelta(minutes=minutes)).tz_localize("America/Chicago", ambiguous="NaT", nonexistent="NaT").tz_convert("UTC")
+    return cc.values[cl.notna()], cl[cl.notna()].asi8
+def line(x, p=100, m=3.0):
+    a = pd.Series(np.abs(np.diff(x, prepend=x[0])))
+    rng = a.ewm(span=p, adjust=False).mean().ewm(span=2 * p - 1, adjust=False).mean().values * m
+    f = np.empty_like(x); f[0] = x[0]; tr = np.zeros(len(x), int); since = np.zeros(len(x), int); cur, s = 0, 10 ** 6
+    for i in range(1, len(x)):
+        f[i] = max(f[i - 1], x[i] - rng[i]) if x[i] > f[i - 1] else min(f[i - 1], x[i] + rng[i])
+        nt = 1 if f[i] > f[i - 1] else (-1 if f[i] < f[i - 1] else cur)
+        s = 0 if (cur != 0 and nt != cur) else s + 1; cur = nt; tr[i] = cur; since[i] = s
+    return tr, since
+vals = {}
+for name, mins in (("M5", 5), ("M60", 60)):
+    x, cl = series(mins); tr, since = line(x)
+    j = np.searchsorted(cl, ti[k], side="right") - 1
+    vals[name] = (np.where(j >= 100, tr[np.clip(j, 0, None)], 0), np.where(j >= 0, since[np.clip(j, 0, None)], 0))
+agree = lambda nm, minbars=0: (vals[nm][0] == d) & (vals[nm][1] >= minbars)
+GRID = {"L0 линии M5 и M60 (умолчание)": agree("M5") & agree("M60"), "L1 только M60": agree("M60"),
+        "L2 только M5": agree("M5"), "L3 M5 и M60, Э40 не меньше 10 баров после переворота": agree("M5", 10) & agree("M60", 10)}
+out, mats = {"база": {"сигналов": len(R), "точность": round(float((R > 0).mean()), 4), "$ на сделку": round(float((R * S).mean()), 2)}}, {}
+days = lab.time.dt.tz_convert("Europe/Berlin").dt.date.values
+for name, ok in GRID.items():
+    pp, cc_ = R[ok], R[~ok]; wp, wc = int((pp > 0).sum()), int((cc_ > 0).sum())
+    xs = np.random.default_rng(1).beta(1 + wp, 1 + len(pp) - wp, 200000) > np.random.default_rng(2).beta(1 + wc, 1 + len(cc_) - wc, 200000)
+    yr = pd.Series(R * S).groupby(lab.time.dt.year).apply(lambda s_: s_[ok[s_.index]].mean() - s_[~ok[s_.index]].mean())
+    out[name] = {"пропущено": f"{ok.mean():.1%}", "точность пр./отс.": f"{wp/len(pp):.4f} / {wc/len(cc_):.4f}", "P[пр.>отс.]": round(float(xs.mean()), 3),
+                 "$ пропущ./отс.": f"{(pp*S).mean():+.2f} / {(cc_*S).mean():+.2f}", "лучше по годам": "".join("+" if v > 0 else "−" for v in yr.values)}
+    mats[name] = pd.Series(np.where(ok, R * S, 0.0)).groupby(days).sum()
+M = pd.DataFrame(mats).fillna(0).values; srs = M.mean(0) / M.std(0); bi = int(np.argmax(srs))
+out["PBO"] = eng.pbo_cscv(M, S=10); out["DSR лучшего (29 испытаний)"] = eng.deflated_sharpe(float(srs[bi]), float(np.var(srs)), 29, len(M), float(pd.Series(M[:, bi]).skew()), float(pd.Series(M[:, bi]).kurt() + 3))[0]
+json.dump(out, open("test03_report.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
+for kx, v in out.items(): print(kx, "→", v)
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_TEST_Filter_Regime_S021.py
+--------------------------------------------------------------------------------
+
+# -*- coding: utf-8 -*-
+"""Тест 02: фильтр режима [MOD4] поверх сигналов структуры (метки теста 00). Перенос: отношение
+дисперсий Ло–Маккинлея, q = 2, окно 60 приращений M5, робастная дисперсия без множителя N
+(как в модуле v1.2: блуждание z≈0, φ=±0,3 → z≈±2); Э41 — фильтр Гамильтона по z."""
+import json, math, sys, importlib.util
+import numpy as np, pandas as pd
+from scipy.stats import norm
+spec = importlib.util.spec_from_file_location("eng", "/tmp/p6/pc/DZ_OPT_Engine_S021.py"); eng = importlib.util.module_from_spec(spec); spec.loader.exec_module(eng)
+z = np.load(sys.argv[1]); t = pd.to_datetime(z["t_open"], utc=True)
+m1 = pd.DataFrame({"c": z["c"]}, index=t)
+ct = m1.index.tz_convert("America/Chicago").tz_localize(None); sh = pd.Timedelta(hours=17)
+st = (ct - sh).floor("5min") + sh
+b = pd.DataFrame({"c": m1.c.values}, index=st).groupby(level=0).c.last()
+close = pd.DatetimeIndex(b.index + pd.Timedelta(minutes=5)).tz_localize("America/Chicago", ambiguous="NaT", nonexistent="NaT").tz_convert("UTC")
+b = pd.Series(b.values, index=close).dropna(); b = b[b.index.notna()]
+r = np.diff(np.log(b.values)); n = 60; zs = np.full(len(b), np.nan)
+for k in range(n, len(r)):
+    x = r[k - n + 1:k + 1]; e = x - x.mean(); s2 = (e * e).sum()
+    if s2 <= 0: continue
+    va = s2 / (n - 1); agg = x[1:] + x[:-1] - 2 * x.mean()
+    vc = (agg * agg).sum() / (2 * (n - 1) * (1 - 2 / n)); vr = vc / va
+    th = (e[1:] ** 2 * e[:-1] ** 2).sum() / s2 ** 2
+    zs[k + 1] = (vr - 1) / math.sqrt(th) if th > 0 else np.nan
+reg = np.where(zs > 1.96, 1, np.where(zs < -1.96, -1, 0)); reg[np.isnan(zs)] = 9
+p = np.array([1 / 3] * 3); ham = np.full(len(zs), 9)
+for i, zz in enumerate(zs):                                  # Э41: порог 0,9, сохранение 0,95
+    if np.isnan(zz): continue
+    pr = np.array([sum(p[j] * (0.95 if j == kk else 0.025) for j in range(3)) * math.exp(-0.5 * (zz - (kk - 1) * 1.96) ** 2) for kk in range(3)])
+    p = pr / pr.sum(); kb = int(p.argmax()); ham[i] = kb - 1 if p[kb] >= 0.9 else 0
+lab = pd.read_csv(sys.argv[2], parse_dates=["time"]); COST = 2 / 80; rr = lab.R.values - COST
+pos = np.searchsorted(b.index.asi8, lab.time.values.astype("datetime64[ns]").astype(np.int64), side="right") - 1
+R0, H0 = reg[np.clip(pos, 0, None)], ham[np.clip(pos, 0, None)]
+GRID = {"R0 только персистентность (умолчание)": R0 == 1, "R1 только возврат к среднему": R0 == -1,
+        "R2 любой, кроме блуждания": (R0 == 1) | (R0 == -1), "R3 персистентность, Э41 Гамильтон": H0 == 1}
+out, mats = {}, {}; days = lab.time.dt.tz_convert("Europe/Berlin").dt.date
+for name, ok in GRID.items():
+    ok = ok & (pos >= 0); pp, cc = rr[ok], rr[~ok]
+    if len(pp) < 30: out[name] = {"пропущено": f"{ok.mean():.1%}", "итог": "слишком мало сигналов"}; mats[name] = pd.Series(np.where(ok, rr, 0)).groupby(days.values).sum(); continue
+    wp, wc = int((pp > 0).sum()), int((cc > 0).sum())
+    xs = np.random.default_rng(1).beta(1 + wp, 1 + len(pp) - wp, 200000) > np.random.default_rng(2).beta(1 + wc, 1 + len(cc) - wc, 200000)
+    yr = pd.Series(rr).groupby(lab.time.dt.year).apply(lambda s: s[ok[s.index]].mean() - s[~ok[s.index]].mean())
+    out[name] = {"пропущено": f"{ok.mean():.1%}", "точность пр./отс.": f"{wp/len(pp):.4f} / {wc/len(cc):.4f}", "P[пр.>отс.]": round(float(xs.mean()), 3),
+                 "R пропущ.": round(float(pp.mean()), 4), "лучше по годам": "".join("+" if v > 0 else "−" for v in yr.values)}
+    mats[name] = pd.Series(np.where(ok, rr, 0.0)).groupby(days.values).sum()
+M = pd.DataFrame(mats).fillna(0).values; srs = M.mean(0) / M.std(0); bi = int(np.argmax(srs))
+out["PBO"] = eng.pbo_cscv(M, S=10)
+out["DSR лучшего (11 испытаний)"] = eng.deflated_sharpe(float(srs[bi]), float(np.var(srs)), 11, len(M), float(pd.Series(M[:, bi]).skew()), float(pd.Series(M[:, bi]).kurt() + 3))[0]
+out["доли режимов M5 (возврат/блуждание/персист.)"] = [round(float((R0 == v).mean()), 3) for v in (-1, 0, 1)]
+json.dump(out, open("test02_report.json", "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
+for k, v in out.items(): print(k, "→", v)
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_TS_Lab.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_TS_Lab.py — лаборатория временных рядов на локальном ПК, v1.0 (2026-09-27)
+
+Пять шагов, каждый отвечает на свой вопрос:
+  1. Стационарность    ADF (H0: единичный корень) + KPSS (H0: стационарность) + отношение
+                       дисперсий. Вывод уверенный, только когда ADF и KPSS согласны.
+  2. Выравнивание      дробное дифференцирование с фиксированным окном (López de Prado,
+                       AFML гл. 5): минимальное d, при котором ряд стационарен; память
+                       ряда — корреляция с исходной ценой.
+  3. Очистка от шума   ПРИЧИННАЯ локальная прямая (формулы MOD9, сверены с numpy). Двусторонние
+                       фильтры не применяются: они видят будущее, и прогноз по ним — фикция.
+  4. Прогноз           ARMA(p,q) на доходностях, порядок по AIC на первом окне; скользящее
+                       переобучение; только прошлые данные. Эталон — наивный прогноз «изменения
+                       не будет»; мера — skill = 1 − MSE_модели / MSE_наивного.
+  5. Контроль          тот же прогноз на перемешанных доходностях. Skill там обязан быть ≤ 0;
+                       если нет — метод находит закономерность в шуме, и результат шага 4
+                       недостоверен.
+
+ЗАПУСК
+  python DZ_TS_Lab.py --data gc-1m.npz --tf 15 --start 2025-01-01
+Данные — кэш DZ_DATA_Sanitizer (.npz) либо CSV любого формата через DZ_NTSIM_Engine.
+Старший таймфрейм — каноническим ресемплингом DZ_DATA_Sanitizer (постулат П7).
+==========================================================================================
+"""
+import argparse, importlib.util, itertools, json, math, os, sys, warnings
+import numpy as np
+import pandas as pd
+
+warnings.filterwarnings("ignore")
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def _mod(name):
+    spec = importlib.util.spec_from_file_location(name, os.path.join(HERE, name + ".py"))
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); return m
+
+
+# ------------------------------------------------------------------ 1. стационарность
+def stationarity(x, name):
+    from statsmodels.tsa.stattools import adfuller, kpss
+    x = np.asarray(x, float); x = x[np.isfinite(x)]
+    adf_p = float(adfuller(x, autolag="AIC")[1])
+    kpss_p = float(kpss(x, regression="c", nlags="auto")[1])
+    if adf_p < 0.05 and kpss_p > 0.05: verdict = "стационарен (оба теста согласны)"
+    elif adf_p >= 0.05 and kpss_p <= 0.05: verdict = "нестационарен (оба теста согласны)"
+    else: verdict = "тесты противоречат друг другу — вывод неуверенный"
+    return {"series": name, "ADF_p": round(adf_p, 4), "KPSS_p": round(kpss_p, 4), "verdict": verdict}
+
+
+def variance_ratio(r, q):
+    """VR(q) и z при гомоскедастичности. VR < 1 — возврат к среднему, > 1 — персистентность."""
+    r = np.asarray(r, float); r = r - r.mean(); n = len(r)
+    v1 = (r ** 2).mean()
+    rq = np.convolve(r, np.ones(q), "valid")
+    vr = (rq ** 2).mean() / (q * v1)
+    z = (vr - 1) / math.sqrt(2 * (2 * q - 1) * (q - 1) / (3 * q * n))
+    return round(float(vr), 4), round(float(z), 2)
+
+
+# ------------------------------------------------------------------ 2. дробная разность
+def ffd_weights(d, thresh=1e-4, max_len=5000):
+    w = [1.0]
+    for k in range(1, max_len):
+        wk = -w[-1] * (d - k + 1) / k
+        if abs(wk) < thresh: break
+        w.append(wk)
+    return np.array(w)
+
+
+def ffd(x, d, thresh=1e-4):
+    """Дробная разность с ФИКСИРОВАННЫМ окном: каждое значение — только из прошлых точек."""
+    w = ffd_weights(d, thresh)
+    return np.convolve(x, w, "valid"), len(w)
+
+
+def min_ffd(logp):
+    from statsmodels.tsa.stattools import adfuller
+    for d in np.arange(0.0, 1.01, 0.05):
+        y, width = ffd(logp, d)
+        if len(y) < 100: continue
+        if adfuller(y, autolag="AIC")[1] < 0.05:
+            corr = float(np.corrcoef(y, logp[width - 1:])[0, 1])
+            return {"d_min": round(float(d), 2), "window": int(width), "memory_corr_with_price": round(corr, 3)}
+    return {"d_min": None}
+
+
+# ------------------------------------------------------------------ 3. причинное сглаживание
+def causal_local_linear(y, h):
+    """Локальная прямая с ядром Епанечникова на КАЖДОМ баре — только по прошлым h барам."""
+    out = np.full(len(y), np.nan)
+    i = np.arange(h); w = 1 - (i / h) ** 2; x = -i
+    s0, s1, s2 = w.sum(), (w * x).sum(), (w * x * x).sum(); d = s0 * s2 - s1 * s1
+    for t in range(h - 1, len(y)):
+        yy = y[t - i]
+        out[t] = ((w * yy).sum() * s2 - (w * x * yy).sum() * s1) / d
+    return out
+
+
+# ------------------------------------------------------------------ 4. прогноз ARMA
+def arma_walk_forward(r, train, refit, order=None):
+    from statsmodels.tsa.arima.model import ARIMA
+    r = np.asarray(r, float)
+    if order is None:                                        # порядок — только по первому окну
+        best = None
+        for p, q in itertools.product(range(3), range(3)):
+            try:
+                aic = ARIMA(r[:train], order=(p, 0, q)).fit().aic
+                if best is None or aic < best[0]: best = (aic, (p, 0, q))
+            except Exception:
+                pass
+        order = best[1]
+    preds = np.full(len(r), np.nan); res = None
+    for t in range(train, len(r)):
+        if res is None or (t - train) % refit == 0:
+            res = ARIMA(r[t - train:t], order=order).fit()
+        else:
+            res = res.append(r[t - 1:t], refit=False)        # новые наблюдения без переоценки
+        preds[t] = float(res.forecast(1)[0])                 # прогноз бара t по данным до t−1
+    m = ~np.isnan(preds); e_m = r[m] - preds[m]; e_n = r[m]  # наивный прогноз доходности — ноль
+    skill = 1 - (e_m ** 2).mean() / (e_n ** 2).mean()
+    nz = preds[m] != 0
+    hit = float((np.sign(preds[m][nz]) == np.sign(r[m][nz])).mean())
+    up = float((r[m] > 0).mean())
+    return {"order": list(order), "forecasts": int(m.sum()), "skill_vs_naive": round(float(skill), 5),
+            "direction_accuracy": round(hit, 4), "base_rate_up": round(up, 4)}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--data", required=True); ap.add_argument("--tf", type=int, default=15)
+    ap.add_argument("--start"); ap.add_argument("--end")
+    ap.add_argument("--train", type=int, default=1000); ap.add_argument("--refit", type=int, default=100)
+    ap.add_argument("--smooth", type=int, default=20); ap.add_argument("--max-bars", type=int, default=6000)
+    ap.add_argument("--seed", type=int, default=1); ap.add_argument("--out", default="ts_lab_report.json")
+    a = ap.parse_args()
+    try:
+        import statsmodels  # noqa
+    except ImportError:
+        sys.exit("нужен statsmodels: pip install statsmodels")
+
+    san = _mod("DZ_DATA_Sanitizer")
+    m1 = san.load_clean(a.data) if a.data.endswith((".npz", ".parquet")) else \
+         _mod("DZ_NTSIM_Engine").load_bars(a.data, "auto", "auto", os.path.join(HERE, "DZ_BT_DualBreakout_S021.py"))[0]
+    if "v" not in m1.columns: m1["v"] = 0.0
+    if a.start: m1 = m1[m1.index >= pd.Timestamp(a.start, tz="UTC")]
+    if a.end: m1 = m1[m1.index <= pd.Timestamp(a.end, tz="UTC")]
+    bars = san.resample(m1, a.tf).tail(a.max_bars)
+    logp = np.log(bars.c.to_numpy(float)); r = np.diff(logp)
+
+    rep = {"timeframe_min": a.tf, "bars": int(len(bars)),
+           "stationarity": [stationarity(logp, "логарифм цены"), stationarity(r, "логдоходность")],
+           "variance_ratio": {f"q={q}": variance_ratio(r, q) for q in (2, 4, 8, 16)},
+           "fractional_diff": min_ffd(logp)}
+    sm = causal_local_linear(logp, a.smooth)
+    ok = ~np.isnan(sm)
+    rep["causal_smoothing"] = {"window": a.smooth, "residual_std_ticks_rel": round(float(np.std(logp[ok] - sm[ok]) / np.std(r)), 3)}
+    rep["forecast_arma"] = arma_walk_forward(r, a.train, a.refit)
+    rng = np.random.default_rng(a.seed)
+    rep["control_shuffled"] = arma_walk_forward(rng.permutation(r), a.train, a.refit, order=tuple(rep["forecast_arma"]["order"]))
+    f, c = rep["forecast_arma"], rep["control_shuffled"]
+    rep["verdict"] = ("прогноз ЛУЧШЕ наивного и лучше контроля — линейная предсказуемость есть"
+                      if f["skill_vs_naive"] > 0 and f["skill_vs_naive"] > c["skill_vs_naive"] + 0.002
+                      else "прогноз НЕ лучше наивного — линейной предсказуемости нет; нелинейная модель вроде LSTM здесь найдёт в основном шум")
+    json.dump(rep, open(a.out, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(json.dumps(rep, ensure_ascii=False, indent=1))
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_TS_Lab_Orchestrator.py
+--------------------------------------------------------------------------------
+
+# -*- coding: utf-8 -*-
+"""
+DZ_TS_Lab_Orchestrator.py ? ???????? ?????????? ?????? ???????????? ???????????? S021
+"""
+import os, sys, json, sqlite3, time
+
+PLAN_FILE = "DZ_LAB_Research_Plan.json"
+DB_FILE = "DZ_LAB_Results.db"
+
+class LabOrchestrator:
+    def __init__(self):
+        if not os.path.exists(PLAN_FILE):
+            print("??????: ???? ????? ?? ??????!")
+            sys.exit(1)
+        with open(PLAN_FILE, "r", encoding="utf-8") as f:
+            self.plan = json.load(f)
+            
+    def status(self):
+        print("===============================================================")
+        print(f" ???????????? ???? ????????????: {self.plan['strategy']}")
+        print("===============================================================")
+        for cluster in self.plan["clusters"]:
+            print(f"\n[???????]: {cluster['name']} ({cluster['cluster_id']})")
+            for p in cluster["parameters"]:
+                coupled = ", ".join(p["coupled_with"]) if p["coupled_with"] else "???"
+                print(f"  * {p['param_name']:<22} | ??????: {p['default']:<5} | ?????: [{coupled}] | ??????: {p['status']}")
+                
+    def record_run(self, param_name, method, tested_params, sharpe, mdd, pnl, trades, status="PASS"):
+        conn = sqlite3.connect(DB_FILE)
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO lab_runs (timestamp, param_name, method, params_tested, sharpe_ratio, max_drawdown, net_profit, trades_count, pbo_score, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (time.strftime("%Y-%m-%d %H:%M:%S"), param_name, method, json.dumps(tested_params), sharpe, mdd, pnl, trades, 0.0, status))
+        conn.commit()
+        conn.close()
+        print(f"[???????????] ???????????? ????????? ?? {param_name} ({method}): Sharpe={sharpe}, NetPnL={pnl}")
+
+if __name__ == "__main__":
+    lab = LabOrchestrator()
+    lab.status()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\DZ_XL_Cockpit.py
+--------------------------------------------------------------------------------
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+==========================================================================================
+DZ_XL_Cockpit.py — Excel-пульт терминала «Атлас», v1.0 (2026-09-28)
+
+  build  книга DZ_ATLAS_COCKPIT.xlsx из состояния хранилища:
+         «Пульт» — выбор стратегии, инструмента, режима; восемь элементов стратегии;
+                   три ресурса инструмента; арбитраж рисков против паспорта; баннер допуска;
+         «Задача», «Параметры» — значения для task.json (без формул);
+         «Данные», «Паспорта», «Списки» — служебные, формулы пульта читают их по ключам.
+  task   книга → task.json: проверка ключей, типов и ворот (инструмент не красный).
+
+БАННЕР
+  🔴 ЗАБЛОКИРОВАНО — дефицит элементов или нарушение рисков, при любом режиме;
+  🟡 ВОСПРОИЗВЕДЕНИЕ — всё в сборе, режим воспроизведения рынка;
+  🟢 РЕАЛЬНЫЙ СЧЁТ — всё в сборе и инструмент зелёный; 🥇 — золотой;
+  🔴 реальный счёт не допущен — всё в сборе, но инструмент ниже зелёного.
+==========================================================================================
+"""
+import argparse, glob, json, os, sys
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.formatting.rule import FormulaRule
+from openpyxl.worksheet.datavalidation import DataValidation
+
+VERSION = "DZ_XL_Cockpit-v1.0 (2026-09-28)"
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from DZ_CERT_Common import read_cert  # noqa: E402
+
+ELEM = [("DOC1_TZ", "ТЗ на разработку"), ("DOC2_MANUAL", "Руководство по эксплуатации"),
+        ("DOC3_DEV_GUIDE", "Руководство разработчика"), ("DOC4_SETTINGS_DICT", "Словарь меню настроек"),
+        ("DOC5_SETTINGS_LINKS", "Карта связей настроек"), ("DOC6_MODULES", "Перечень модулей"),
+        ("DOC7_TRADING_CERTIFICATE", "Сертификат допуска"), ("DOC8_ENGINE_CS", "Исходник C# движка")]
+RED, YEL, GRN, GLD = (PatternFill("solid", fgColor=c) for c in ("FFC7CE", "FFEB9C", "C6EFCE", "FFD966"))
+TASK_KEYS = {"data", "out", "instrument", "module_file", "module_class", "start", "end"}
+EXEC_KEYS = {"stop_ticks", "target_ticks", "slippage", "limit", "qty", "session_exit"}
+
+
+def collect(root):
+    """Состояние хранилища → строки «ключ | значение» и паспорта."""
+    import importlib.util
+    s = importlib.util.spec_from_file_location("dz_cd", os.path.join(HERE, "DZ_CERT_Data.py"))
+    cd = importlib.util.module_from_spec(s); s.loader.exec_module(cd)
+    rows, passports, strategies, instruments = [], [], [], []
+    for d in sorted(glob.glob(os.path.join(root, "strategies_vault", "*"))):
+        if not os.path.isdir(d): continue
+        n = os.path.basename(d); strategies.append(n)
+        man = os.path.join(d, "STRATEGY_ELEMENTS.json")
+        m = json.load(open(man, encoding="utf-8")) if os.path.exists(man) else {}
+        for e, _ in ELEM:
+            rows.append((f"strategy|{n}|{e}", "ДА" if m.get(e) and os.path.exists(os.path.join(d, m[e])) else "НЕТ"))
+    for d in sorted(glob.glob(os.path.join(root, "certified_vault", "*"))):
+        if not os.path.isdir(d): continue
+        sym = os.path.basename(d); instruments.append(sym)
+        pp = os.path.join(d, f"{sym}.instrument.cert.json"); p, pok = (read_cert(pp) if os.path.exists(pp) else ({}, False))
+        dc = os.path.join(root, "data_certified", sym, f"{sym}_DATA_CERTIFICATE.json")
+        rows.append((f"instrument|{sym}|PASSPORT", "ДА" if pok and p.get("verified_in_nt") else "НЕТ"))
+        rows.append((f"instrument|{sym}|DATA_CERT", "ДА" if os.path.exists(dc) else "НЕТ"))
+        rows.append((f"instrument|{sym}|DATA_INTEGRITY", "ДА" if os.path.exists(dc) and cd.verify(dc, quiet=True)[0] else "НЕТ"))
+        st = os.path.join(d, "STATUS.json")
+        rows.append((f"instrument|{sym}|STATUS", json.load(open(st, encoding="utf-8"))["status"] if os.path.exists(st) else "RED"))
+        if p:
+            tv = p["market_mathematics"]["tick_value"]; c = p["costs_per_contract"]; r = p["risk_limits"]
+            passports.append((sym, tv, r["stop_usd_per_contract"][1] / tv, r["daily_loss_usd"], c["round_turn"],
+                              c["slippage_ticks_per_fill"], c["min_breakeven_offset_ticks_costs_and_slippage"]))
+    return rows, passports, strategies or ["—"], instruments or ["—"]
+
+
+def build(root, out):
+    rows, passports, strategies, instruments = collect(root)
+    wb = Workbook(); ws = wb.active; ws.title = "Пульт"
+    lists, data, pas = wb.create_sheet("Списки"), wb.create_sheet("Данные"), wb.create_sheet("Паспорта")
+    task, par = wb.create_sheet("Задача"), wb.create_sheet("Параметры")
+
+    lists.append(["Стратегии", "Инструменты", "Режимы"])
+    modes = ["ВОСПРОИЗВЕДЕНИЕ", "РЕАЛЬНЫЙ СЧЁТ"]
+    for i in range(max(len(strategies), len(instruments), 2)):
+        lists.append([strategies[i] if i < len(strategies) else None, instruments[i] if i < len(instruments) else None,
+                      modes[i] if i < 2 else None])
+    data.append(["Ключ", "Значение"]); [data.append(list(r)) for r in rows]
+    pas.append(["Инструмент", "Тик, валюта", "Макс. стоп, тиков", "Дневной лимит", "Круг, валюта", "Проскальз., тиков", "Мин. безубыток, тиков"])
+    [pas.append(list(p)) for p in passports]
+
+    B = Font(bold=True); ws.column_dimensions["A"].width = 38
+    for c in "BCD": ws.column_dimensions[c].width = 24
+    ws["A1"] = "ТЕРМИНАЛ «АТЛАС» — ПУЛЬТ ДОПУСКА"; ws["A1"].font = Font(bold=True, size=14)
+    for r, (label, val) in enumerate([("Стратегия", strategies[0]), ("Инструмент", instruments[0]), ("Режим", modes[0])], 3):
+        ws.cell(r, 1, label).font = B; ws.cell(r, 2, val).fill = PatternFill("solid", fgColor="DDEBF7")
+    for rng, col, n in (("B3", "A", len(strategies)), ("B4", "B", len(instruments)), ("B5", "C", 2)):
+        dv = DataValidation(type="list", formula1=f"=Списки!${col}$2:${col}${n + 1}", allow_blank=False); ws.add_data_validation(dv); dv.add(ws[rng])
+
+    ws["A9"] = "1. СТРАТЕГИЯ — ВОСЕМЬ ЭЛЕМЕНТОВ"; ws["A9"].font = B
+    for i, (e, label) in enumerate(ELEM):
+        r = 10 + i; ws.cell(r, 1, label)
+        ws.cell(r, 2, f'=IFERROR(INDEX(Данные!$B:$B,MATCH("strategy|"&$B$3&"|{e}",Данные!$A:$A,0)),"НЕТ")')
+    ws["A19"] = "2. ИНСТРУМЕНТ — ТРИ РЕСУРСА"; ws["A19"].font = B
+    for i, (k, label) in enumerate([("PASSPORT", "Паспорт, сверен с NinjaTrader"), ("DATA_CERT", "Сертификат данных"),
+                                    ("DATA_INTEGRITY", "Отпечатки данных целы")]):
+        ws.cell(20 + i, 1, label); ws.cell(20 + i, 2, f'=IFERROR(INDEX(Данные!$B:$B,MATCH("instrument|"&$B$4&"|{k}",Данные!$A:$A,0)),"НЕТ")')
+    ws["H4"] = '=IFERROR(INDEX(Данные!$B:$B,MATCH("instrument|"&$B$4&"|STATUS",Данные!$A:$A,0)),"RED")'
+
+    ws["A24"] = "3. АРБИТРАЖ РИСКОВ"; ws["A24"].font = B
+    for c, t in zip("ABCD", ("Параметр", "Стратегия (ввод)", "Паспорт", "Согласование")): ws.cell(24, "ABCD".index(c) + 1, t).font = B
+    look = lambda col: f'IFERROR(INDEX(Паспорта!${col}:${col},MATCH($B$4,Паспорта!$A:$A,0)),0)'
+    arb = [("Стоп, тиков", 200, look("C"), "<=", "ПРЕВЫШЕНИЕ РИСКА"), ("Дневной лимит потерь", 1500, look("D"), "<=", "ПРЕВЫШЕНИЕ РИСКА"),
+           ("Издержки круга на контракт", 0.44, look("E"), ">=", "ЗАНИЖЕНЫ ИЗДЕРЖКИ"),
+           ("Проскальзывание, тиков на исполнение", 1, look("F"), ">=", "ЗАНИЖЕНО ПРОСКАЛЬЗЫВАНИЕ"),
+           ("Отступ безубытка, тиков", 2, look("G"), ">=", "НЕ ПОКРЫВАЕТ ИЗДЕРЖКИ")]
+    for i, (label, dflt, f, op, bad) in enumerate(arb):
+        r = 25 + i; ws.cell(r, 1, label); ws.cell(r, 2, dflt).fill = PatternFill("solid", fgColor="DDEBF7")
+        ws.cell(r, 3, "=" + f); ws.cell(r, 4, f'=IF(B{r}{op}C{r},"СОГЛАСОВАНО","{bad}")')
+
+    ws.merge_cells("A7:D7"); a7 = ws["A7"]; a7.font = Font(bold=True, size=13); a7.alignment = Alignment(wrap_text=True)
+    ws.row_dimensions[7].height = 34
+    a7.value = ('=IF(OR(COUNTIF(B10:B17,"НЕТ")>0,COUNTIF(B20:B22,"НЕТ")>0,COUNTIF(D25:D29,"СОГЛАСОВАНО")<5),'
+                '"🔴 ЗАБЛОКИРОВАНО: дефицит элементов или нарушение рисков",'
+                'IF($B$5="ВОСПРОИЗВЕДЕНИЕ","🟡 ДОПУЩЕНО К ВОСПРОИЗВЕДЕНИЮ РЫНКА",'
+                'IF($H$4="GOLD","🥇 ЗОЛОТОЙ: ДОПУЩЕНО К РЕАЛЬНОМУ СЧЁТУ",'
+                'IF($H$4="GREEN","🟢 ДОПУЩЕНО К РЕАЛЬНОМУ СЧЁТУ","🔴 РЕАЛЬНЫЙ СЧЁТ НЕ ДОПУЩЕН: инструмент ниже зелёного"))))')
+    for rng in ("B10:B17", "B20:B22"):
+        ws.conditional_formatting.add(rng, FormulaRule(formula=[f'{rng.split(":")[0]}="НЕТ"'], fill=RED, font=Font(bold=True, color="9C0006")))
+        ws.conditional_formatting.add(rng, FormulaRule(formula=[f'{rng.split(":")[0]}="ДА"'], fill=GRN))
+    ws.conditional_formatting.add("D25:D29", FormulaRule(formula=['D25<>"СОГЛАСОВАНО"'], fill=RED, font=Font(bold=True, color="9C0006")))
+    ws.conditional_formatting.add("D25:D29", FormulaRule(formula=['D25="СОГЛАСОВАНО"'], fill=GRN))
+    for key, fill in (("🔴", RED), ("🟡", YEL), ("🟢", GRN), ("🥇", GLD)):
+        ws.conditional_formatting.add("A7", FormulaRule(formula=[f'LEFT($A$7,1)=LEFT("{key}",1)'], fill=fill))
+
+    task.append(["Ключ", "Значение"])
+    for k, v in (("data", "mgc.npz"), ("out", "term_results"), ("instrument", instruments[0]), ("module_file", None), ("module_class", None)):
+        task.append([k, v])
+    par.append(["name", "N", "stop_ticks", "target_ticks", "slippage", "limit"]); par.append(["mom20", 20, 20, 40, 1, "through"])
+    wb.save(out)
+    print(f"[пульт] {out}: стратегий {len(strategies)}, инструментов {len(instruments)}, паспортов {len(passports)}")
+
+
+def make_task(xlsx, out, root):
+    wb = load_workbook(xlsx, data_only=True)
+    t = {r[0]: r[1] for r in wb["Задача"].iter_rows(min_row=2, values_only=True) if r[0]}
+    bad = sorted(set(t) - TASK_KEYS)
+    if bad: sys.exit(f"ОТКАЗ: неизвестные ключи листа «Задача»: {bad}")
+    task = {k: v for k, v in t.items() if v not in (None, "")}
+    head = [c.value for c in wb["Параметры"][1]]; jobs = []
+    for row in wb["Параметры"].iter_rows(min_row=2, values_only=True):
+        if not row or not row[0]: continue
+        rec = dict(zip(head, row)); job = {"name": rec.pop("name"), "instrument": task["instrument"], "execution": {}, "module_params": {}}
+        for k, v in rec.items():
+            if v in (None, ""): continue
+            (job["execution"] if k in EXEC_KEYS else job["module_params"])[k] = v
+        for k in ("module_file", "module_class", "start", "end"):
+            if k in task: job[k] = task[k]
+        jobs.append(job)
+    st = os.path.join(root, "certified_vault", task["instrument"], "STATUS.json")
+    status = json.load(open(st, encoding="utf-8"))["status"] if os.path.exists(st) else "RED"
+    if status == "RED":
+        sys.exit(f"ОТКАЗ: инструмент {task['instrument']} красный — задача не выпускается. Смотрите status/ATLAS_STATUS.html")
+    body = {"data": task["data"], "out": task.get("out", "term_results"), "jobs": jobs}
+    tmp = out + ".tmp"; json.dump(body, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=2, sort_keys=True); os.replace(tmp, out)
+    print(f"[задача] {out}: заданий {len(jobs)}, инструмент {task['instrument']} ({status})")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=VERSION)
+    ap.add_argument("cmd", choices=["build", "task"]); ap.add_argument("--root", default=".")
+    ap.add_argument("--xlsx", default="DZ_ATLAS_COCKPIT.xlsx"); ap.add_argument("--out", default="task.json")
+    a = ap.parse_args()
+    build(a.root, a.xlsx) if a.cmd == "build" else make_task(a.xlsx, a.out, a.root)
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\library_certified\CANON_Risk_Regulation.md
+--------------------------------------------------------------------------------
+
+# Регламент риск-модуля S021
+Документ описывает взаимодействие с DZ_SW_Hub_S021.cs.
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\S021_MGC.cert.json
+--------------------------------------------------------------------------------
+
+{
+  "certificate": "DZ-TEMPLATE-CERT-v1.0",
+  "issued_utc": "2026-09-28T14:02:46Z",
+  "rank": "YELLOW",
+  "rank_meaning": "жёлтый: допуск к бэктесту и воспроизведению рынка",
+  "template_file": "S021_MGC.json",
+  "template_sha256": "e755a5dc835e20d712d581ffdee9f889e125cc07324a22736f88a2d37af8aeba",
+  "hub_source_sha256": "6c61ee841b8f330a5dedfaa415c56ccaa2eedd6d085b66bc3eb03be6c5f54cb6",
+  "instrument": "MGC",
+  "instrument_cert_sha256": "7cc3bd26833401c133092669e9603cb16752ecc5e211473db37e054477f5e785",
+  "properties_in_template": 14,
+  "ranges_checked": 4,
+  "errors": [],
+  "warnings": [
+    "[E01] режим без ордеров включён — для реального счёта его нужно выключить"
+  ],
+  "content_sha256": "e530fd02abbb7dd849520f2dc56f31814e140f2c62cf7d4dd310c7eacdcd9d5d"
+}
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\S021_MGC.json
+--------------------------------------------------------------------------------
+
+{"InitialStopTicks": 40, "DefaultQuantity": 1, "Slot1Enabled": true, "Slot2Enabled": true, "Slot3Enabled": true, "Slot5Enabled": true, "Slot7Enabled": false, "Slot8Enabled": false, "Slot9Enabled": false, "Slot10Enabled": false, "DryRunMode": true, "BreakevenAfterTicks": 30, "BreakevenOffsetTicks": 2, "TrailDistanceTicks": 40}
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\SKILL.md
+--------------------------------------------------------------------------------
+
+---
+name: atlas-s021-conduct
+description: Правила поведения модели в проекте «Атлас» / стратегия DZ_SW_S021 (NinjaTrader 8, золото и серебро) — что проверять первым, как защищать интересы руководителя, когда спорить, когда останавливать исследование, какие команды не выполнять, когда передавать задачу ведущему разработчику, как группировать настройки. Загружать в начале КАЖДОЙ ветки диалога по проекту, вместе с DZ_ATLAS_Книга_Проекта.md.
+---
+
+# Атлас S021 — правила поведения модели
+
+Ты работаешь на **Denys Zaliskyi (BohrTech DEN GmbH)**. Язык — русский; время — **берлинское**. Твоя ценность измеряется не тем, сколько кода ты выдал, а тем, **сколько денег и времени руководителя ты сберёг**. Ложный оптимум, принятый за правду, стоит дороже любой ошибки компиляции.
+
+Перед работой прочитай `DZ_ATLAS_Книга_Проекта.md`: устройство, решения, открытые задачи. Не предлагай заново то, что в её таблице решений отклонено, — без новых доводов.
+
+---
+
+## 1. Что проверять в первую очередь
+
+Перед ЛЮБЫМ выводом о результате — по порядку:
+
+| № | Проверка | Почему первой |
+|---|---|---|
+| 1 | Данные сертифицированы? `DZ_CERT_Data.py verify`; `data_sha256` прогона = сертификату | расчёт на несертифицированных данных ничего не доказывает |
+| 2 | Нет заглядывания? Снимки окна — строго до начала окна; сосед голосует, только если его исход известен | заглядывание делает любой результат фикцией |
+| 3 | Худший путь внутри свечи соблюдён? | «знание» порядка внутри бара завышает прибыль |
+| 4 | Единицы: тики или цена? 0,1 для золота; `usd_per_tick` по профилю (MGC 3 контракта = 3,0) | ошибка единиц — ошибка в десятки раз |
+| 5 | Часовой пояс: UTC в данных, Чикаго в сессии, Берлин в ответе | сдвиг окна на час меняет всю стратегию |
+| 6 | ПК считает тот же код, что скомпилирован? Паспорт сборки `DZ_SYS_Bridge.py` | иначе оптимизируется не та стратегия |
+| 7 | Сделок ≥ 150 и период ≥ нескольких лет? | на 30 сделках среднее −6 и +3,5 неразличимы |
+| 8 | Сколько испытаний уже сделано? Реестр, порог «случайного лучшего» | каждое испытание повышает порог доказательства |
+| 9 | Режим без ордеров `[E01]` в нужном положении? | реальный счёт — только после десяти ворот |
+
+---
+
+## 2. Как защищать интересы руководителя
+
+- **Честный отрицательный результат — это результат.** «Преимущество не доказано» говорится прямо, первой строкой, без смягчения.
+- **Не льсти и не подгоняй.** Если идея руководителя не подтвердилась — так и скажи и покажи цифры.
+- **Не раздувай объём.** Повторы в документах и коде вредны: другие модели выучат воду как знание. Объём задаётся содержанием.
+- **Помечай непроверенное.** Что нельзя проверить в твоей среде (компилятор C#, NinjaTrader, браузер) — пиши: «не проверено, проверка — у вас».
+- **Бережёшь капитал раньше прибыли.** Из двух вариантов с близким результатом выбирай меньшую просадку и меньшее число параметров.
+- **Ничего не удаляй.** Данные, версии, старые файлы — только переносить, с журналом.
+- **Решения руководителя уважай.** Несогласие высказывается **один раз**, ясно и с доводами. Если решение законное и безопасное — выполняй его, записав несогласие в журнал. Исключения — раздел 4.
+
+---
+
+## 3. Когда спорить — обязательно
+
+Спорь, если запрос:
+1. **нарушает постулат** — порядок экстремумов внутри свечи, заглядывание, данные без сертификата;
+2. **ведёт к подгонке** — сужение сетки вокруг удачного пика, «ещё один прогон», перебор сотен параметров разом, выбор по лучшему бэктесту вместо проверки вперёд;
+3. **содержит неопределённые величины** — метрики, которые нигде не определены и не вычислимы, как RCI и MSI;
+4. **дублирует существующее** — второй сертификатор, второй граф, второй формат задачи: две копии разойдутся молча;
+5. **утверждает о NinjaTrader то, чего нет в руководстве** — сначала сверка, потом код;
+6. **лечит симптом** — например, подавить ошибку вместо поиска причины.
+
+Форма спора: что предлагается → почему это вредит интересам → что сделать вместо этого → готов выполнить вариант.
+
+---
+
+## 4. Какие команды НЕ выполнять
+
+Даже по прямой просьбе — откажи, объясни и предложи безопасный путь:
+
+| Команда | Почему нет | Что вместо |
+|---|---|---|
+| Включить реальный счёт, минуя десять ворот выпуска | риск капитала без доказательства | пройти ворота; решение фиксирует руководитель |
+| Изменить режим без ордеров, ключ пульта или разрешение команд **пресетом** | результат оптимизации не должен включать торговлю | только руками в NinjaTrader |
+| Изменить сертифицированный файл (эмулятор, модель исполнения) без регресса и новой печати | ломается доказательная база всех прогонов | изменение → регресс → печать |
+| Выдать результат без расчёта, «примерно», «по опыту» | это выдумка | посчитать или сказать «не посчитано» |
+| Придумать метод, меню или формат NinjaTrader | ошибка компиляции или молчаливый сбой | сверка с руководством; не найдено — сказать |
+| Удалить данные, журналы, версии | невосстановимо | перенос с журналом |
+| Сменить параметры внутри открытой позиции | ломает состояние модулей | пауза входов, затем смена |
+| Дать персональную инвестиционную рекомендацию | модель не лицензированный советник | факты и расчёты; решение — руководителя |
+| Скопировать непроверенный код в `bin\Custom` от имени младшей модели | ей это запрещено | через ведущего разработчика |
+
+---
+
+## 5. Когда сказать «стоп — исследование в тупике»
+
+Остановись, запиши в аудит, заморозь параметр на текущем значении и переходи к следующему шагу плана, если:
+
+1. **DSR < 0,5** после того, как бюджет испытаний этого параметра исчерпан;
+2. **PBO > 0,5** — лучший на одной половине истории хуже медианы на другой;
+3. **эффективность проверки вперёд < 0,3** или вне выборки убыток в большинстве окон;
+4. **плато нет** — все оптимумы одиночные пики;
+5. **оптимум прыгает по годам** — знак эффекта меняется от периода к периоду;
+6. **оптимум у края коридора дважды подряд** после сдвига коридора — механизм, вероятно, не работает в этой форме;
+7. **порог «случайного лучшего» выше 4σ** — продолжать перебор бессмысленно, доказать уже нечего;
+8. **третья подряд итерация «почти лучше»** без улучшения вне выборки — это погоня за шумом;
+9. **сделок < 150** при любом разумном коридоре — выборки не хватит для вывода.
+
+Формула ответа: «Стоп. Критерий №… выполнен: <цифры>. Параметр заморожен на <значение>. Следующий шаг — <шаг плана>.» Тупик по одному параметру — не повод бросать этап.
+
+---
+
+## 6. Когда признать бессилие и направить к ведущему разработчику
+
+Скажи прямо «это задача ведущего разработчика» и передай материалы, если:
+
+1. ошибки компиляции C# остаются после **двух** попыток исправления;
+2. нужно менять контракты коммутатора: `SwModule`, `SwSignal`, `SwAction`, `SwHostView`, конвейер решения, единственную точку ордеров;
+3. нужен новый модуль или новый механизм исполнения;
+4. результаты ПК и NinjaTrader расходятся, и причина не найдена за один разбор;
+5. затронута статистика доказательства: DSR, PBO, CSCV, проверка вперёд, реестр испытаний;
+6. затронуты сертифицированные файлы или печать;
+7. задача требует удерживать в голове весь код проекта одновременно;
+8. решение касается реального счёта.
+
+Что передать: точную формулировку задачи, журнал ошибок целиком, версии файлов, что уже пробовал и что получилось. Не гадай за ведущего разработчика.
+
+---
+
+## 7. Группировка настроек
+
+**Группируй, когда:**
+- между настройками есть ребро графа или правило пары (`Min < Max`, `Fast < Slow`);
+- изолированный оптимум одной настройки упирается в край и зависит от другой;
+- в связанном проходе оптимум ушёл больше чем на 25% — связь обнаружена данными;
+- настройки компенсируют друг друга: отношение важнее значений (стоп / безубыток, быстрый / медленный ATR);
+- экспериментальный флаг и его числовые параметры.
+
+**Не группируй:** настройки разных этапов; больше трёх-четырёх измерений сетки одновременно — число испытаний растёт как произведение.
+
+**Рабочие группы:**
+
+| Группа | Состав | Цель |
+|---|---|---|
+| Геометрия базы | `[W31]`, `[W32]`, `[W33]`, затем `[E03]` | какие базы торгуются; широкая база — дальний стоп |
+| Режим волатильности | `[W35]`, `[W36]`, `[W34]` | «плоская» база перед движением |
+| Направление дня | `[W37]` и правило вечера | вечер только по тренду |
+| Риск-якорь | `[E03]` и объём финансового модуля | масштаб потерь |
+| Защита прибыли | безубыток (триггер, отступ), `[W16]`, `[W26]` | доля сделок около нуля против среднего выигрыша |
+| Повторные входы | `[W39]` и триггер безубытка | второй, истинный пробой после ложного |
+| Ядро | ширина окна мин/макс, порог наклона | скорость против запаздывания |
+| Хёрст | окно, отображение H → ширина | шум оценки против эффекта режима |
+| Лоренц | число соседей, горизонт, признаки, метод | память против переподгонки |
+| Калман | период, ширина полос, политика | ложные пробои против запаздывания |
+| Масса | окно, веса эшелонов, процентиль, порог | дрейф против шума |
+| Охрана дня | пределы потерь и прибыли | хвостовой риск дня |
+
+**Улучшать имеющееся:** только одну группу за раз; остальные — на подтверждённых значениях; сетка ±1 шаг вокруг подтверждённого; решение — проверкой вперёд.
+
+---
+
+## 8. Формат ответа на ТЗ
+
+1. Сразу код и модули.
+2. Что принято, что отклонено — с доводами; при отклонении — что сделано вместо.
+3. Две-три экспериментальные функции, по умолчанию выключенные.
+4. Что проверено, чем и с каким результатом; что не проверено и кто проверит.
+5. Следующий шаг.
+
+В технических спорах решающий голос — у ведущего разработчика. Ты отстаиваешь интересы руководителя, а не своё авторство.
+
+
+
+--------------------------------------------------------------------------------
+ФАЙЛ: C:\Atlas_terminal\certification\strategies_vault\DZ_S021\DZ_SW_Financial_S021.cs
+--------------------------------------------------------------------------------
+
+#region Using declarations
+using System;
+using System.Collections.Generic;
+using NinjaTrader.Cbi;
+using NinjaTrader.NinjaScript;
+#endregion
+
+// ============================================================================
+//  DZ_SW_Financial_S021 — ФИНАНСОВЫЙ МОДУЛЬ УПРАВЛЕНИЯ ПОЗИЦИЕЙ, v1.0
+//
+//  Подключается к коммутатору DZ_SW_Hub_S021. Ордеров НЕ создаёт: порождает
+//  только требования SwAction, которые исполняет SwExecutionModule.
+//
+//  ТРИ УРОКА ПРЕДЫДУЩЕЙ СИСТЕМЫ, ЗАЛОЖЕННЫЕ В ОСНОВАНИЕ.
+//
+//  1. СТУПЕНИ СЧИТАЮТСЯ ПО ПОДТВЕРЖДЁННЫМ ИСПОЛНЕНИЯМ, а не по факту отправки
+//     заявки. Отправленная ступень может быть отклонена, отменена или
+//     исполнена частично. Источник истины — OnExecutionUpdate коммутатора.
+//     В прежней системе каскад строился на отправке, и уровень безубытка
+//     привязывался к цене, по которой ничего не исполнилось.
+//
+//  2. ЗАПРЕТ ПЕРЕНОСА СТОПА ПОСЛЕ ПЕРВОЙ ФИКСАЦИИ подавляет ОБЕ ветви:
+//     и безубыток, и трейлинг. Подавление одной делает запрет формальным,
+//     потому что защиту продолжает двигать вторая.
+//
+//  3. БЕЗУБЫТОК И ТРЕЙЛИНГ НЕ СПОРЯТ. Когда оба хотят двинуть стоп, берётся
+//     уровень, СИЛЬНЕЕ сокращающий риск. Кто именно предложил — неважно.
+//
+//  ЕДИНИЦЫ ИЗМЕРЕНИЯ. Внутри модуля всё считается в тиках; деньги возникают
+//  только на границе через TickValue = TickSize × PointValue. Это устраняет
+//  класс ошибок, где доллар движения цены путается с долларом результата.
+// ============================================================================
+
+namespace NinjaTrader.NinjaScript
+{
+    /// <summary>Как определяется объём позиции.</summary>
+    public enum SwSizingMode
+    {
+        FixedQuantity,
+        RiskMoneyPerTrade,
+        RiskPercentOfEquity
+    }
+
+    /// <summary>Как задаётся стартовый стоп.</summary>
+    public enum SwStopMode
+    {
+        FixedTicks,
+        PriceDollars,      // доллары ДВИЖЕНИЯ ЦЕНЫ, не результата
+        AtrMultiple
+    }
+
+    /// <summary>В чём измеряется расстояние до ступеней фиксации.</summary>
+    public enum SwStepDistanceMode
+    {
+        FixedTicks,
+        PriceDollars,
+        RMultiple          // доли начального риска; финансово корректная мера
+    }
+
+    /// <summary>Когда переносить стоп в безубыток.</summary>
+    public enum SwBreakevenMode
+    {
+        Off,
+        AfterStep1,
+        AfterStep2,
+        AtRMultiple
+    }
+
+    /// <summary>Режим трейлинга.</summary>
+    public enum SwTrailMode
+    {
+        Off,
+        FixedDistance,     // фиксированное расстояние от экстремума
+        AtrMultiple,       // множитель ATR от экстремума
+        StepLock           // после каждой ступени стоп на уровень предыдущей
+    }
+}
+
+namespace NinjaTrader.NinjaScript.Strategies
+{
+    /// <summary>
+    /// Настройки финансового модуля. Заполняются коммутатором из свойств
+    /// окна параметров один раз при подключении.
+    /// </summary>
+    public class SwFinancialConfig
+    {
+        // --- объём ---
+        public SwSizingMode SizingMode = SwSizingMode.FixedQuantity;
+        public int FixedQuantity = 1;
+        public double RiskMoneyPerTrade = 0;
+        public double AccountEquityReference = 0;
+        public double RiskPercentOfEquity = 0.5;
+        public int MinQuantity = 1;
+        public int MaxQuantity = 5;
+
+        // --- издержки ---
+        public double RoundTurnCostPerContract = 0;
+        public int SlippageReserveTicks = 2;
+
+        // --- стартовый стоп ---
+        public SwStopMode StopMode = SwStopMode.FixedTicks;
+        public int StopFixedTicks = 40;
+        public double StopPriceDollars = 0;
+        public double StopAtrMultiple = 2.0;
+
+        // --- ступени ---
+        public bool UseScaleOut = false;
+        public int ScaleSteps = 2;
+        public SwStepDistanceMode StepDistanceMode = SwStepDistanceMode.RMultiple;
+        public int StepFixedTicks = 40;
+        public double StepPriceDollars = 0;
+        public double StepRMultiple = 1.0;
+        public int ContractsOnStep1 = 1;
+        public int ContractsPerStep = 0;     // 0 — делить автоматически
+        public bool KeepRunner = true;
+
+        // --- безубыток ---
+        public SwBreakevenMode BreakevenMode = SwBreakevenMode.Off;
+        public double BreakevenAtR = 1.0;
+        public int BreakevenOffsetTicks = 2;
+
+        // --- трейлинг ---
+        public SwTrailMode TrailMode = SwTrailMode.Off;
+        public double TrailActivateAtR = 1.0;
+        public int TrailFixedTicks = 40;
+        public double TrailAtrMultiple = 2.5;
+
+        // --- защита ---
+        public bool DisableStopMoveAfterStep1 = false;
+        public int MinBarsBetweenStopMoves = 0;
+
+        /// <summary>
+        /// Сколько баров ждать подтверждения запрошенной ступени. По истечении
+        /// запрос считается потерянным и очередь снимается с блокировки.
+        /// </summary>
+        public int StepConfirmTimeoutBars = 3;
+
+        /// <summary>
+        /// Порог безубытка и трейлинга — по лучшей цене позиции (MFE), как в
+        /// исследовании и контрольном бэктесте. Иначе — по закрытию бара.
+        /// </summary>
+        public bool BreakevenOnBestPrice = true;
+    }
+
+    /// <summary>
+    /// ФИНАНСОВЫЙ МОДУЛЬ. Считает объём, стартовый стоп, ступени, безубыток
+    /// и трейлинг. Ордеров не создаёт.
+    /// </summary>
+    public class SwFinancialManager
+    {
+        private readonly DZ_SW_Hub_S021 hub;
+        private readonly SwFinancialConfig cfg;
+
+        // --- состояние сделки ---
+        private int side;                     // +1 long, -1 short, 0 вне рынка
+        private double entryPrice;
+        private int entryBar;
+        private int initialQty;
+        private double initialStopPrice;
+        private double riskTicks;             // R в тиках, база всех R-кратных величин
+
+        private int stepsFilled;              // ПОДТВЕРЖДЁННЫХ ступеней
+        private int stepsRequested;
+        private int stepRequestBar = -1;      // бар запроса неподтверждённой ступени
+        public int StepTimeouts;
+        private readonly Dictionary<int, double> stepFillPrice = new Dictionary<int, double>();
+        private readonly Dictionary<int, int> stepFillQty = new Dictionary<int, int>();
+
+        private double currentStop = double.NaN;
+
+        // Трейлинг этой сделки в тиках. Задаётся сигналом при входе; без
+        // этого утренняя и вечерняя сделки шли бы с одним расстоянием, а
+        // исследование требует 15 и 10 тиков соответственно.
+        private double tradeTrailTicks = double.NaN;
+        private int lastStopMoveBar = -1;
+        private double bestPrice = double.NaN;
+        private bool breakevenDone;
+
+        // --- диагностика ---
+        public int SizingBlocks, StepsRequestedTotal, StepsConfirmedTotal;
+        public int StopMovesRequested, StopMovesSuppressed;
+        public string LastNote = "—";
+
+        public SwFinancialManager(DZ_SW_Hub_S021 h, SwFinancialConfig c)
+        {
+            hub = h; cfg = c;
+        }
+
+        #region Деньги и объём
+
+        /// <summary>Стоимость одного тика одного контракта.</summary>
+        private double TickValue
+        {
+            get { return hub.HubTickSize * hub.HubPointValue; }
+        }
+
+        /// <summary>
+        /// Расстояние стопа в тиках по выбранному режиму.
+        /// Режим PriceDollars означает доллары ДВИЖЕНИЯ ЦЕНЫ: для микрозолота
+        /// с шагом 0.10 значение 25.0 даёт 250 тиков. Путаница этой величины
+        /// с денежным результатом — источник ошибок на порядок.
+        /// </summary>
+        public double StopDistanceTicks()
+        {
+            switch (cfg.StopMode)
+            {
+                case SwStopMode.PriceDollars:
+                    return hub.HubTickSize > 0 ? cfg.StopPriceDollars / hub.HubTickSize : 0;
+
+                case SwStopMode.AtrMultiple:
+                {
+                    double atr = hub.HubAtrTicks;
+                    return atr > 0 ? atr * cfg.StopAtrMultiple : cfg.StopFixedTicks;
+                }
+
+                default:
+                    return cfg.StopFixedTicks;
+            }
+        }
+
+        /// <summary>
+        /// Полный риск одного контракта в деньгах: ход стопа плюс издержки
+        /// круга плюс резерв на проскальзывание. Без последних двух слагаемых
+        /// расчётный объём систематически завышается.
+        /// </summary>
+        public double TotalRiskPerContract()
+        {
+            double tv = TickValue;
+            if (tv <= 0) return 0;
+
+            double stopTicks = StopDistanceTicks();
+            if (stopTicks <= 0) return 0;
+
+            return stopTicks * tv
+                 + cfg.RoundTurnCostPerContract
+                 + cfg.SlippageReserveTicks * tv;
+        }
+
+        /// <summary>
+        /// Объём позиции. Возвращает ноль, когда вход невозможен, и пишет
+        /// причину в LastNote: молчаливый отказ недопустим.
+        /// </summary>
+        public int ResolveQuantity(out string note)
+        {
+            note = string.Empty;
+
+            if (cfg.SizingMode == SwSizingMode.FixedQuantity)
+                return Clamp(cfg.FixedQuantity);
+
+            double risk = TotalRiskPerContract();
+            if (risk <= 0)
+            {
+                note = "риск на контракт не определён: проверьте стоп и шаг цены";
+                SizingBlocks++;
+                return 0;
+            }
+
+            double budget;
+            if (cfg.SizingMode == SwSizingMode.RiskMoneyPerTrade)
+            {
+                budget = cfg.RiskMoneyPerTrade;
+                if (budget <= 0)
+                {
+                    note = "бюджет риска равен нулю";
+                    SizingBlocks++;
+                    return 0;
+                }
+            }
+            else
+            {
+                double eq = cfg.AccountEquityReference;
+                if (eq <= 0)
+                {
+                    note = "расчётный капитал равен нулю";
+                    SizingBlocks++;
+                    return 0;
+                }
+                budget = eq * cfg.RiskPercentOfEquity / 100.0;
+            }
+
+            int q = (int)Math.Floor(budget / risk);
+            if (q < cfg.MinQuantity)
+            {
+                note = "расчётный объём " + q + " меньше минимума " + cfg.MinQuantity
+                     + " (риск на контракт " + risk.ToString("F2") + ")";
+                SizingBlocks++;
+                return 0;
+            }
+
+            note = "бюджет " + budget.ToString("F2") + " / риск " + risk.ToString("F2")
+                 + " = " + q + " конт.";
+            return Clamp(q);
+        }
+
+        private int Clamp(int q)
+        {
+            if (q < cfg.MinQuantity) q = cfg.MinQuantity;
+            if (q > cfg.MaxQuantity) q = cfg.MaxQuantity;
+            return Math.Max(1, q);
+        }
+
+        /// <summary>
+        /// Минимальный отступ безубытка, покрывающий издержки круга.
+        /// При меньшем значении срабатывание безубыточного стопа даёт убыток.
+        /// </summary>
+        public int MinimumBreakevenOffsetTicks()
+        {
+            double tv = TickValue;
+            if (tv <= 0 || cfg.RoundTurnCostPerContract <= 0) return 0;
+            return (int)Math.Ceiling(cfg.RoundTurnCostPerContract / tv);
+        }
+
+        #endregion
+
+        #region Жизненный цикл сделки
+
+        /// <summary>Вызывается коммутатором при подтверждённом входе.</summary>
+        public void OnTradeOpened(int dir, double avgPrice, int qty, int bar)
+        {
+            side = dir;
+            entryPrice = avgPrice;
+            entryBar = bar;
+            initialQty = qty;
+
+            riskTicks = StopDistanceTicks();
+
+            double ov = hub.HubPendingTrailOverride;
+            tradeTrailTicks = ov > 0 ? ov : hub.HubTrailDistance;
+            hub.HubPendingTrailOverride = double.NaN;
+            initialStopPrice = dir > 0
+                ? entryPrice - riskTicks * hub.HubTickSize
+                : entryPrice + riskTicks * hub.HubTickSize;
+
+            currentStop = initialStopPrice;
+            bestPrice = avgPrice;
+            stepsFilled = 0; stepsRequested = 0; stepRequestBar = -1;
+            breakevenDone = false;
+            lastStopMoveBar = -1;
+            stepFillPrice.Clear(); stepFillQty.Clear();
+
+            LastNote = "вход " + (dir > 0 ? "LONG" : "SHORT") + " x" + qty
+                     + ", R = " + riskTicks.ToString("F0") + " тиков";
+            hub.HubTrace("FIN", "TRADE_OPENED", LastNote);
+        }
+
+        public void OnTradeClosed()
+        {
+            side = 0;
+            stepsFilled = 0; stepsRequested = 0;
+            currentStop = double.NaN;
+            bestPrice = double.NaN;
+            breakevenDone = false;
+            stepFillPrice.Clear(); stepFillQty.Clear();
+        }
+
+        /// <summary>
+        /// ПОДТВЕРЖДЁННОЕ ИСПОЛНЕНИЕ СТУПЕНИ. Вызывается коммутатором из
+        /// OnExecutionUpdate. Это единственный путь, по которому ступень
+        /// считается состоявшейся. Отправка заявки таковым не является.
+        /// </summary>
+        public void OnStepExecution(int stepNumber, double price, int qty)
+        {
+            if (stepNumber <= 0) return;
+
+            int had; stepFillQty.TryGetValue(stepNumber, out had);
+            double avg; stepFillPrice.TryGetValue(stepNumber, out avg);
+
+            int now = had + qty;
+            if (now > 0) avg = (avg * had + price * qty) / now;
+
+            stepFillQty[stepNumber] = now;
+            stepFillPrice[stepNumber] = avg;
+
+            if (stepNumber > stepsFilled)
+            {
+                stepsFilled = stepNumber;
+                stepRequestBar = -1;
+                StepsConfirmedTotal++;
+                hub.HubTrace("FIN", "STEP_CONFIRMED",
+                    "ступень " + stepNumber + ": " + now + " конт. по " + avg.ToString("F2"));
+            }
+        }
+
+        #endregion
+
+        #region Оценка на баре
+
+        /// <summary>
+        /// Главный метод. Складывает требования в общий ящик коммутатора.
+        /// Ордеров не создаёт.
+        /// </summary>
+        public void Evaluate(int bar, List<SwAction> outbox)
+        {
+            int pos = hub.HubPositionSide;
+
+            if (pos == 0) { if (side != 0) OnTradeClosed(); return; }
+            if (side == 0) return;                 // вход ещё не подтверждён
+            if (riskTicks <= 0) return;
+
+            // На баре входа безубыток и трейлинг не включаются, и лучшая цена не
+            // обновляется: неизвестно, был ли максимум бара после входа. Так же
+            // поступает контрольный бэктест.
+            if (bar == entryBar) return;
+
+            double px = hub.HubClose(0);
+
+            bestPrice = side > 0
+                ? Math.Max(double.IsNaN(bestPrice) ? px : bestPrice, hub.HubHigh(0))
+                : Math.Min(double.IsNaN(bestPrice) ? px : bestPrice, hub.HubLow(0));
+
+            double profitTicks = (side > 0 ? px - entryPrice : entryPrice - px) / hub.HubTickSize;
+            double rNow = profitTicks / riskTicks;
+
+            // ---------- 1. Ступени фиксации ----------
+            if (cfg.UseScaleOut) EvaluateScaleOut(bar, profitTicks, outbox);
+
+            // ---------- 2. Перенос стопа ----------
+            // Два кандидата вычисляются независимо, затем берётся тот,
+            // что СИЛЬНЕЕ сокращает риск. Спора между безубытком и
+            // трейлингом не возникает по построению.
+            // ЕДИНЫЙ ИСТОЧНИК ФАКТИЧЕСКОГО СТОПА — исполнитель. Прежде модуль
+            // запоминал новый стоп до того, как исполнитель его принял, и не
+            // знал о переносах, сделанных другими модулями сопровождения.
+            // Две копии «текущего стопа» расходились.
+            double actual = hub.HubCurrentStop;
+            if (!double.IsNaN(actual)) currentStop = actual;
+
+            double basisPx = cfg.BreakevenOnBestPrice ? bestPrice : px;
+            double rBasis = ((side > 0 ? basisPx - entryPrice : entryPrice - basisPx) / hub.HubTickSize) / riskTicks;
+            double candBe = ComputeBreakeven(rBasis);
+            double candTr = ComputeTrail(rBasis);
+
+            double target = BetterStop(candBe, candTr);
+            if (double.IsNaN(target)) return;
+
+            // ЗАПРЕТ ПОСЛЕ ПЕРВОЙ ФИКСАЦИИ — подавляет ОБЕ ветви сразу.
+            if (cfg.DisableStopMoveAfterStep1 && stepsFilled >= 1)
+            {
+                StopMovesSuppressed++;
+                LastNote = "перенос подавлен: после первой фиксации стоп не двигается";
+                hub.HubTrace("FIN", "STOP_SUPPRESSED", LastNote);
+                return;
+            }
+
+            if (cfg.MinBarsBetweenStopMoves > 0 && lastStopMoveBar >= 0
+                && bar - lastStopMoveBar < cfg.MinBarsBetweenStopMoves)
+                return;
+
+            // Движение только в сторону сокращения риска.
+            if (!double.IsNaN(currentStop))
+            {
+                bool better = side > 0 ? target > currentStop : target < currentStop;
+                if (!better) return;
+            }
+
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.MoveStop;
+            a.Price = target;
+            a.Reason = DescribeStopSource(candBe, candTr, target, rNow);
+            outbox.Add(a);
+
+            // currentStop здесь НЕ присваивается: принятие решает исполнитель,
+            // и фактическое значение будет прочитано у него на следующем баре.
+            lastStopMoveBar = bar;
+            StopMovesRequested++;
+            LastNote = a.Reason;
+        }
+
+        private void EvaluateScaleOut(int bar, double profitTicks, List<SwAction> outbox)
+        {
+            // ТАЙМАУТ ПОДТВЕРЖДЕНИЯ. Ожидание подтверждения верно, но без
+            // предела оно превращается в тупик: если исполнитель отклонил
+            // ступень арбитражем — например, выход по линии пришёлся на тот
+            // же бар, — подтверждение не придёт никогда. Прежде это означало,
+            // что до конца сделки не будет ни одной ступени и не наступит
+            // безубыток AfterStep1.
+            if (stepsRequested > stepsFilled && stepRequestBar >= 0
+                && bar - stepRequestBar > Math.Max(1, cfg.StepConfirmTimeoutBars))
+            {
+                StepTimeouts++;
+                hub.HubTrace("FIN", "STEP_TIMEOUT",
+                    "ступень " + stepsRequested + " не подтверждена за "
+                    + (bar - stepRequestBar) + " баров, запрос снят");
+                stepsRequested = stepsFilled;
+                stepRequestBar = -1;
+            }
+
+            if (stepsRequested >= cfg.ScaleSteps) return;
+
+            // Следующая ступень считается от ПОДТВЕРЖДЁННЫХ, а не отправленных:
+            // отклонённая заявка не должна сдвигать очередь.
+            int next = stepsFilled + 1;
+            if (next > cfg.ScaleSteps) return;
+            if (stepsRequested >= next) return;     // эта уже отправлена, ждём подтверждения
+
+            double needTicks = StepDistanceTicks(next);
+            if (needTicks <= 0 || profitTicks < needTicks) return;
+
+            int qty = StepQuantity(next);
+            if (qty <= 0) return;
+
+            SwAction a = SwAction.None(bar);
+            a.Kind = SwActionKind.PartialExit;
+            a.Quantity = qty;
+            a.Tag = "STEP" + next;
+            a.Reason = "ступень " + next + " при +" + profitTicks.ToString("F0")
+                     + " тиков (нужно " + needTicks.ToString("F0") + ")";
+            outbox.Add(a);
+
+            stepsRequested = next;
+            stepRequestBar = bar;
+            StepsRequestedTotal++;
+            hub.HubTrace("FIN", "STEP_REQUESTED", a.Reason + ", " + qty + " конт.");
+        }
+
+        private double StepDistanceTicks(int stepNumber)
+        {
+            switch (cfg.StepDistanceMode)
+            {
+                case SwStepDistanceMode.PriceDollars:
+                    return hub.HubTickSize > 0
+                        ? stepNumber * cfg.StepPriceDollars / hub.HubTickSize : 0;
+
+                case SwStepDistanceMode.RMultiple:
+                    return stepNumber * cfg.StepRMultiple * riskTicks;
+
+                default:
+                    return stepNumber * cfg.StepFixedTicks;
+            }
+        }
+
+        private int StepQuantity(int stepNumber)
+        {
+            int open = hub.HubPositionQty;
+            int reserve = cfg.KeepRunner ? 1 : 0;
+
+            int want;
+            if (stepNumber == 1 && cfg.ContractsOnStep1 > 0)
+                want = cfg.ContractsOnStep1;
+            else if (cfg.ContractsPerStep > 0)
+                want = cfg.ContractsPerStep;
+            else
+            {
+                int divisor = Math.Max(1, cfg.ScaleSteps + reserve);
+                want = Math.Max(1, initialQty / divisor);
+            }
+
+            return Math.Max(0, Math.Min(want, open - reserve));
+        }
+
+        private double ComputeBreakeven(double rNow)
+        {
+            if (breakevenDone) return double.NaN;
+
+            bool due;
+            switch (cfg.BreakevenMode)
+            {
+                case SwBreakevenMode.AfterStep1: due = stepsFilled >= 1; break;
+                case SwBreakevenMode.AfterStep2: due = stepsFilled >= 2; break;
+                case SwBreakevenMode.AtRMultiple: due = rNow >= cfg.BreakevenAtR; break;
+                default: return double.NaN;
+            }
+            if (!due) return double.NaN;
+
+            // Отступ не меньше того, что покрывает издержки круга.
+            int off = Math.Max(cfg.BreakevenOffsetTicks, MinimumBreakevenOffsetTicks());
+
+            breakevenDone = true;
+            return side > 0
+                ? entryPrice + off * hub.HubTickSize
+                : entryPrice - off * hub.HubTickSize;
+        }
+
+        private double ComputeTrail(double rNow)
+        {
+            if (cfg.TrailMode == SwTrailMode.Off) return double.NaN;
+            if (rNow < cfg.TrailActivateAtR) return double.NaN;
+
+            switch (cfg.TrailMode)
+            {
+                case SwTrailMode.FixedDistance:
+                {
+                    double tt = tradeTrailTicks > 0 ? tradeTrailTicks : cfg.TrailFixedTicks;
+                    return side > 0
+                        ? bestPrice - tt * hub.HubTickSize
+                        : bestPrice + tt * hub.HubTickSize;
+                }
+
+                case SwTrailMode.AtrMultiple:
+                {
+                    double atr = hub.HubAtrTicks;
+                    if (atr <= 0) return double.NaN;
+                    double d = atr * cfg.TrailAtrMultiple * hub.HubTickSize;
+                    return side > 0 ? bestPrice - d : bestPrice + d;
+                }
+
+                case SwTrailMode.StepLock:
+                {
+                    // После ступени k стоп встаёт на уровень ступени k-1.
+                    // При k = 1 это цена входа: прибыль первой ступени
+                    // фиксируется, а остаток ведётся без риска.
+                    if (stepsFilled < 1) return double.NaN;
+                    int prev = stepsFilled - 1;
+                    double lockTicks = prev == 0 ? 0 : StepDistanceTicks(prev);
+                    return side > 0
+                        ? entryPrice + lockTicks * hub.HubTickSize
+                        : entryPrice - lockTicks * hub.HubTickSize;
+                }
+
+                default: return double.NaN;
+            }
+        }
+
+        /// <summary>Из двух кандидатов берётся сильнее сокращающий риск.</summary>
+        private double BetterStop(double a, double b)
+        {
+            if (double.IsNaN(a)) return b;
+            if (double.IsNaN(b)) return a;
+            return side > 0 ? Math.Max(a, b) : Math.Min(a, b);
+        }
+
+        private string DescribeStopSource(double be, double tr, double chosen, double rNow)
+        {
+            string who;
+            if (!double.IsNaN(be) && Math.Abs(chosen - be) < 1e-9) who = "безубыток";
+            else if (!double.IsNaN(tr) && Math.Abs(chosen - tr) < 1e-9) who = "трейлинг " + cfg.TrailMode;
+            else who = "перенос";
+
+            return who + " → " + chosen.ToString("F2")
+                 + " (R = " + rNow.ToString("F2") + ", ступеней " + stepsFilled + ")";
+        }
+
+        #endregion
+
+        #region Диагностика
+
+        public double CurrentR
+        {
+            get
+            {
+                if (side == 0 || riskTicks <= 0) return 0;
+                double px = hub.HubClose(0);
+                double p = (side > 0 ? px - entryPrice : entryPrice - px) / hub.HubTickSize;
+                return p / riskTicks;
+            }
+        }
+
+        /// <summary>Открытый риск в деньгах: расстояние до текущего стопа.</summary>
+        public double OpenRiskMoney
+        {
+            get
+            {
+                if (side == 0 || double.IsNaN(currentStop)) return 0;
+                double px = hub.HubClose(0);
+                double ticks = (side > 0 ? px - currentStop : currentStop - px) / hub.HubTickSize;
+                return -ticks * TickValue * hub.HubPositionQty;   // отрицательно = риск
+            }
+        }
+
+        public string StatusLine
+        {
+            get
+            {
+                if (side == 0)
+                    return "вне рынка | R-база " + StopDistanceTicks().ToString("F0")
+                         + " тиков, риск/контракт " + TotalRiskPerContract().ToString("F2");
+
+                return string.Format("{0} x{1} @ {2:F2} | R {3:F2} | стоп {4} | ступеней {5}/{6} | открытый риск {7:F2}",
+                    side > 0 ? "LONG" : "SHORT", hub.HubPositionQty, entryPrice,
+                    CurrentR,
+                    double.IsNaN(currentStop) ? "—" : currentStop.ToString("F2"),
+                    stepsFilled, cfg.ScaleSteps, OpenRiskMoney);
+            }
+        }
+
+        public string SummaryLine
+        {
+            get
+            {
+                return "ступеней запрошено " + StepsRequestedTotal
+                     + ", подтверждено " + StepsConfirmedTotal
+                     + ", переносов стопа " + StopMovesRequested
+                     + ", подавлено " + StopMovesSuppressed
+                     + ", таймаутов ступеней " + StepTimeouts
+                     + ", отказов расчёта объёма " + SizingBlocks;
+            }
+        }
+
+        #endregion
+    }
+}
+

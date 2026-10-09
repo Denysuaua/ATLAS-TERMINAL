@@ -1,0 +1,67 @@
+{
+  "task_id": "wfa_dev_20261001130938_w01_test",
+  "data": "MGC",
+  "profile": "chicago",
+  "mode": "dev",
+  "optimize": {
+    "stop_ticks": [
+      40
+    ],
+    "be_trigger_ticks": [
+      15
+    ],
+    "be_offset_ticks": [
+      2
+    ],
+    "trail_morning_ticks": [
+      15
+    ],
+    "trail_evening_ticks": [
+      10
+    ],
+    "min_range_ticks": [
+      15
+    ],
+    "max_range_ticks": [
+      45
+    ],
+    "min_base_bars": [
+      50
+    ],
+    "flat_threshold": [
+      0.85
+    ],
+    "atr_fast": [
+      10
+    ],
+    "atr_slow": [
+      30
+    ],
+    "trend_bars": [
+      10
+    ],
+    "max_entries_per_session": [
+      0
+    ]
+  },
+  "base": {
+    "stop_ticks": 40,
+    "be_trigger_ticks": 15,
+    "be_offset_ticks": 2,
+    "trail_morning_ticks": 15,
+    "trail_evening_ticks": 10,
+    "min_range_ticks": 15,
+    "max_range_ticks": 45,
+    "min_base_bars": 50,
+    "flat_threshold": 0.85,
+    "atr_fast": 10,
+    "atr_slow": 30,
+    "trend_bars": 10,
+    "max_entries_per_session": 0
+  },
+  "max_trials": 1,
+  "objective": "SharpeDaily",
+  "select": "raw",
+  "start": "2019-01-01",
+  "end": "2020-01-01"
+}

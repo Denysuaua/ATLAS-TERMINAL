@@ -1,0 +1,300 @@
+﻿                KalSymmetryMax = 0.3;
+                KalRangeConfirmBars = 0;
+                KalTrendZ = 3.0;
+                KalTrendTilt = 0.6;
+                KalCompressionRatio = 0.75;
+                KalExpansionRatio = 1.35;
+                KalDirectionTf = SwKalmanTfChoice.Higher;
+                KalEscortTf = SwKalmanTfChoice.Current;
+                KalRequireHigherAgreement = true;
+                KalSignalBars = 1;
+                KalEscortStop = true;
+                KalStopOffsetTicks = 2;
+                KalExitOnSlopeFlip = true;
+                KalExitConfirmBars = 2;
+                KalResearch = true;
+                KalResearchHorizon = 20;
+                KalRangeHoldBars = 10;
+                KalWarmupPeriods = 3;
+                KalProvisionalDisplay = true;
+                LevWeight = SwLeverWeight.Volume;
+                LevFulcrum = SwLeverFulcrum.RangeMid;
+                LevMeasure = SwLeverMeasure.Both;
+                LevSmoothCandles = 3;
+                LevScaleWindow = 50;
+                LevSignalWithTrend = false;
+                LevTrendWindow = 20;
+                LevSignalBars = 1;
+                LevExitAgainst = false;
+                LevExitConfirm = 2;
+                LevMinHeightTicks = 4;
+                LevFinalize = SwLeverFinalize.Auto;
+                LevResearch = true;
+                LevResearchHorizon = 5;
+                HmSqueezeLookback = 100;
+                LorEvalWindow = 200;
+                TrfpPeriodNeutralPolicy = SwTrfpNeutralPolicy.CountsAsDisagree;
+                RegimeAggregationQ = 2;
+                RegimeVarianceMode = SwRegimeVariance.HeteroskedasticRobust;
+                RegimeZThreshold = 1.96;
+                RegimeRequireDriftAgreement = false;
+                RegimeDriftZThreshold = 1.96;
+                GuardUseDailyGuard = true;
+                GuardUseProfitLock = false;
+                GuardProfitLockArmAt = 0.0;
+                GuardProfitLockGiveBackPct = 25.0;
+                GuardUseNewsFilter = false;
+                GuardMinutesBefore = 15;
+                GuardMinutesAfter = 30;
+                GuardMinImpact = 3;
+                GuardMissingCalendarBlocks = true;   // v1.2: без календаря — запрет входа
+                GuardNewsFile = string.Empty;        // v1.2 [M131]
+                GuardLossStreakPause = 0;            // Э3 [M132], 0 — выключено
+                GuardShockMultiplier = 0;            // Э4 [M133], 0 — выключено
+                GuardShockPauseBars = 15;            // Э4 [M134]
+                AStopMultiplierLowVol = 2.0;
+                AStopMultiplierMidVol = 3.0;
+                AStopMultiplierHighVol = 4.0;
+                AStopVolRankLookback = 100;
+                AStopLowVolPercentile = 33.0;
+                AStopHighVolPercentile = 67.0;
+                AStopWarmupBars = 60;
+                AStopRequireProtectiveSide = true;
+                AStopMinBarsBetweenRequests = 1;
+                EscortFullExit = true;
+                EscortPartialQuantity = 1;
+                EscortMinBarsInTrade = 1;
+                EscortStaleAfterBars = 50;
+                DefaultQuantity = 1;
+                StopLossTicks = 40;
+                MinBarsInTrade = 1;
+                DryRunSlippageTicks = 1;    // v1.4 [E05]: как в паспорте MGC и эталоне
+                DryRunStressFill = false;   // Э9 [E06]
+                PositionSyncGuard = true;   // v1.6 [E07]
+                CraneThreshold = 0;         // Э13 [E08], 0 — выключено
+                CraneTargetSharpe = 0;      // Э13 [E09]: 0 — безубыточность
+                CraneMinBets = 30;          // Э13 [E10]
+
+                // --- управление позицией ---
+                EnablePositionManager = true;
+
+                SizingMode = SwSizingMode.FixedQuantity;
+                RiskMoneyPerTrade = 0; AccountEquityReference = 0; RiskPercentOfEquity = 0.5;
+                MinQuantity = 1; MaxQuantity = 5;
+                RoundTurnCostPerContract = 0; SlippageReserveTicks = 2;
+                StopMode = SwStopMode.FixedTicks; StopPriceDollars = 0; StopAtrMultiple = 2.0;
+                AtrPeriod = 14;
+                UseScaleOut = false; ScaleSteps = 2;
+                StepDistanceMode = SwStepDistanceMode.RMultiple;
+                StepFixedTicks = 40; StepPriceDollars = 0; StepRMultiple = 1.0;
+                ContractsOnStep1 = 1; ContractsPerStep = 0; KeepRunner = true;
+                BreakevenMode = SwBreakevenMode.Off; BreakevenAtR = 1.0;
+                TrailMode = SwTrailMode.Off; TrailActivateAtR = 1.0; TrailAtrMultiple = 2.5;
+                BreakevenOffsetTicks = 2;
+                DisableStopMoveAfterStep1 = false; MinBarsBetweenStopMoves = 0;
+                StepConfirmTimeoutBars = 3;
+                TimeForceFlatten = true;
+                TimeWin1On = true; TimeWin1Start = 10000; TimeWin1End = 80000;     // 01:00–08:00 Берлин
+                TimeWin2On = true; TimeWin2Start = 93000; TimeWin2End = 183000;    // 09:30–18:30 Берлин
+                TimeEntriesUntil = 213000; TimeForceCloseOn = true; TimeForceCloseAt = 223000;
+                TimeMon = true; TimeTue = true; TimeWed = true; TimeThu = true; TimeFri = true;
+                TimeExpActiveShare = 0;                                           // Э39
+                PacExpBreakAtr = 0; PacExpBreakVol = 0; PacExpBreakWindow = 14;   // Э37, Э38
+                TrfpExpMinBarsAfterFlip = 0;                                      // Э40
+                RegimeExpHamiltonProb = 0; RegimeExpHamiltonStay = 0.95;          // Э41
+                RegimeExpHamiltonStep = 0;                                        // Э52
+                PacExpMinBarsBetween = 0;                                         // Э42
+                PacExpChochPlusFailed = false; PacExpStrongWeak = SwPacStrongWeak.Off; PacExpStrongBonus = 0.10;   // Э76, Э77
+                AStopExpEwma = false; AStopExpEwmaSpan = 100;                     // Э43
+                EscortExpVerticalBars = 0;                                        // Э44
+                KerExpShrinkTau = 0; HkExpPriorObs = 0;                           // Э45, Э46
+                KerExpThrSigma = 0; KerExpTrendScan = false; HkExpThrSigma = 0; HkExpVrGateZ = 0;   // Э65, Э66, Э73
+                LorExpMetaLabels = false; LorExpMetaAtr = 1.0; LevExpClrMin = 0; LevExpVolZMin = 0;   // L17, Э69
+                KalExpEscortOffsetSigma = 0;                                      // Э72
+                GuardBlack1Start = 0; GuardBlack1End = 0; GuardBlack2Start = 0; GuardBlack2End = 0;
+                GuardExpLossSigma = 0;                                            // Э47
+                FinExpStopAtrFloor = 0; KalExpMinStateBars = 0;                   // Э48, Э49
+
+                Slot8Enabled = false;
+                DboWindowZone = SwWindowZone.Chicago;
+                DboUseMorning = true;
+                DboUseEvening = true;
+                DboM1Slot = 1; DboM15Slot = 3; DboH4Slot = 4;
+                DboMorningBaseStart = 60000; DboMorningBaseEnd = 65959;
+                DboMorningSignalStart = 70000; DboMorningSignalEnd = 95959;
+                DboMorningSessionEnd = 143000; DboMorningTrailTicks = 15;
+                DboEveningBaseStart = 170000; DboEveningBaseEnd = 175959;
+                DboEveningSignalStart = 180000; DboEveningSignalEnd = 195959;
+                DboEveningSessionEnd = 213000; DboEveningTrailTicks = 10;
+                DboMinRangeTicks = 15; DboMaxRangeTicks = 45; DboMinBaseBars = 50;
+                DboFlatThreshold = 0.85; DboAtrFast = 20; DboAtrSlow = 40; DboTrendBars = 10;
+                DboEntryOffsetTicks = 1; DboMaxEntries = 0;
+                DboEveningDir = SwEveningDir.DayTrend; DboCloseAtSessionEnd = true;
+                BreakevenOnBestPrice = true;
+
+                Slot9Enabled = false;
+                KerKernel = SwKernelType.Epanechnikov; KerRegression = SwRegressionType.LocalLinear;
+                KerSlot = 1; KerBandwidth = 20; KerAdaptive = true;
+                KerVolumeWeighting = false; KerVolumeGamma = 1.0;
+                KerVolumeScale = SwVolumeScale.Robust; KerVolumeWindow = 50;
+                KerSlopeThreshold = 0.5; KerDivergence = SwKernelDivergenceAction.Neutral;
+                KerExpTGate = false; KerExpTMin = 2.0; KerExpFastSlow = false; KerExpSkill = false;
+                KerSignalMode = false;
+
+                Slot11Enabled = false;
+                LorSlot = 1; LorLookback = 2000; LorNeighbors = 16; LorStride = 4; LorHorizon = 4;
+                LorVoteThreshold = 0.5; LorYeoJohnson = true; LorRefitBars = 100; LorFitWindow = 500;
+                LorKalmanQ = 0.01; LorKalmanR = 1.0; LorSignalMode = false;
+                LorExpKernelVote = false;
+                Slot12Enabled = false; FsPath = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NinjaTrader 8", "dz_export", "dz_signal.csv");
+                FsMaxAge = 120; FsMaxLag = 2; FsSignalMode = false; FsMinConfidence = 0.0;
+                LorMethod = SwLorentzMethod.KnnVote; LorNwKernel = SwKernelType.Gaussian;
+                LorNwBandMult = 0.5; LorNwThreshold = 0.10; LorNwMinEff = 10;
+                Slot10Enabled = false; HkSlot = 1; HkRegression = SwRegressionType.LocalLinear; HkKernel = SwKernelType.Epanechnikov;
+                HkHurstPeriod = 128; HkMinBandwidth = 8; HkMaxBandwidth = 40; HkHLow = 0.37; HkHHigh = 0.57; HkRwLevel = 0.47;
+                HkSlopeThreshold = 0.5; HkSignalMode = false; HkExpGate = false; HkExpGateBand = 0.03; HkExpInverse = false; HkExpConfidence = false; LorExpPrecisionGate = false; LorExpPrecisionMin = 0.65; LorExpAgreeKernel = false;
+                BreakevenAfterTicks = 30;
+                TrailAfterTicks = 60;
+                TrailDistanceTicks = 40;
+
+                // --- диагностика ---
+                EnableTracing = true;
+                PrintTraceToOutput = false;
+                TraceBufferSize = 200;
+                SilentAfterBars = 5;
+                ShowHubPanel = true;
+                DecisionJournal = false;   // Э1 [T13]
+                MeasureSlippage = false;   // Э2 [T14]
+                MenuFingerprint = false;   // Э5 [T15]
+                ReportNonDefaults = false; // Э6 [T16]
+                DryTradeJournal = false;   // v1.4 [T17]
+                DryTradeVotes = false;     // Э10 [T18]
+                AnalyzerJournal = false;   // Э11 [T19]
+                YearlySummary = false;     // Э12 [T20]
+                RiskLineEnabled = false;   // Э14 [T25]
+                DboExpRetest = false; DboExpRetestBars = 30;                          // Э15
+                DboExpAtrWidth = false; DboExpAtrMin = 0.5; DboExpAtrMax = 2.0;       // Э16
+                LorExpEmbargo = 0; LorExpHalfLife = 0;                                // Э17, Э18
+                HmExpTrendScan = false; HmExpScanMin = 8; HmExpScanT = 2.0;           // Э19
+                FsExpBetSize = false;                                                 // Э20
+                KalExpNisGate = 0;                                                    // Э21
+                LevExpPoc = false;                                                    // Э22
+                WsCommandLog = false;                                                 // Э23
+                BetStatsEnabled = false;                                              // Э24, Э25 [T26]
+                EntryFromStructureOnly = true;                                        // догма [D00]
+                MetaLabels = false; MetaTargetR = 1.0; MetaVerticalBars = 60;         // Э32 [T27]–[T29]
+                PanelPosition = TextPosition.TopLeft;
+                PanelFontSize = 11;
+                PanelTraceLines = 6;
+                UseSeries1 = false; Series1Type = BarsPeriodType.Minute; Series1Value = 1;
+                UseSeries2 = false; Series2Type = BarsPeriodType.Minute; Series2Value = 5;
+                UseSeries3 = false; Series3Type = BarsPeriodType.Minute; Series3Value = 15;
+                UseSeries4 = false; Series4Type = BarsPeriodType.Minute; Series4Value = 60;
+                ExecSeriesSlot = 0;
+
+                OkBrush = Brushes.LimeGreen;
+                WarnBrush = Brushes.Gold;
+                FaultBrush = Brushes.OrangeRed;
+                IdleBrush = Brushes.Gray;
+            	CaptureSchemaDefaults();   // последней строкой SetDefaults: присвоены все умолчания
+            }
+            else if (State == State.Configure)
+            {
+            	ApplyPreset();                       // до объявления серий: и серии берутся из пресета
+            	if (ExportSchema) ExportMenuSchema();
+                // Пул серий объявляется здесь и только здесь. Подключённый
+                // позже модуль свои серии добавить не может — ограничение
+                // платформы, а не выбор архитектуры.
+                // ПУЛ СЕРИЙ. Объявляется здесь и только здесь: AddDataSeries
+                // работает исключительно в State.Configure. Модуль, подключённый
+                // позже, свою серию добавить не может — ограничение платформы.
+                //
+                // Порядок объявления ФИКСИРУЕТ индексы. Менять порядок нельзя:
+                // модули обращаются к сериям по номеру слота, и перестановка
+                // заставит их читать чужие бары молча, без ошибки.
+                int next = 1;
+                for (int k = 0; k < 4; k++) seriesBip[k] = 0;
+
+                if (UseSeries1) { AddDataSeries(Series1Type, Series1Value); seriesBip[0] = next++; }
+                if (UseSeries2) { AddDataSeries(Series2Type, Series2Value); seriesBip[1] = next++; }
+                if (UseSeries3) { AddDataSeries(Series3Type, Series3Value); seriesBip[2] = next++; }
+                if (UseSeries4) { AddDataSeries(Series4Type, Series4Value); seriesBip[3] = next++; }
+
+                // Серия исполнения: 0 — график, 1..4 — слоты пула.
+                execBip = ResolveSlot(ExecSeriesSlot);
+
+                // v1.6: таймер команд пульта — как в примере руководства (с. 1992): создаётся и
+                // запускается в State.Configure, обработчик вызывает TriggerCustomEvent.
+                if (WsEnabled && WsAllowCommands && remoteTimer == null && !InAnalyzer)
+                {
+                    remoteTimer = new System.Windows.Forms.Timer();
+                    remoteTimer.Tick += new EventHandler(OnRemoteTimerTick);
+                    remoteTimer.Interval = 500;
+                    remoteTimer.Start();
+                }
+            }
+            else if (State == State.DataLoaded)
+            {
+                hostView = new SwHostView(this);
+
+                // ATR создаётся здесь, не в горячем пути. Нужен только режимам
+                // стопа и трейлинга, опирающимся на волатильность.
+                try { hubAtr = ATR(BarsArray[execBip], Math.Max(2, AtrPeriod)); }
+                catch { hubAtr = null; }
+
+                exec = new SwExecutionModule(this);
+
+                finCfg = BuildFinancialConfig();
+                fin = new SwFinancialManager(this, finCfg);
+
+                int minBe = fin.MinimumBreakevenOffsetTicks();
+                if (finCfg.BreakevenMode != SwBreakevenMode.Off
+                    && finCfg.BreakevenOffsetTicks < minBe)
+                    Print("[HUB-ВНИМАНИЕ] [F32] отступ безубытка " + finCfg.BreakevenOffsetTicks
+                        + " тиков не покрывает издержки круга: нужно не меньше " + minBe
+                        + ". Срабатывание безубыточного стопа даст убыток.");
+
+                BuildSlots();
+
+                foreach (SwModule m in modules)
+                {
+                    try { m.Attach(hostView); }
+                    catch (Exception ex) { m.MarkFault(ex.Message); }
+                }
+
+                int slotProblems = ValidateSlotReferences();
+                int seriesProblems = ValidateSeriesPool();
+                ApplyConfigGuard(slotProblems, seriesProblems);
+                if (InAnalyzer && OrderFillResolution == OrderFillResolution.Standard)
+                    Print("[HUB-ВНИМАНИЕ] Strategy Analyzer, разрешение исполнения Standard: путь внутри бара строится по "
+                        + "близости открытия к экстремуму (руководство NT, с. 1075) — путь, отклонённый Книгой проекта. "
+                        + "Для стопов и выходов внутри бара — High с тиковой серией.");
+
+                HubTrace("HUB", "ATTACHED", modules.Count + " модулей, execBip=" + execBip);
+                Print("[HUB] " + HubVersion + "  модулей " + modules.Count
+                    + "  серия исполнения bip=" + execBip
+                    + "  режим " + (DryRunMode ? "БЕЗ ОРДЕРОВ" : "БОЕВОЙ")
+                    + "  новые входы " + (configBlocked ? "ЗАПРЕЩЕНЫ" : "разрешены"));
+                if (EntryFromStructureOnly)
+                {
+                    var others = new StringBuilder();
+                    foreach (SwModule m in modules)
+                        if (m.Role == SwRole.Signal && m != refPac) others.Append(others.Length > 0 ? ", " : "").Append(m.Id);
+                    Print("[HUB] догма [D00]: вход — только от структуры [MOD1]"
+                        + (refPac == null ? " — НО МОДУЛЬ СТРУКТУРЫ ВЫКЛЮЧЕН: входов не будет" : "")
+                        + (others.Length > 0 ? "; без голоса: " + others : ""));
+                }
+
+                if (MenuFingerprint)
+                {
+                    int menuCount;
+                    string fp = ComputeMenuFingerprint(out menuCount);
+                    Print("[HUB] схема меню: отпечаток " + fp + ", настроек " + menuCount
+                        + " — сверьте со справочником DZ_SW_S021_03");
+                }
+                if (ReportNonDefaults) PrintNonDefaults();
+            }
+            else if (State == State.Realtime)
+            {
+            	StartRemote();   // пульт — только в реальном времени
+            }

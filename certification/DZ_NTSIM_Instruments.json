@@ -1,0 +1,12 @@
+{
+  "_note": "Значения ОБЯЗАТЕЛЬНО сверить с Instrument Manager NinjaTrader (TickSize, PointValue, шаблон торговых часов): для паритета эталон — то, что использует сам NinjaTrader, а не биржевой документ. commission_per_side — за контракт за сторону, задаётся по вашему тарифу.",
+  "MGC":  {"tick": 0.1,    "point_value": 10,   "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "SIL":  {"tick": 0.005,  "point_value": 1000, "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "MHG":  {"tick": 0.0005, "point_value": 2500, "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "MCL":  {"tick": 0.01,   "point_value": 100,  "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "MES":  {"tick": 0.25,   "point_value": 5,    "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "MNQ":  {"tick": 0.25,   "point_value": 2,    "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "MYM":  {"tick": 1.0,    "point_value": 0.5,  "currency": "USD", "tz": "America/Chicago", "session_close": "16:00", "session_open": "17:00", "commission_per_side": 0.22, "verified_in_nt": false},
+  "FDXS": {"tick": 1.0,    "point_value": 1,    "currency": "EUR", "tz": "Europe/Berlin",   "session_close": "22:00", "session_open": "01:10", "commission_per_side": 0.30, "verified_in_nt": false},
+  "FDXM": {"tick": 1.0,    "point_value": 5,    "currency": "EUR", "tz": "Europe/Berlin",   "session_close": "22:00", "session_open": "01:10", "commission_per_side": 0.50, "verified_in_nt": false}
+}

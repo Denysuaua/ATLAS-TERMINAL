@@ -1,0 +1,300 @@
+﻿		[NinjaScriptProperty]
+		[Display(Name = "[C32] Показывать предварительный канал", Order = 32, GroupName = "15 · Канал Калмана",
+			Description = "Рисовать середину и границы по ещё не подтверждённой оценке текущего бара каждого таймфрейма.")]
+		public bool KalProvisionalDisplay { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B07] Масса кластера", Order = 7, GroupName = "16 · Рычаг свечи",
+			Description = "Volume — объём; Ticks — число сделок, для минутного источника — время у цены.")]
+		public SwLeverWeight LevWeight { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B08] Опора", Order = 8, GroupName = "16 · Рычаг свечи",
+			Description = "RangeMid — середина между максимумом и минимумом свечи; BodyMid — середина тела.")]
+		public SwLeverFulcrum LevFulcrum { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B09] Мера баланса", Order = 9, GroupName = "16 · Рычаг свечи",
+			Description = "Both — среднее рычага богатых кластеров и медианного центра массы; Lever — только рычаг; MedianCenter — только медианный центр.")]
+		public SwLeverMeasure LevMeasure { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B10] Сглаживание, свечей", Order = 10, GroupName = "16 · Рычаг свечи",
+			Description = "Взвешенная медиана балансов последних свечей; веса — масса свечей.")]
+		public int LevSmoothCandles { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B11] Окно масштаба, свечей", Order = 11, GroupName = "16 · Рычаг свечи",
+			Description = "Масштаб — 1,4826·MAD баланса за это окно; голос z = сглаженный баланс / масштаб, порог — [B05].")]
+		public int LevScaleWindow { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B12] Сигнал только по тренду", Order = 12, GroupName = "16 · Рычаг свечи",
+			Description = "Сигнал против наклона Тейла–Сена за окно [B13] отклоняется.")]
+		public bool LevSignalWithTrend { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B13] Окно тренда, свечей", Order = 13, GroupName = "16 · Рычаг свечи",
+			Description = "Окно наклона Тейла–Сена по закрытиям.")]
+		public int LevTrendWindow { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B14] Сигнал действует, баров", Order = 14, GroupName = "16 · Рычаг свечи",
+			Description = "Сколько баров новый голос остаётся сигналом.")]
+		public int LevSignalBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B15] Выход при голосе против", Order = 15, GroupName = "16 · Рычаг свечи",
+			Description = "Требовать выхода, когда голос держится против позиции [B16] свечей подряд.")]
+		public bool LevExitAgainst { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B16] Голос против подтверждён, свечей", Order = 16, GroupName = "16 · Рычаг свечи",
+			Description = "Сколько свечей подряд голос должен быть против позиции для выхода [B15].")]
+		public int LevExitConfirm { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B17] Минимальная высота свечи, тиков", Order = 17, GroupName = "16 · Рычаг свечи",
+			Description = "Свеча ниже порога не взвешивается: кластеров слишком мало.")]
+		public int LevMinHeightTicks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B18] Готовность голоса", Order = 18, GroupName = "16 · Рычаг свечи",
+			Description = "Exact — дождаться поздних кластеров, голос в следующем такте; Fast — голос по закрытию свечи без кластеров с меткой её конца; Auto — Fast для тикового источника, иначе Exact.")]
+		public SwLeverFinalize LevFinalize { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B19] Исследование: статистика в Output", Order = 19, GroupName = "16 · Рычаг свечи",
+			Description = "В конце прогона печатать таблицу доходностей по корзинам рычага и медианного центра.")]
+		public bool LevResearch { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[B20] Исследование: горизонт, свечей", Order = 20, GroupName = "16 · Рычаг свечи",
+			Description = "Через сколько свечей оценивается доходность в исследовании.")]
+		public int LevResearchHorizon { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[G11] История ширины для сжатия, расчётов", Order = 11, GroupName = "17 · Иерархическая масса",
+			Description = "Сколько последних значений ширины берёт шлюз сжатия [G08] для медианы.")]
+		public int HmSqueezeLookback { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[L22] Окно самопроверки, прогнозов", Order = 22, GroupName = "10 · Классификатор Лоренца",
+			Description = "По скольким последним проверенным прогнозам считается точность для [L14] и [L15].")]
+		public int LorEvalWindow { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M103] Линии: нейтральная линия", Order = 50, GroupName = "04 · Настройки модулей",
+			Description = "CountsAsDisagree — нейтральная линия запрещает вход (строже); CountsAsAgree — не мешает (мягче).")]
+		public SwTrfpNeutralPolicy TrfpPeriodNeutralPolicy { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M104] Режим: порядок агрегирования q", Order = 51, GroupName = "04 · Настройки модулей",
+			Description = "Горизонт теста отношения дисперсий: VR(q) — дисперсия q-приращений к q-кратной дисперсии однобаровых.")]
+		public int RegimeAggregationQ { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M105] Режим: дисперсия оценки", Order = 52, GroupName = "04 · Настройки модулей",
+			Description = "HeteroskedasticRobust — робастная к гетероскедастичности (Ло–Маккинли); Homoskedastic — при постоянной дисперсии.")]
+		public SwRegimeVariance RegimeVarianceMode { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M106] Режим: порог z", Order = 53, GroupName = "04 · Настройки модулей",
+			Description = "Модуль z выше порога — режим определён: персистентность или возврат к среднему; ниже — блуждание.")]
+		public double RegimeZThreshold { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M107] Режим: дрейф по направлению входа", Order = 54, GroupName = "04 · Настройки модулей",
+			Description = "Требовать, чтобы знак значимого дрейфа совпадал с направлением входа.")]
+		public bool RegimeRequireDriftAgreement { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M108] Режим: порог z дрейфа", Order = 55, GroupName = "04 · Настройки модулей",
+			Description = "Дрейф значим, если z-статистика среднего приращения по модулю не ниже порога.")]
+		public double RegimeDriftZThreshold { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M109] Риск: дневные лимиты", Order = 56, GroupName = "04 · Настройки модулей",
+			Description = "Включить проверку дневных лимитов убытка и прибыли.")]
+		public bool GuardUseDailyGuard { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M110] Риск: замок прибыли", Order = 57, GroupName = "04 · Настройки модулей",
+			Description = "После взвода [M111] новые входы запрещаются, если прибыль дня откатилась от пика больше [M112] процентов.")]
+		public bool GuardUseProfitLock { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M111] Риск: взвод замка при прибыли дня", Order = 58, GroupName = "04 · Настройки модулей",
+			Description = "Прибыль дня в валюте счёта, после которой замок [M110] взводится.")]
+		public double GuardProfitLockArmAt { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M112] Риск: допустимый откат от пика, %", Order = 59, GroupName = "04 · Настройки модулей",
+			Description = "Откат прибыли дня от пика, после которого замок запрещает входы.")]
+		public double GuardProfitLockGiveBackPct { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M113] Риск: фильтр новостей", Order = 60, GroupName = "04 · Настройки модулей",
+			Description = "Паузы входов вокруг событий календаря [M131]. Требует модуля времени [MOD3]; без календаря или часов — запрет входа при [M117].")]
+		public bool GuardUseNewsFilter { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M114] Риск: пауза до новости, минут", Order = 61, GroupName = "04 · Настройки модулей",
+			Description = "За сколько минут до события входы запрещаются.")]
+		public int GuardMinutesBefore { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M115] Риск: пауза после новости, минут", Order = 62, GroupName = "04 · Настройки модулей",
+			Description = "Сколько минут после события входы запрещены.")]
+		public int GuardMinutesAfter { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M116] Риск: минимальная значимость новости", Order = 63, GroupName = "04 · Настройки модулей",
+			Description = "1 — низкая, 2 — средняя, 3 — высокая; события ниже порога не дают паузы.")]
+		public int GuardMinImpact { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M117] Риск: нет календаря — запрет входа", Order = 64, GroupName = "04 · Настройки модулей",
+			Description = "При включённом фильтре новостей недоступный календарь или отсутствие часов [MOD3] запрещает вход, а не пропускается молча.")]
+		public bool GuardMissingCalendarBlocks { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M118] Адапт.стоп: множитель при низкой волатильности", Order = 65, GroupName = "04 · Настройки модулей",
+			Description = "Ширина = множитель × ATR, когда ранг волатильности ниже [M122].")]
+		public double AStopMultiplierLowVol { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M119] Адапт.стоп: множитель при средней волатильности", Order = 66, GroupName = "04 · Настройки модулей",
+			Description = "Ширина = множитель × ATR между [M122] и [M123].")]
+		public double AStopMultiplierMidVol { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M120] Адапт.стоп: множитель при высокой волатильности", Order = 67, GroupName = "04 · Настройки модулей",
+			Description = "Ширина = множитель × ATR, когда ранг волатильности выше [M123].")]
+		public double AStopMultiplierHighVol { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M121] Адапт.стоп: окно ранга волатильности, баров", Order = 68, GroupName = "04 · Настройки модулей",
+			Description = "По скольким значениям ATR считается ранг текущей волатильности.")]
+		public int AStopVolRankLookback { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M122] Адапт.стоп: граница низкой волатильности, перцентиль", Order = 69, GroupName = "04 · Настройки модулей",
+			Description = "Ранг ниже этого перцентиля — низкая волатильность.")]
+		public double AStopLowVolPercentile { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M123] Адапт.стоп: граница высокой волатильности, перцентиль", Order = 70, GroupName = "04 · Настройки модулей",
+			Description = "Ранг выше этого перцентиля — высокая волатильность.")]
+		public double AStopHighVolPercentile { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M124] Адапт.стоп: прогрев, баров", Order = 71, GroupName = "04 · Настройки модулей",
+			Description = "Сколько баров своей серии модуль отрабатывает до допуска.")]
+		public int AStopWarmupBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M125] Адапт.стоп: только с защитной стороны", Order = 72, GroupName = "04 · Настройки модулей",
+			Description = "Просить перенос стопа, только когда линия уже на защитной стороне позиции; иначе исполнитель отклонял бы уровень каждый бар.")]
+		public bool AStopRequireProtectiveSide { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M126] Адапт.стоп: баров между просьбами", Order = 73, GroupName = "04 · Настройки модулей",
+			Description = "Минимум баров между просьбами о переносе стопа — защита от дребезга.")]
+		public int AStopMinBarsBetweenRequests { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M127] Выход: закрывать всю позицию", Order = 74, GroupName = "04 · Настройки модулей",
+			Description = "Включено — закрывается вся позиция; выключено — частично, объёмом [M128].")]
+		public bool EscortFullExit { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M128] Выход: частичный выход, контрактов", Order = 75, GroupName = "04 · Настройки модулей",
+			Description = "Объём частичного выхода при выключенном [M127].")]
+		public int EscortPartialQuantity { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M129] Выход: минимум баров в позиции", Order = 76, GroupName = "04 · Настройки модулей",
+			Description = "Сколько баров позиция должна прожить до первой возможности выхода по линии.")]
+		public int EscortMinBarsInTrade { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M130] Выход: застой линий после, баров", Order = 77, GroupName = "04 · Настройки модулей",
+			Description = "Сколько баров без изменения состояния линий считать застоем — признаком того, что модуль линий не работает.")]
+		public int EscortStaleAfterBars { get; set; }
+
+		[NinjaScriptProperty]
+		[Display(Name = "[M131] Риск: файл календаря новостей", Order = 79, GroupName = "04 · Настройки модулей",
+			Description = "Локальный файл: строка «время UTC;значимость 1–3;название», разделитель — точка с запятой. Без файла при включённых [M113] и [M117] вход запрещён.")]
+		public string GuardNewsFile { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 20)]
+		[Display(Name = "[M132] Риск: пауза после убыточных ставок подряд (эксперимент)", Order = 80, GroupName = "04 · Настройки модулей",
+			Description = "После стольких убыточных ставок подряд новые входы запрещены до границы сессии. Ставка — позиция от входа до нуля: частичные фиксации её не дробят. 0 — выключено.")]
+		public int GuardLossStreakPause { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(0, 20)]
+		[Display(Name = "[M133] Риск: всплеск волатильности, множитель (эксперимент)", Order = 81, GroupName = "04 · Настройки модулей",
+			Description = "Бар исполнения с истинным диапазоном больше этого множителя от его среднего за ~50 баров запускает паузу входов [M134]. Ловит внеплановые новости без календаря. 0 — выключено.")]
+		public double GuardShockMultiplier { get; set; }
+
+		[NinjaScriptProperty]
+		[Range(1, 500)]
+		[Display(Name = "[M134] Риск: пауза после всплеска, баров", Order = 82, GroupName = "04 · Настройки модулей",
+			Description = "Сколько баров серии исполнения новые входы запрещены после всплеска [M133].")]
+		public int GuardShockPauseBars { get; set; }
+		#endregion
+
+        #region Схема меню и пресеты — цепочка без Excel
+        // Схема — рефлексия над [NinjaScriptProperty] СКОМПИЛИРОВАННОЙ сборки: источник тот же, что торгует.
+        // Пресет — всё или ничего; защитные свойства пресетом не меняются.
+        private static System.Collections.Generic.Dictionary<string, object> schemaDefaults;
+        private static readonly string[] PresetDenied = { "DryRunMode", "WsEnabled", "WsAllowCommands", "ExportSchema", "PresetFile" };
+
+        private System.Collections.Generic.List<System.Reflection.PropertyInfo> MenuProperties()
+        {
+        	var list = new System.Collections.Generic.List<System.Reflection.PropertyInfo>();
+        	foreach (System.Reflection.PropertyInfo p in GetType().GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+        		if (p.CanRead && p.CanWrite && Attribute.GetCustomAttribute(p, typeof(NinjaScriptPropertyAttribute)) != null) list.Add(p);
+        	return list;
+        }
+
+        /// <summary>Значения по умолчанию — один раз, в конце SetDefaults, когда присвоены все.</summary>
+        private void CaptureSchemaDefaults()
+        {
+        	if (schemaDefaults != null) return;
+        	var d = new System.Collections.Generic.Dictionary<string, object>();
+        	foreach (System.Reflection.PropertyInfo p in MenuProperties()) { try { d[p.Name] = p.GetValue(this, null); } catch { } }
+        	schemaDefaults = d;
+        }
+
+        private static string JStr(string v) { return "\"" + (v ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", " ").Replace("\n", " ") + "\""; }
+
+        private static string JVal(object v)
+        {
+        	if (v == null) return "null";
+        	if (v is bool) return (bool)v ? "true" : "false";
+        	if (v is Enum || v is string) return JStr(v.ToString());
+        	if (v is int || v is long || v is double || v is float || v is decimal)
+        	{
+        		double x = Convert.ToDouble(v, System.Globalization.CultureInfo.InvariantCulture);
+        		return double.IsNaN(x) || double.IsInfinity(x) ? "null" : x.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+        	}
+        	return "null";
+        }
+
+        /// <summary>
+        /// Э5 [T15] — ОТПЕЧАТОК СХЕМЫ МЕНЮ: SHA-256 строк «имя|тип|название» всех свойств
+        /// [NinjaScriptProperty], упорядоченных по имени; первые 12 знаков. Генератор
+        /// справочника DZ_DOC_Menu_S021.py считает ту же строку по исходнику: совпадение
+        /// доказывает, что справочник описывает именно скомпилированное меню.
+        /// </summary>
+        private string ComputeMenuFingerprint(out int count)
+        {
+            var props = MenuProperties();
+            props.Sort(delegate (System.Reflection.PropertyInfo a, System.Reflection.PropertyInfo b) { return string.CompareOrdinal(a.Name, b.Name); });
+            var sb = new StringBuilder(65536);
+            foreach (System.Reflection.PropertyInfo p in props)
+            {
